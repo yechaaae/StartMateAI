@@ -37,18 +37,34 @@ class OperationAgent(BaseAgent):
             ]
         )
 
-        data = {
-            "business_name": request.business_name,
-            "average_weekly_sales_krw": avg_sales,
-            "sales_trend": trend,
-            "risks": risks or ["입력 데이터 기준 주요 위험 신호 없음"],
-            "recommended_actions": actions,
-            "next_week_plan": [
-                "월요일: 재고와 원가 점검",
-                "수요일: 고객 피드백 반영 프로모션 실행",
-                "금요일: 매출 구간별 리뷰와 다음 주 개선안 확정",
-            ],
-        }
+        detected_risks = risks or ["입력 데이터 기준 주요 위험 신호 없음"]
+        score = 85 if not risks else max(45, 80 - len(risks) * 15)
+        next_week_plan = [
+            "월요일: 재고와 원가 점검",
+            "수요일: 고객 피드백 반영 프로모션 실행",
+            "금요일: 매출 구간별 리뷰와 다음 주 개선안 확정",
+        ]
+        data = self.agent_data(
+            position="창업 후에는 매출, 재고, 리뷰를 주간 단위로 다시 학습해야 합니다.",
+            evidence={
+                "average_weekly_sales_krw": avg_sales,
+                "sales_trend": trend,
+                "detected_risks": detected_risks,
+            },
+            score=score,
+            risks=detected_risks,
+            assumptions=["주간 매출/재고/고객 피드백 입력을 기준으로 운영 상태를 판단했습니다."],
+            missing_inputs=self._missing_inputs(request),
+            recommendation="다음 주 핵심 지표를 매출, 재고, 리뷰 3개로 제한해 추적하세요.",
+            payload={
+                "business_name": request.business_name,
+                "average_weekly_sales_krw": avg_sales,
+                "sales_trend": trend,
+                "detected_risks": detected_risks,
+                "recommended_actions": actions,
+                "next_week_plan": next_week_plan,
+            },
+        )
         fallback = "운영 데이터를 바탕으로 위험 신호와 다음 주 실행 계획을 정리했습니다."
         summary = await self.polish_summary(task="operation feedback", data=data, fallback=fallback)
 
@@ -59,3 +75,13 @@ class OperationAgent(BaseAgent):
             data=data,
             next_actions=actions[:4],
         )
+
+    def _missing_inputs(self, request: OperationRequest) -> list[str]:
+        missing = []
+        if not request.weekly_sales_krw:
+            missing.append("주간 매출")
+        if not request.inventory_notes:
+            missing.append("재고 메모")
+        if not request.customer_feedback:
+            missing.append("고객 피드백")
+        return missing

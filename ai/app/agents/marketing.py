@@ -11,26 +11,52 @@ class MarketingAgent(BaseAgent):
         target = request.target_customer or "동네 고객"
         place = request.place or "매장/팝업 현장"
         date = request.event_date or "이번 주"
-        data = {
-            "reels_hook": f"{target}이 놓치면 아쉬운 {request.product_name}, {date}에 만나요.",
-            "storyboard_15s": [
+        storyboard = [
                 "0-3초: 제품 클로즈업과 문제 상황 제시",
                 "4-8초: 만드는 과정 또는 차별점 노출",
                 "9-12초: 행사 혜택과 장소 안내",
                 "13-15초: 방문/예약 CTA",
-            ],
-            "caption": (
+        ]
+        caption = (
                 f"{place}에서 {request.product_name} 이벤트를 진행합니다. "
                 f"{request.brand_tone} 톤으로 오늘 바로 방문하고 싶게 만드는 혜택을 준비했어요."
-            ),
-            "hashtags": self._hashtags(request),
-            "upload_schedule": [
+        )
+        upload_schedule = [
                 {"when": "D-3", "content": "티저 릴스와 스토리 투표"},
                 {"when": "D-1", "content": "제품/혜택 상세 게시글"},
                 {"when": "D-day 오전", "content": "장소 안내와 방문 CTA"},
                 {"when": "D-day 저녁", "content": "현장 반응 리캡"},
-            ],
-        }
+        ]
+        missing_inputs = []
+        if request.target_customer is None:
+            missing_inputs.append("타깃 고객")
+        if request.event_date is None:
+            missing_inputs.append("행사 일정")
+        if request.place is None:
+            missing_inputs.append("장소")
+        data = self.agent_data(
+            position="초기 고객 반응은 SNS 콘텐츠 테스트로 빠르게 확인해야 합니다.",
+            evidence={
+                "reels_hook": f"{target}이 놓치면 아쉬운 {request.product_name}, {date}에 만나요.",
+                "upload_schedule": upload_schedule,
+            },
+            score=78 if missing_inputs else 90,
+            risks=["타깃/일정/장소가 모호하면 콘텐츠가 일반적인 문구로 흐를 수 있습니다."] if missing_inputs else [],
+            assumptions=[f"브랜드 톤은 '{request.brand_tone}'으로 적용했습니다."],
+            missing_inputs=missing_inputs,
+            recommendation="릴스 훅 1개와 게시글 1개를 먼저 테스트하고 저장수/문의수를 기록하세요.",
+            payload={
+                "reels_hook": f"{target}이 놓치면 아쉬운 {request.product_name}, {date}에 만나요.",
+                "storyboard_15s": storyboard,
+                "caption": caption,
+                "hashtags": self._hashtags(request),
+                "upload_schedule": upload_schedule,
+                "ab_test": [
+                    {"variant": "A", "focus": "혜택 강조", "copy": f"{request.product_name}, 이번 주 한정 혜택으로 만나보세요."},
+                    {"variant": "B", "focus": "문제 해결 강조", "copy": f"{target}의 고민을 {request.product_name}으로 가볍게 해결해보세요."},
+                ],
+            },
+        )
         fallback = "SNS 홍보용 릴스 훅, 15초 콘티, 게시글 문구, 업로드 일정을 생성했습니다."
         summary = await self.polish_summary(task="sns content generation", data=data, fallback=fallback)
 

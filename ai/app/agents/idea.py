@@ -62,10 +62,34 @@ class IdeaAgent(BaseAgent):
             candidates.insert(0, candidates.pop(1))
 
         selected = candidates[: request.count]
-        data = {
-            "recommendations": selected,
-            "ranking_basis": ["경험 적합도", "초기비용", "30일 실행 가능성", "지역 기회"],
-        }
+        top = selected[0]
+        risks = [str(top["risk"])]
+        missing_inputs = []
+        if not profile.region:
+            missing_inputs.append("지역")
+        if profile.budget_krw is None:
+            missing_inputs.append("초기 자금")
+        if not profile.experiences:
+            missing_inputs.append("경험")
+        data = self.agent_data(
+            position=f"{top['title']}이 현재 조건에서 가장 실행 가능성이 높습니다.",
+            evidence={
+                "top_idea": top,
+                "ranking_basis": ["경험 적합도", "초기비용", "30일 실행 가능성", "지역 기회"],
+            },
+            score=int(top["match_score"]),
+            risks=risks,
+            assumptions=[
+                f"초기 예산은 {budget:,}원으로 계산했습니다.",
+                "고객 검증 전에는 고정비를 최소화하는 실행안을 우선했습니다.",
+            ],
+            missing_inputs=missing_inputs,
+            recommendation=f"{top['title']}을 1순위로 두고 비용 시뮬레이션과 30일 체험을 실행하세요.",
+            payload={
+                "recommendations": selected,
+                "ranking_basis": ["경험 적합도", "초기비용", "30일 실행 가능성", "지역 기회"],
+            },
+        )
         fallback = f"{len(selected)}개의 창업 아이템을 실행 가능성 기준으로 추천했습니다."
         summary = await self.polish_summary(task="startup idea recommendation", data=data, fallback=fallback)
 
@@ -92,9 +116,18 @@ class IdeaAgent(BaseAgent):
         first_30_days: list[str],
     ) -> dict[str, object]:
         estimated_cost = min(max(int(budget * 0.75), 500_000), budget)
+        budget_fit = 90 if estimated_cost <= budget else 50
+        execution_fit = 85 if difficulty == "낮음" else 70
         return {
             "title": title,
             "match_score": score,
+            "score_breakdown": {
+                "experience_fit": score,
+                "budget_fit": budget_fit,
+                "execution_fit": execution_fit,
+                "local_opportunity": 80,
+                "policy_fit": 65,
+            },
             "difficulty": difficulty,
             "estimated_initial_cost_krw": estimated_cost,
             "reason": reason,

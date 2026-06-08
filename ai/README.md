@@ -42,6 +42,22 @@ $env:GMS_API_KEY_QUERY_PARAM="key"
 
 GMS Gemini `generateContent` 형식은 기본 지원한다. 호출 형식이 바뀌면 [docs/implementation_direction.md](docs/implementation_direction.md)의 `GMS 연동 지점`을 기준으로 `app/core/gms_client.py`만 수정하면 된다.
 
+## 에이전트 응답 구조
+
+모든 에이전트는 `AgentResponse.data` 안에 공통 판단 필드를 포함한다.
+
+```text
+position
+evidence
+score
+risks
+assumptions
+missing_inputs
+recommendation
+```
+
+상세 설명은 [docs/agent_contract.md](docs/agent_contract.md)를 참고한다.
+
 ## 예시 요청
 
 30일 게임형 창업 시뮬레이션 시작:

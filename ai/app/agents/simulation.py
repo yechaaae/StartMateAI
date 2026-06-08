@@ -378,20 +378,81 @@ class SimulationAgent(BaseAgent):
             ]
         else:
             next_actions = ["최종 리포트 기반으로 아이템 유지/수정/중단 여부 결정"]
-
-        return AgentResponse(
-            intent="simulation",
-            agent=self.name,
-            summary=summary,
-            data={
+        metrics = deepcopy(state["metrics"])
+        final_report = state.get("final_report")
+        risks = self._state_risks(metrics)
+        score = self._state_score(metrics, final_report)
+        data = self.agent_data(
+            position="30일 동안 선택 결과를 누적해 창업 아이템의 생존 가능성을 검증합니다.",
+            evidence={
+                "day": state["day"],
+                "metrics": metrics,
+                "current_event": state.get("current_event", {}).get("title") if state.get("current_event") else None,
+                "final_report": final_report,
+            },
+            score=score,
+            risks=risks,
+            assumptions=[
+                "선택지 효과와 랜덤 이벤트는 룰 엔진으로 계산합니다.",
+                "LLM은 현재 시뮬레이션 점수 계산에 관여하지 않습니다.",
+            ],
+            missing_inputs=[],
+            recommendation=self._simulation_recommendation(state, risks),
+            payload={
                 "session_id": state["session_id"],
                 "day": state["day"],
                 "status": state["status"],
                 "state": state_view,
                 "current_event": state.get("current_event"),
-                "metrics": deepcopy(state["metrics"]),
+                "metrics": metrics,
                 "history_tail": state["history"][-3:],
-                "final_report": state.get("final_report"),
+                "final_report": final_report,
             },
+        )
+
+        return AgentResponse(
+            intent="simulation",
+            agent=self.name,
+            summary=summary,
+            data=data,
             next_actions=next_actions,
         )
+
+    def _state_risks(self, metrics: dict[str, int]) -> list[str]:
+        risks = []
+        if metrics["cash_krw"] < 0:
+            risks.append("현금 부족")
+        if metrics["inventory_units"] < 10:
+            risks.append("재고 부족")
+        if metrics["fatigue"] >= 75:
+            risks.append("피로도 과다")
+        if metrics["risk"] >= 70:
+            risks.append("운영 리스크 높음")
+        if metrics["reputation"] <= 35:
+            risks.append("평판 저하")
+        return risks
+
+    def _state_score(self, metrics: dict[str, int], final_report: dict[str, Any] | None) -> int:
+        if final_report:
+            return max(0, min(100, int(final_report["score"] / 3)))
+        raw_score = (
+            metrics["cash_krw"] / 80_000
+            + metrics["total_revenue_krw"] / 60_000
+            + metrics["reputation"]
+            + metrics["marketing_power"] * 0.5
+            - metrics["risk"] * 0.7
+            - metrics["fatigue"] * 0.4
+        )
+        return max(0, min(100, int(raw_score)))
+
+    def _simulation_recommendation(self, state: dict[str, Any], risks: list[str]) -> str:
+        if state["status"] == "finished":
+            report = state.get("final_report", {})
+            return report.get("message", "최종 리포트를 기준으로 다음 전략을 결정하세요.")
+        if "현금 부족" in risks:
+            return "다음 선택에서는 비용 지출을 줄이고 현금 회복을 우선하세요."
+        if "피로도 과다" in risks:
+            return "휴식, 외주, 운영 단순화 선택지를 우선 고려하세요."
+        if "재고 부족" in risks:
+            return "수요가 유지된다면 재고 보충 또는 예약제로 전환하세요."
+        return "다음 이벤트에서 매출, 평판, 리스크 균형을 맞추는 선택을 하세요."

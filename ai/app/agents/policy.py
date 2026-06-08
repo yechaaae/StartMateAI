@@ -18,15 +18,33 @@ class PolicyAgent(BaseAgent):
             query=request.query or "",
             limit=request.limit,
         )
-        data = {
-            "matches": matches,
-            "checklist": [
+        checklist = [
                 "사업자 등록 여부 확인",
                 "나이/지역/창업단계 자격 확인",
                 "사업계획서와 개인정보 동의서 준비",
                 "마감일 기준 3일 전 제출 목표 설정",
-            ],
-        }
+        ]
+        top = matches[0] if matches else None
+        risks = ["현재 데이터는 샘플입니다. 실제 최신 공고 RAG 인덱스로 교체해야 합니다."]
+        missing_inputs = []
+        if not request.profile.region:
+            missing_inputs.append("지역")
+        if not request.profile.startup_stage:
+            missing_inputs.append("창업 단계")
+        data = self.agent_data(
+            position="초기 비용 부담은 지원사업 매칭으로 낮출 수 있습니다.",
+            evidence=top or "매칭 후보 없음",
+            score=int(top.get("eligibility_score", 0)) if top else 0,
+            risks=risks,
+            assumptions=["지원사업 데이터는 샘플 JSON 기준입니다.", "마감일과 자격 요건은 실제 공고에서 재확인해야 합니다."],
+            missing_inputs=missing_inputs,
+            recommendation="상위 공고의 신청 가능성을 확인하고 사업계획서 초안을 준비하세요.",
+            payload={
+                "matches": matches,
+                "checklist": checklist,
+                "top_policy": top,
+            },
+        )
         fallback = f"사용자 조건에 맞는 지원사업 후보 {len(matches)}개를 찾았습니다."
         summary = await self.polish_summary(task="support program matching", data=data, fallback=fallback)
 
@@ -34,7 +52,7 @@ class PolicyAgent(BaseAgent):
             Source(title=item["title"], url=item.get("url"), note=item.get("source_note"))
             for item in matches
         ]
-        warnings = ["현재 데이터는 샘플입니다. 실제 서비스에서는 최신 공고 RAG 인덱스로 교체해야 합니다."]
+        warnings = risks
 
         return AgentResponse(
             intent="policy",

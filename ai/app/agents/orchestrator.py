@@ -169,6 +169,14 @@ class OrchestratorAgent:
             "finance": finance.data,
             "marketing": marketing.data,
             "operation": operation.data,
+            "agent_contracts": [
+                self._contract_summary(profile),
+                self._contract_summary(ideas),
+                self._contract_summary(policies),
+                self._contract_summary(finance),
+                self._contract_summary(marketing),
+                self._contract_summary(operation),
+            ],
             "debate": self._build_debate(profile, ideas, policies, finance, marketing, operation),
             "recommended_flow": [
                 "프로필 제약조건 확정",
@@ -202,6 +210,32 @@ class OrchestratorAgent:
             return recommendations[0]
         return {"title": "창업 아이템", "match_score": 0, "difficulty": "확인 필요"}
 
+    def _contract_summary(self, response: AgentResponse) -> dict[str, object]:
+        return {
+            "agent": response.agent,
+            "position": response.data.get("position"),
+            "score": response.data.get("score"),
+            "risks": response.data.get("risks", []),
+            "missing_inputs": response.data.get("missing_inputs", []),
+            "recommendation": response.data.get("recommendation"),
+        }
+
+    def _debate_item(
+        self,
+        response: AgentResponse,
+        *,
+        fallback_position: str,
+        fallback_evidence: object,
+    ) -> dict[str, object]:
+        return {
+            "agent": response.agent,
+            "position": response.data.get("position", fallback_position),
+            "evidence": response.data.get("evidence", fallback_evidence),
+            "score": response.data.get("score"),
+            "risks": response.data.get("risks", []),
+            "recommendation": response.data.get("recommendation"),
+        }
+
     def _build_debate(
         self,
         profile: AgentResponse,
@@ -219,40 +253,40 @@ class OrchestratorAgent:
 
         return {
             "agent_positions": [
-                {
-                    "agent": profile.agent,
-                    "position": "사용자 조건과 제약을 먼저 고정해야 추천 품질이 올라간다.",
-                    "evidence": profile.data.get("constraints", []),
-                },
-                {
-                    "agent": ideas.agent,
-                    "position": f"{selected_name}이 현재 조건에서 가장 실행 가능성이 높다.",
-                    "evidence": selected,
-                },
-                {
-                    "agent": policies.agent,
-                    "position": "초기 비용 부담은 지원사업 매칭으로 낮출 수 있다.",
-                    "evidence": top_policy,
-                },
-                {
-                    "agent": finance.agent,
-                    "position": "고정비와 손익분기 판매량이 핵심 검증 포인트다.",
-                    "evidence": {
+                self._debate_item(
+                    profile,
+                    fallback_position="사용자 조건과 제약을 먼저 고정해야 추천 품질이 올라갑니다.",
+                    fallback_evidence=profile.data.get("constraints", []),
+                ),
+                self._debate_item(
+                    ideas,
+                    fallback_position=f"{selected_name}이 현재 조건에서 가장 실행 가능성이 높습니다.",
+                    fallback_evidence=selected,
+                ),
+                self._debate_item(
+                    policies,
+                    fallback_position="초기 비용 부담은 지원사업 매칭으로 낮출 수 있습니다.",
+                    fallback_evidence=top_policy,
+                ),
+                self._debate_item(
+                    finance,
+                    fallback_position="고정비와 손익분기 판매량이 핵심 검증 포인트입니다.",
+                    fallback_evidence={
                         "initial_cash_needed_krw": finance_data.get("initial_cash_needed_krw"),
                         "break_even_units_per_day": finance_data.get("break_even_units_per_day"),
                         "risk_grade": finance_data.get("risk_grade"),
                     },
-                },
-                {
-                    "agent": marketing.agent,
-                    "position": "초기 고객 반응은 SNS 콘텐츠 테스트로 빠르게 확인한다.",
-                    "evidence": marketing.data.get("upload_schedule", []),
-                },
-                {
-                    "agent": operation.agent,
-                    "position": "창업 후에는 매출, 재고, 리뷰를 주간 단위로 다시 학습해야 한다.",
-                    "evidence": operation.data.get("next_week_plan", []),
-                },
+                ),
+                self._debate_item(
+                    marketing,
+                    fallback_position="초기 고객 반응은 SNS 콘텐츠 테스트로 빠르게 확인해야 합니다.",
+                    fallback_evidence=marketing.data.get("upload_schedule", []),
+                ),
+                self._debate_item(
+                    operation,
+                    fallback_position="창업 후에는 매출, 재고, 리뷰를 주간 단위로 다시 학습해야 합니다.",
+                    fallback_evidence=operation.data.get("next_week_plan", []),
+                ),
             ],
             "conflicts": [
                 {

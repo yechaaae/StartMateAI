@@ -8,9 +8,35 @@ from app.core.gms_client import GMSClient
 
 class BaseAgent:
     name = "base"
+    contract_version = "1.0"
 
     def __init__(self, llm: GMSClient):
         self.llm = llm
+
+    def agent_data(
+        self,
+        *,
+        position: str,
+        evidence: Any,
+        score: int,
+        risks: list[str] | None,
+        assumptions: list[str] | None,
+        missing_inputs: list[str] | None,
+        recommendation: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        data = {
+            "agent_contract_version": self.contract_version,
+            "position": position,
+            "evidence": evidence,
+            "score": max(0, min(100, score)),
+            "risks": risks or [],
+            "assumptions": assumptions or [],
+            "missing_inputs": missing_inputs or [],
+            "recommendation": recommendation,
+        }
+        data.update(payload or {})
+        return data
 
     async def polish_summary(self, *, task: str, data: dict[str, Any], fallback: str) -> str:
         if not self.llm.is_enabled:

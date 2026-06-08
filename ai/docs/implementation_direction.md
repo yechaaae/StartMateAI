@@ -22,6 +22,18 @@ PDF 기획서 기준 AI 파트는 `Orchestrator Agent`가 사용자 의도를 �
 
 마지막으로 `OrchestratorAgent`가 각 에이전트의 입장, 충돌 지점, 최종 결정을 `debate` 필드로 통합한다.
 
+모든 에이전트는 공통 출력 계약을 따른다. 상세 구조는 [agent_contract.md](agent_contract.md)를 참고한다.
+
+```text
+position
+evidence
+score
+risks
+assumptions
+missing_inputs
+recommendation
+```
+
 ## 2. API 설계
 
 프론트는 단일 라우팅 API와 기능별 API 중 편한 것을 쓰면 된다.
@@ -106,3 +118,14 @@ PDF 기획서 기준 AI 파트는 `Orchestrator Agent`가 사용자 의도를 �
 발표에서는 `/ai/chat` 응답의 `data.rounds`, `data.debate.agent_positions`, `data.debate.conflicts`, `data.debate.orchestrator_decision`을 보여주면 멀티에이전트 협업 구조가 잘 드러난다.
 
 30일 창업 체험은 `SimulationAgent`를 사용한다. 프론트는 `start` 응답의 `current_event.choices`를 카드/버튼으로 보여주고, 선택한 `choice_id`를 `choose` API로 보내면 된다. 매 선택마다 현금, 총매출, 재고, 평판, 고객 수, 피로도, 리스크, 홍보력이 갱신된다. 30일이 지나면 `final_report`에 점수와 등급이 반환된다.
+
+## 6. 다음 고도화 순서
+
+1. `PolicyAgent`: 실제 공고 JSON 수집 후 keyword scoring 강화, 이후 embedding RAG로 확장
+2. `SimulationAgent`: 업종별 이벤트 확률, 장기 효과, 엔딩 다양화
+3. `FinanceAgent`: 업종별 비용 템플릿과 what-if 시나리오 강화
+4. `IdeaAgent`: `PolicyAgent`, `FinanceAgent`, `SimulationAgent` 점수를 반영한 통합 추천 점수화
+5. `MarketingAgent`: GMS로 업종/이벤트별 콘텐츠 문구 생성
+6. `OperationAgent`: 주간 리포트와 위험 신호 탐지 강화
+7. `ProfileAgent`: 누락 정보 질문과 창업 성향 태그 강화
+8. `OrchestratorAgent`: 2차 재토론 라운드와 최종 합의 근거 강화
