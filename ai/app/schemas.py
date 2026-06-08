@@ -54,6 +54,12 @@ class ChatRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
 
 
+class LLMChatRequest(BaseModel):
+    message: str
+    system_prompt: str = "You are a helpful Korean startup assistant. Answer concisely."
+    temperature: float = Field(default=0.3, ge=0, le=2)
+
+
 class ProfileRequest(BaseModel):
     profile: StartupProfile
     question: str | None = None

@@ -85,6 +85,8 @@ class OrchestratorAgent:
 
     def _detect_intent(self, message: str) -> str:
         text = message.lower()
+        if any(keyword in text for keyword in ["협업", "토론", "전체", "로드맵", "상담", "시작"]):
+            return "collaboration"
         if any(keyword in text for keyword in ["지원사업", "공고", "정책", "서류", "마감"]):
             return "policy"
         if any(keyword in text for keyword in ["아이템", "추천", "창업 뭐", "무슨 창업"]):
@@ -99,8 +101,6 @@ class OrchestratorAgent:
             return "marketing"
         if any(keyword in text for keyword in ["프로필", "분석", "강점", "조건"]):
             return "profile"
-        if any(keyword in text for keyword in ["협업", "토론", "전체", "로드맵", "상담", "시작"]):
-            return "collaboration"
         return "collaboration"
 
     def _simulation_start_request(self, request: ChatRequest) -> SimulationStartRequest:
@@ -252,6 +252,33 @@ class OrchestratorAgent:
         top_policy = policy_matches[0]["title"] if policy_matches else "지원사업 후보 없음"
 
         return {
+            "process": [
+                {
+                    "step": "1차 의견 수집",
+                    "description": "ProfileAgent, IdeaAgent, PolicyAgent가 동시에 사용자 조건, 아이템 후보, 지원사업 가능성을 검토합니다.",
+                    "agents": ["ProfileAgent", "IdeaAgent", "PolicyAgent"],
+                },
+                {
+                    "step": "후보 압축",
+                    "description": f"IdeaAgent의 1순위 후보인 {selected_name}을 기준 아이템으로 선택합니다.",
+                    "agents": ["OrchestratorAgent", "IdeaAgent"],
+                },
+                {
+                    "step": "2차 검증",
+                    "description": "FinanceAgent, MarketingAgent, OperationAgent가 기준 아이템의 비용, 홍보, 운영 리스크를 동시에 검증합니다.",
+                    "agents": ["FinanceAgent", "MarketingAgent", "OperationAgent"],
+                },
+                {
+                    "step": "충돌 조정",
+                    "description": "추천 매력도와 초기 현금 부담, 지원사업 준비와 빠른 시장 검증 사이의 충돌을 조정합니다.",
+                    "agents": ["OrchestratorAgent"],
+                },
+                {
+                    "step": "최종 합의",
+                    "description": f"{selected_name}을 1순위로 두고 비용 검증, 지원사업 매칭, SNS 반응 테스트를 병렬 실행하는 전략으로 합의합니다.",
+                    "agents": ["OrchestratorAgent"],
+                },
+            ],
             "agent_positions": [
                 self._debate_item(
                     profile,
