@@ -38,3 +38,4 @@ out/
 
 !application.example.yml
 application.*.yml
+application.yml
