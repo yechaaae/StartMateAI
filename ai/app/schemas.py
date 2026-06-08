@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+
+IntentName = Literal[
+    "auto",
+    "profile",
+    "idea",
+    "policy",
+    "finance",
+    "operation",
+    "marketing",
+    "collaboration",
+    "roadmap",
+]
+
+
+class StartupProfile(BaseModel):
+    major: str | None = None
+    experiences: list[str] = Field(default_factory=list)
+    region: str | None = None
+    budget_krw: int | None = None
+    interests: list[str] = Field(default_factory=list)
+    preferred_channels: list[str] = Field(default_factory=list)
+    startup_stage: str = "예비창업"
+    risk_tolerance: Literal["low", "medium", "high"] = "medium"
+    memo: str | None = None
+
+
+class Source(BaseModel):
+    title: str
+    url: str | None = None
+    note: str | None = None
+
+
+class AgentResponse(BaseModel):
+    intent: str
+    agent: str
+    summary: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    next_actions: list[str] = Field(default_factory=list)
+    sources: list[Source] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ChatRequest(BaseModel):
+    message: str
+    profile: StartupProfile = Field(default_factory=StartupProfile)
+    intent: IntentName = "auto"
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProfileRequest(BaseModel):
+    profile: StartupProfile
+    question: str | None = None
+
+
+class IdeaRequest(BaseModel):
+    profile: StartupProfile
+    count: int = Field(default=3, ge=1, le=5)
+
+
+class PolicyRequest(BaseModel):
+    profile: StartupProfile
+    query: str | None = None
+    limit: int = Field(default=5, ge=1, le=10)
+
+
+class FinanceAssumption(BaseModel):
+    item_name: str = "소자본 창업 아이템"
+    rent_krw_per_month: int = 2_000_000
+    equipment_krw: int = 2_000_000
+    initial_inventory_krw: int = 1_000_000
+    marketing_krw_per_month: int = 500_000
+    other_fixed_cost_krw_per_month: int = 500_000
+    price_per_unit_krw: int = 8_000
+    expected_daily_customers: int = 40
+    variable_cost_rate: float = Field(default=0.35, ge=0, le=1)
+    operating_days_per_month: int = Field(default=26, ge=1, le=31)
+
+
+class FinanceRequest(BaseModel):
+    profile: StartupProfile = Field(default_factory=StartupProfile)
+    assumption: FinanceAssumption = Field(default_factory=FinanceAssumption)
+
+
+class OperationMetric(BaseModel):
+    name: str
+    value: float
+    unit: str | None = None
+    memo: str | None = None
+
+
+class OperationRequest(BaseModel):
+    profile: StartupProfile = Field(default_factory=StartupProfile)
+    business_name: str = "테스트 매장"
+    weekly_sales_krw: list[int] = Field(default_factory=list)
+    inventory_notes: list[str] = Field(default_factory=list)
+    customer_feedback: list[str] = Field(default_factory=list)
+    metrics: list[OperationMetric] = Field(default_factory=list)
+
+
+class MarketingRequest(BaseModel):
+    profile: StartupProfile = Field(default_factory=StartupProfile)
+    product_name: str
+    event_date: str | None = None
+    target_customer: str | None = None
+    place: str | None = None
+    brand_tone: str = "친근하고 실행력 있는"
+    goal: str = "방문과 문의를 늘리기"

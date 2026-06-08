@@ -1,0 +1,82 @@
+# StartMate AI
+
+AI 기반 맞춤형 창업 실행 파트너의 멀티에이전트 API 서버 골격이다.
+
+`/ai/chat`의 넓은 상담 요청은 여러 에이전트가 병렬로 의견을 내고, Orchestrator가 충돌 지점과 최종 결정을 `debate`로 통합한다.
+
+## 실행
+
+```powershell
+cd c:\ssafy\해커톤\ai
+py -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+.\.venv\Scripts\python -m uvicorn app.main:app --reload --port 8001
+```
+
+Swagger 문서:
+
+```text
+http://127.0.0.1:8001/docs
+```
+
+## GMS 설정
+
+처음에는 mock 모드로 동작한다. 실제 GMS API를 붙일 때는 `.env`에 값을 넣고 `USE_MOCK_LLM=false`로 바꾼다.
+
+```powershell
+$env:USE_MOCK_LLM="false"
+$env:GMS_API_KEY="..."
+$env:GMS_BASE_URL="https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com"
+$env:GMS_CHAT_PATH="/v1beta/models/gemini-2.5-flash:generateContent"
+$env:GMS_MODEL="gemini-2.5-flash"
+$env:GMS_API_KEY_HEADER="x-goog-api-key"
+```
+
+만약 GMS 안내가 쿼리스트링 `key=$GMS_KEY` 방식을 요구하면 아래처럼 헤더를 비우고 query param을 켠다.
+
+```powershell
+$env:GMS_API_KEY_HEADER=""
+$env:GMS_API_KEY_QUERY_PARAM="key"
+```
+
+GMS Gemini `generateContent` 형식은 기본 지원한다. 호출 형식이 바뀌면 [docs/implementation_direction.md](docs/implementation_direction.md)의 `GMS 연동 지점`을 기준으로 `app/core/gms_client.py`만 수정하면 된다.
+
+## 예시 요청
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8001/ai/chat `
+  -ContentType "application/json" `
+  -Body '{
+    "message": "부산에서 소자본으로 가능한 창업 아이템 추천해줘",
+    "profile": {
+      "major": "디자인",
+      "experiences": ["카페 알바", "SNS 콘텐츠 제작"],
+      "region": "부산",
+      "budget_krw": 3000000,
+      "interests": ["브랜딩", "카페", "로컬"],
+      "preferred_channels": ["오프라인", "SNS"],
+      "startup_stage": "예비창업",
+      "risk_tolerance": "low"
+    }
+  }'
+```
+
+## 구조
+
+```text
+app/
+  api/routes.py              # FastAPI 엔드포인트
+  agents/orchestrator.py     # 의도 분석, 병렬 에이전트 협업, 결과 통합
+  agents/profile.py          # 사용자 조건 분석
+  agents/idea.py             # 창업 아이템 추천
+  agents/policy.py           # 지원사업 매칭
+  agents/finance.py          # 비용/매출/손익분기점 계산
+  agents/operation.py        # 운영 피드백
+  agents/marketing.py        # SNS 콘텐츠 생성
+  core/gms_client.py         # GMS API 어댑터
+  rag/retriever.py           # 지원사업 검색 골격
+  data/support_programs.sample.json
+```

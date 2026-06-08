@@ -1,0 +1,1 @@
+"""StartMate AI service package."""
