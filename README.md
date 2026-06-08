@@ -20,3 +20,16 @@ Production build:
 cd frontend
 npm run build
 ```
+
+## Docker Compose
+
+Build and run both services:
+
+```bash
+docker compose up --build
+```
+
+Services:
+
+- Frontend: `http://localhost`
+- Backend: `http://localhost:8080`
