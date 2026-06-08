@@ -35,7 +35,11 @@ router = APIRouter()
 
 settings = get_settings()
 llm = GMSClient(settings)
-retriever = SupportProgramRetriever.from_default()
+retriever = SupportProgramRetriever.from_default(
+    retrieval_mode=settings.rag_retrieval_mode,
+    vector_store_path=settings.rag_vector_store_path or None,
+    embedding_dimensions=settings.rag_embedding_dimensions,
+)
 
 profile_agent = ProfileAgent(llm)
 idea_agent = IdeaAgent(llm)
@@ -64,6 +68,8 @@ async def health() -> dict[str, str | bool]:
         "service": settings.app_name,
         "mock_llm": settings.use_mock_llm,
         "gms_configured": llm.is_configured,
+        "rag_retrieval_mode": retriever.retrieval_mode,
+        "rag_vector_store": retriever.vector_store is not None,
     }
 
 
@@ -154,12 +160,18 @@ async def _multi_agent_event_stream(request: ChatRequest) -> AsyncIterator[str]:
 
     top_idea = orchestrator._pick_top_idea(round1["IdeaAgent"])
     top_idea_name = str(top_idea.get("title", "창업 아이템"))
+    round1_synthesis = orchestrator._build_round1_synthesis(
+        round1["ProfileAgent"],
+        round1["IdeaAgent"],
+        round1["PolicyAgent"],
+    )
     yield event(
         "orchestrator_step",
         {
             "step": "후보 압축",
             "message": f"IdeaAgent의 1순위 후보인 {top_idea_name}을 기준 아이템으로 선택했습니다.",
             "selected_idea": top_idea,
+            "round1_synthesis": round1_synthesis,
         },
     )
 
@@ -253,6 +265,7 @@ async def _multi_agent_event_stream(request: ChatRequest) -> AsyncIterator[str]:
             },
         ],
         "selected_idea": top_idea,
+        "round1_synthesis": round1_synthesis,
         "profile": profile.data,
         "ideas": ideas.data.get("recommendations", []),
         "policies": policies.data.get("matches", []),

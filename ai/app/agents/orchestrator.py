@@ -126,6 +126,7 @@ class OrchestratorAgent:
 
         top_idea = self._pick_top_idea(ideas)
         top_idea_name = str(top_idea.get("title", "창업 아이템"))
+        round1_synthesis = self._build_round1_synthesis(profile, ideas, policies)
 
         finance_task = self.finance_agent.run(
             FinanceRequest(
@@ -163,6 +164,7 @@ class OrchestratorAgent:
                 },
             ],
             "selected_idea": top_idea,
+            "round1_synthesis": round1_synthesis,
             "profile": profile.data,
             "ideas": ideas.data.get("recommendations", []),
             "policies": policies.data.get("matches", []),
@@ -209,6 +211,162 @@ class OrchestratorAgent:
         if recommendations:
             return recommendations[0]
         return {"title": "창업 아이템", "match_score": 0, "difficulty": "확인 필요"}
+
+    def _pick_top_policy(self, policies: AgentResponse) -> dict[str, object] | None:
+        matches = policies.data.get("matches", [])
+        if matches:
+            return matches[0]
+        return None
+
+    def _build_round1_synthesis(
+        self,
+        profile: AgentResponse,
+        ideas: AgentResponse,
+        policies: AgentResponse,
+    ) -> dict[str, object]:
+        top_idea = self._pick_top_idea(ideas)
+        top_policy = self._pick_top_policy(policies)
+        profile_summary = profile.data.get("profile_summary", {})
+        idea_score = int(top_idea.get("match_score", 0))
+        policy_score = int(top_policy.get("eligibility_score", 0)) if top_policy else 0
+
+        missing_inputs = self._unique(
+            [
+                *profile.data.get("missing_inputs", []),
+                *ideas.data.get("missing_inputs", []),
+                *policies.data.get("missing_inputs", []),
+            ]
+        )
+        tensions = self._round1_tensions(profile, top_idea, top_policy)
+        top_policy_title = top_policy.get("title") if top_policy else "지원사업 후보 없음"
+
+        return {
+            "round": 1,
+            "purpose": "사용자 조건, 아이템 후보, 지원사업 가능성을 동시에 검토하고 2라운드 검증 대상을 정합니다.",
+            "selected_direction": {
+                "idea_title": top_idea.get("title"),
+                "policy_title": top_policy_title,
+                "decision": f"{top_idea.get('title')}을 기준 아이템으로 잡고 {top_policy_title} 매칭 가능성을 함께 확인합니다.",
+            },
+            "agent_votes": [
+                {
+                    "agent": profile.agent,
+                    "vote": profile.data.get("recommendation"),
+                    "score": profile.data.get("score"),
+                    "basis": profile.data.get("position"),
+                },
+                {
+                    "agent": ideas.agent,
+                    "vote": top_idea.get("title"),
+                    "score": idea_score,
+                    "basis": top_idea.get("why_recommended", []),
+                },
+                {
+                    "agent": policies.agent,
+                    "vote": top_policy_title,
+                    "score": policy_score,
+                    "basis": top_policy.get("why_matched", []) if top_policy else [],
+                },
+            ],
+            "profile_snapshot": {
+                "user_type": profile_summary.get("user_type"),
+                "budget_krw": profile_summary.get("budget_krw"),
+                "risk_tolerance": profile_summary.get("risk_tolerance"),
+                "capability_tags": profile_summary.get("capability_tags", []),
+            },
+            "top_idea": {
+                "title": top_idea.get("title"),
+                "match_score": idea_score,
+                "score_breakdown": top_idea.get("score_breakdown", {}),
+                "matched_keywords": top_idea.get("matched_keywords", []),
+                "why_recommended": top_idea.get("why_recommended", []),
+                "first_30_days": top_idea.get("first_30_days", []),
+                "risks": top_idea.get("risks", []),
+            },
+            "top_policy": self._round1_policy_snapshot(top_policy),
+            "round1_scores": {
+                "ProfileAgent": profile.data.get("score"),
+                "IdeaAgent": idea_score,
+                "PolicyAgent": policy_score,
+            },
+            "agreement": [
+                "ProfileAgent는 소자본/저위험 조건상 고정비가 낮은 검증형 아이템을 우선해야 한다고 봅니다.",
+                f"IdeaAgent는 {top_idea.get('title')}의 경험/관심/채널 적합도가 가장 높다고 봅니다.",
+                f"PolicyAgent는 {top_policy_title}을 통해 초기 비용 부담을 낮출 가능성을 봅니다.",
+            ],
+            "tensions": tensions,
+            "missing_inputs": missing_inputs,
+            "handoff_to_round2": [
+                "FinanceAgent가 기준 아이템의 초기 현금 필요액과 손익분기점을 검증합니다.",
+                "MarketingAgent가 SNS 반응 테스트용 메시지와 업로드 일정을 만듭니다.",
+                "OperationAgent가 30일 테스트 이후 추적할 운영 지표를 정리합니다.",
+            ],
+        }
+
+    def _round1_policy_snapshot(self, top_policy: dict[str, object] | None) -> dict[str, object] | None:
+        if not top_policy:
+            return None
+        return {
+            "title": top_policy.get("title"),
+            "eligibility_score": top_policy.get("eligibility_score"),
+            "fit_level": top_policy.get("fit_level"),
+            "score_breakdown": top_policy.get("score_breakdown", {}),
+            "retrieval": top_policy.get("retrieval", {}),
+            "source_chunks": top_policy.get("source_chunks", []),
+            "matched_keywords": top_policy.get("matched_keywords", []),
+            "why_matched": top_policy.get("why_matched", []),
+            "eligibility_gaps": top_policy.get("eligibility_gaps", []),
+            "required_documents": top_policy.get("required_documents", []),
+            "application_strategy": top_policy.get("application_strategy", []),
+        }
+
+    def _round1_tensions(
+        self,
+        profile: AgentResponse,
+        top_idea: dict[str, object],
+        top_policy: dict[str, object] | None,
+    ) -> list[dict[str, object]]:
+        tensions: list[dict[str, object]] = []
+        budget_fit = int(top_idea.get("score_breakdown", {}).get("budget_fit", 100))
+        if budget_fit < 75:
+            tensions.append(
+                {
+                    "issue": "아이디어 매력도는 높지만 초기 예산 적합도가 낮습니다.",
+                    "resolution": "2라운드 FinanceAgent가 임대/재고 없는 30일 테스트 비용으로 다시 검증합니다.",
+                }
+            )
+        policy_gaps = top_policy.get("eligibility_gaps", []) if top_policy else []
+        if policy_gaps:
+            tensions.append(
+                {
+                    "issue": "지원사업 후보는 있지만 자격/서류 확인 항목이 남아 있습니다.",
+                    "resolution": "사업계획서 초안과 지역/활동 증빙을 먼저 준비하고 실제 공고에서 마감일을 재확인합니다.",
+                    "gaps": policy_gaps[:3],
+                }
+            )
+        if profile.data.get("risks"):
+            tensions.append(
+                {
+                    "issue": "사용자 제약조건이 아이템 선택 폭을 줄입니다.",
+                    "resolution": "저비용 검증, 선주문, 포트폴리오형 서비스처럼 고정비를 미루는 방식으로 시작합니다.",
+                }
+            )
+        return tensions or [
+            {
+                "issue": "Round 1 에이전트 간 큰 충돌 없음",
+                "resolution": "선정 아이템을 바로 2라운드 실행 검증으로 넘깁니다.",
+            }
+        ]
+
+    def _unique(self, values: list[object]) -> list[str]:
+        seen = set()
+        result: list[str] = []
+        for value in values:
+            item = str(value).strip()
+            if item and item not in seen:
+                seen.add(item)
+                result.append(item)
+        return result
 
     def _contract_summary(self, response: AgentResponse) -> dict[str, object]:
         return {

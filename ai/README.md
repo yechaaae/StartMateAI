@@ -42,6 +42,18 @@ $env:GMS_API_KEY_QUERY_PARAM="key"
 
 GMS Gemini `generateContent` 형식은 기본 지원한다. 호출 형식이 바뀌면 [docs/implementation_direction.md](docs/implementation_direction.md)의 `GMS 연동 지점`을 기준으로 `app/core/gms_client.py`만 수정하면 된다.
 
+## RAG 설정
+
+지원사업 매칭은 vector retrieval을 붙일 수 있는 구조로 되어 있다. 현재는 외부 Vector DB 대신 로컬 `LocalVectorStore`와 hash embedding을 사용하고, 나중에 Chroma/FAISS/GMS embedding 구현으로 교체하면 된다.
+
+```powershell
+$env:RAG_RETRIEVAL_MODE="hybrid"  # keyword, vector, hybrid
+$env:RAG_VECTOR_STORE_PATH=".rag_index/support_programs.vector.json"
+$env:RAG_EMBEDDING_DIMENSIONS="384"
+```
+
+`/health`에서 `rag_retrieval_mode`, `rag_vector_store` 값을 확인할 수 있다.
+
 ## 에이전트 응답 구조
 
 모든 에이전트는 `AgentResponse.data` 안에 공통 판단 필드를 포함한다.
@@ -128,6 +140,8 @@ app/
   agents/operation.py        # 운영 피드백
   agents/marketing.py        # SNS 콘텐츠 생성
   core/gms_client.py         # GMS API 어댑터
-  rag/retriever.py           # 지원사업 검색 골격
+  rag/embeddings.py          # 임베딩 provider 인터페이스와 로컬 hash embedding
+  rag/vector_store.py        # 로컬 vector store 인터페이스
+  rag/retriever.py           # 지원사업 hybrid RAG 검색
   data/support_programs.sample.json
 ```

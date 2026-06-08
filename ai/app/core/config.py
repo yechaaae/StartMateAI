@@ -21,6 +21,9 @@ def _env_bool(name: str, default: bool) -> bool:
 class Settings:
     app_name: str
     use_mock_llm: bool
+    rag_retrieval_mode: str
+    rag_vector_store_path: str
+    rag_embedding_dimensions: int
     gms_api_key: str
     gms_base_url: str
     gms_chat_path: str
@@ -38,6 +41,9 @@ def get_settings() -> Settings:
     return Settings(
         app_name=os.getenv("APP_NAME", "StartMate AI"),
         use_mock_llm=_env_bool("USE_MOCK_LLM", default=not bool(api_key and base_url)),
+        rag_retrieval_mode=os.getenv("RAG_RETRIEVAL_MODE", "hybrid").strip().lower(),
+        rag_vector_store_path=os.getenv("RAG_VECTOR_STORE_PATH", ""),
+        rag_embedding_dimensions=int(os.getenv("RAG_EMBEDDING_DIMENSIONS", "384")),
         gms_api_key=api_key,
         gms_base_url=base_url or "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com",
         gms_chat_path=os.getenv("GMS_CHAT_PATH", "/v1beta/models/gemini-2.5-flash:generateContent"),
