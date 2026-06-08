@@ -11,6 +11,7 @@ IntentName = Literal[
     "idea",
     "policy",
     "finance",
+    "simulation",
     "operation",
     "marketing",
     "collaboration",
@@ -85,6 +86,19 @@ class FinanceAssumption(BaseModel):
 class FinanceRequest(BaseModel):
     profile: StartupProfile = Field(default_factory=StartupProfile)
     assumption: FinanceAssumption = Field(default_factory=FinanceAssumption)
+
+
+class SimulationStartRequest(BaseModel):
+    profile: StartupProfile = Field(default_factory=StartupProfile)
+    item_name: str = "로컬 SNS 콘텐츠 스튜디오"
+    business_type: Literal["cafe", "commerce", "content", "popup", "service"] = "content"
+    difficulty: Literal["easy", "normal", "hard"] = "normal"
+    seed: int | None = None
+
+
+class SimulationChoiceRequest(BaseModel):
+    session_id: str
+    choice_id: str
 
 
 class OperationMetric(BaseModel):

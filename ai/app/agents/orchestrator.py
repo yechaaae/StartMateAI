@@ -8,6 +8,7 @@ from app.agents.marketing import MarketingAgent
 from app.agents.operation import OperationAgent
 from app.agents.policy import PolicyAgent
 from app.agents.profile import ProfileAgent
+from app.agents.simulation import SimulationAgent
 from app.schemas import (
     AgentResponse,
     FinanceAssumption,
@@ -18,6 +19,7 @@ from app.schemas import (
     OperationRequest,
     PolicyRequest,
     ProfileRequest,
+    SimulationStartRequest,
 )
 
 
@@ -33,6 +35,7 @@ class OrchestratorAgent:
         finance_agent: FinanceAgent,
         operation_agent: OperationAgent,
         marketing_agent: MarketingAgent,
+        simulation_agent: SimulationAgent,
     ):
         self.profile_agent = profile_agent
         self.idea_agent = idea_agent
@@ -40,6 +43,7 @@ class OrchestratorAgent:
         self.finance_agent = finance_agent
         self.operation_agent = operation_agent
         self.marketing_agent = marketing_agent
+        self.simulation_agent = simulation_agent
 
     async def run(self, request: ChatRequest) -> AgentResponse:
         intent = request.intent if request.intent != "auto" else self._detect_intent(request.message)
@@ -68,6 +72,8 @@ class OrchestratorAgent:
                     goal=request.message,
                 )
             )
+        elif intent == "simulation":
+            result = self.simulation_agent.start(self._simulation_start_request(request))
         elif intent in {"collaboration", "roadmap"}:
             result = await self._collaborative_consultation(request)
         else:
@@ -83,6 +89,8 @@ class OrchestratorAgent:
             return "policy"
         if any(keyword in text for keyword in ["아이템", "추천", "창업 뭐", "무슨 창업"]):
             return "idea"
+        if any(keyword in text for keyword in ["게임", "체험", "선택지", "30일", "이벤트"]):
+            return "simulation"
         if any(keyword in text for keyword in ["비용", "매출", "손익", "시뮬레이션", "bep"]):
             return "finance"
         if any(keyword in text for keyword in ["운영", "재고", "리뷰", "피드백", "매장"]):
@@ -94,6 +102,21 @@ class OrchestratorAgent:
         if any(keyword in text for keyword in ["협업", "토론", "전체", "로드맵", "상담", "시작"]):
             return "collaboration"
         return "collaboration"
+
+    def _simulation_start_request(self, request: ChatRequest) -> SimulationStartRequest:
+        business_type = request.context.get("business_type", "content")
+        if business_type not in {"cafe", "commerce", "content", "popup", "service"}:
+            business_type = "content"
+        difficulty = request.context.get("difficulty", "normal")
+        if difficulty not in {"easy", "normal", "hard"}:
+            difficulty = "normal"
+        return SimulationStartRequest(
+            profile=request.profile,
+            item_name=request.context.get("item_name", "로컬 SNS 콘텐츠 스튜디오"),
+            business_type=business_type,
+            difficulty=difficulty,
+            seed=request.context.get("seed"),
+        )
 
     async def _collaborative_consultation(self, request: ChatRequest) -> AgentResponse:
         profile_task = self.profile_agent.run(ProfileRequest(profile=request.profile, question=request.message))

@@ -8,6 +8,7 @@ PDF 기획서 기준 AI 파트는 `Orchestrator Agent`가 사용자 의도를 �
 - `IdeaAgent`: 창업 아이템 3~5개 추천
 - `PolicyAgent`: 지원사업 공고 검색/RAG 매칭, 제출 서류 체크리스트 생성
 - `FinanceAgent`: 초기비용, 예상 매출, 손익분기점, 30일 운영 시뮬레이션
+- `SimulationAgent`: 30일 동안 이벤트와 선택지를 제공하는 게임형 창업 체험
 - `OperationAgent`: 매출, 재고, 리뷰 기반 운영 피드백과 다음 주 계획
 - `MarketingAgent`: SNS 릴스 훅, 15초 콘티, 게시글, 해시태그, 업로드 일정 생성
 
@@ -30,6 +31,8 @@ PDF 기획서 기준 AI 파트는 `Orchestrator Agent`가 사용자 의도를 �
 - `POST /ai/ideas/recommend`: 아이템 추천
 - `POST /ai/policies/match`: 지원사업 매칭
 - `POST /ai/finance/simulate`: 비용/매출/손익분기점 시뮬레이션
+- `POST /ai/simulation/start`: 30일 게임형 창업 시뮬레이션 시작
+- `POST /ai/simulation/choose`: 선택지 반영 후 다음 날 이벤트 반환
 - `POST /ai/operations/feedback`: 창업 후 운영 피드백
 - `POST /ai/marketing/sns`: SNS 홍보 자동화
 
@@ -101,3 +104,5 @@ PDF 기획서 기준 AI 파트는 `Orchestrator Agent`가 사용자 의도를 �
 운영 피드백은 창업 후 데이터가 필요하므로, 데모에서는 샘플 매출/리뷰 입력으로 보여주면 된다.
 
 발표에서는 `/ai/chat` 응답의 `data.rounds`, `data.debate.agent_positions`, `data.debate.conflicts`, `data.debate.orchestrator_decision`을 보여주면 멀티에이전트 협업 구조가 잘 드러난다.
+
+30일 창업 체험은 `SimulationAgent`를 사용한다. 프론트는 `start` 응답의 `current_event.choices`를 카드/버튼으로 보여주고, 선택한 `choice_id`를 `choose` API로 보내면 된다. 매 선택마다 현금, 총매출, 재고, 평판, 고객 수, 피로도, 리스크, 홍보력이 갱신된다. 30일이 지나면 `final_report`에 점수와 등급이 반환된다.

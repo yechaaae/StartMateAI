@@ -44,6 +44,40 @@ GMS Gemini `generateContent` 형식은 기본 지원한다. 호출 형식이 바
 
 ## 예시 요청
 
+30일 게임형 창업 시뮬레이션 시작:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8001/ai/simulation/start `
+  -ContentType "application/json" `
+  -Body '{
+    "item_name": "수제 쿠키 팝업",
+    "business_type": "popup",
+    "difficulty": "normal",
+    "profile": {
+      "region": "부산",
+      "budget_krw": 3000000,
+      "interests": ["카페", "로컬"]
+    }
+  }'
+```
+
+선택지 반영:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8001/ai/simulation/choose `
+  -ContentType "application/json" `
+  -Body '{
+    "session_id": "start 응답의 session_id",
+    "choice_id": "A"
+  }'
+```
+
+응답의 `current_event.choices`를 버튼으로 보여주고, 사용자가 고른 `choice_id`를 `/ai/simulation/choose`로 보내면 다음 날 이벤트가 반환된다.
+
 ```powershell
 Invoke-RestMethod `
   -Method Post `
@@ -74,6 +108,7 @@ app/
   agents/idea.py             # 창업 아이템 추천
   agents/policy.py           # 지원사업 매칭
   agents/finance.py          # 비용/매출/손익분기점 계산
+  agents/simulation.py       # 30일 게임형 창업 시뮬레이션
   agents/operation.py        # 운영 피드백
   agents/marketing.py        # SNS 콘텐츠 생성
   core/gms_client.py         # GMS API 어댑터
