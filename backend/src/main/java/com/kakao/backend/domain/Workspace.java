@@ -66,4 +66,11 @@ public class Workspace extends BaseTimeEntity {
 
     @OneToMany(mappedBy = "workspace", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ChatRoom> chatRooms = new ArrayList<>();
+
+    public static Workspace create(String title, String status) {
+        Workspace workspace = new Workspace();
+        workspace.setTitle(title);
+        workspace.setStatus(status);
+        return workspace;
+    }
 }

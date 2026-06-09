@@ -38,4 +38,10 @@ public class Agent {
 
     @Column(name = "active", nullable = false)
     private Boolean active = true;
+
+    public static Agent reference(Long id) {
+        Agent agent = new Agent();
+        agent.setId(id);
+        return agent;
+    }
 }
