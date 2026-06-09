@@ -2,6 +2,26 @@ package com.kakao.backend.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.kakao.backend.agent.domain.Agent;
+import com.kakao.backend.chat.domain.ChatAgentParticipant;
+import com.kakao.backend.chat.domain.ChatMessage;
+import com.kakao.backend.chat.domain.ChatRoom;
+import com.kakao.backend.idea.domain.BusinessIdeaOption;
+import com.kakao.backend.idea.domain.BusinessIdeaResult;
+import com.kakao.backend.marketing.domain.SnsContent;
+import com.kakao.backend.marketing.domain.SnsContentItem;
+import com.kakao.backend.operation.domain.OperationFeedback;
+import com.kakao.backend.operation.domain.OperationMetric;
+import com.kakao.backend.plan.domain.BusinessPlan;
+import com.kakao.backend.plan.domain.BusinessPlanSection;
+import com.kakao.backend.policy.domain.SupportProgramMatch;
+import com.kakao.backend.policy.domain.SupportProgramRecommendation;
+import com.kakao.backend.simulation.domain.SimulationDetail;
+import com.kakao.backend.simulation.domain.SimulationResult;
+import com.kakao.backend.user.domain.StartupProfile;
+import com.kakao.backend.user.domain.User;
+import com.kakao.backend.workspace.domain.SavedResult;
+import com.kakao.backend.workspace.domain.Workspace;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;

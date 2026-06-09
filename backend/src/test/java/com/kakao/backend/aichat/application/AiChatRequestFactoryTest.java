@@ -4,11 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.kakao.backend.aichat.dto.AiChatContextPayload;
 import com.kakao.backend.aichat.dto.AiChatRequestMessage;
-import com.kakao.backend.domain.ChatMessage;
-import com.kakao.backend.domain.ChatRoom;
-import com.kakao.backend.domain.StartupProfile;
-import com.kakao.backend.domain.User;
-import com.kakao.backend.domain.Workspace;
+import com.kakao.backend.chat.domain.ChatMessage;
+import com.kakao.backend.chat.domain.ChatRoom;
+import com.kakao.backend.user.domain.StartupProfile;
+import com.kakao.backend.user.domain.User;
+import com.kakao.backend.workspace.domain.Workspace;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
