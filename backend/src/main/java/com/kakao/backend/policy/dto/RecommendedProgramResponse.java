@@ -1,0 +1,17 @@
+package com.kakao.backend.policy.dto;
+
+import java.time.LocalDate;
+import java.util.List;
+
+public record RecommendedProgramResponse(
+        Long programId,
+        String title,
+        String source,
+        String summary,
+        int matchScore,
+        List<String> matchReasons,
+        List<String> cautionReasons,
+        LocalDate applicationEndDate,
+        String applyUrl
+) {
+}
