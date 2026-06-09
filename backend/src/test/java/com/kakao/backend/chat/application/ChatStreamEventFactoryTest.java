@@ -7,7 +7,7 @@ import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRequestStatus;
 import com.kakao.backend.chat.domain.ChatRoom;
 import com.kakao.backend.chat.dto.ChatStreamEventResponse;
-import com.kakao.backend.user.domain.User;
+import com.kakao.backend.user.model.User;
 import com.kakao.backend.workspace.domain.Workspace;
 import org.junit.jupiter.api.Test;
 

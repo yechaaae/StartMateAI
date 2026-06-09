@@ -15,7 +15,7 @@ import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRoom;
 import com.kakao.backend.chat.infrastructure.ChatMessageRepository;
 import com.kakao.backend.chat.infrastructure.ChatRoomRepository;
-import com.kakao.backend.user.domain.User;
+import com.kakao.backend.user.model.User;
 import com.kakao.backend.workspace.domain.Workspace;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;

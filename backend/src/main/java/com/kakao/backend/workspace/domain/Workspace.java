@@ -9,7 +9,7 @@ import com.kakao.backend.operation.domain.OperationFeedback;
 import com.kakao.backend.plan.domain.BusinessPlan;
 import com.kakao.backend.policy.domain.SupportProgramMatch;
 import com.kakao.backend.simulation.domain.SimulationResult;
-import com.kakao.backend.user.domain.User;
+import com.kakao.backend.user.model.User;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

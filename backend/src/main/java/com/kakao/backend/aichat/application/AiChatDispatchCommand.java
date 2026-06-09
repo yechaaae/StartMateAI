@@ -2,8 +2,8 @@ package com.kakao.backend.aichat.application;
 
 import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRoom;
-import com.kakao.backend.user.domain.StartupProfile;
-import com.kakao.backend.user.domain.User;
+import com.kakao.backend.user.model.User;
+import com.kakao.backend.startupProfile.model.StartupProfile;
 import com.kakao.backend.workspace.domain.Workspace;
 import java.util.List;
 import java.util.Map;

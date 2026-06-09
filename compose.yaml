@@ -5,7 +5,9 @@ services:
       - "3306:3306"
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-startmate}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-startmate}
+      MYSQL_USER: ${MYSQL_USER:-startmate}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-startmate}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       TZ: ${TZ:-Asia/Seoul}
     command:
       - --character-set-server=utf8mb4
@@ -26,9 +28,12 @@ services:
         condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-startmate}?useSSL=false&serverTimezone=${TZ:-Asia/Seoul}&allowPublicKeyRetrieval=true
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-root}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-startmate}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-startmate}
       SPRING_JPA_HIBERNATE_DDL_AUTO: ${SPRING_JPA_HIBERNATE_DDL_AUTO:-update}
+      DATA_GO_KR_SERVICE_KEY: ${DATA_GO_KR_SERVICE_KEY:-}
+      BIZINFO_API_KEY: ${BIZINFO_API_KEY:-}
+      YOUTH_CENTER_API_KEY: ${YOUTH_CENTER_API_KEY:-}
     ports:
       - "8080:8080"
 

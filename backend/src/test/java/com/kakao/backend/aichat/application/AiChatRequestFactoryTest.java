@@ -6,8 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kakao.backend.aichat.dto.AiChatRequestMessage;
 import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRoom;
-import com.kakao.backend.user.domain.StartupProfile;
-import com.kakao.backend.user.domain.User;
+import com.kakao.backend.startupProfile.model.PreferredBusinessType;
+import com.kakao.backend.startupProfile.model.StartupProfile;
+import com.kakao.backend.user.model.User;
 import com.kakao.backend.workspace.domain.Workspace;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +32,7 @@ class AiChatRequestFactoryTest {
         profile.setInterestField("food,local");
         profile.setBusinessRegion("busan");
         profile.setInitialBudget(1_000_000);
-        profile.setPreferredBusinessType("offline");
+        profile.setPreferredBusinessType(PreferredBusinessType.OFFLINE);
         profile.setDiagnosisSummary("good fit");
         profile.setStrengthTags("brand,content");
 

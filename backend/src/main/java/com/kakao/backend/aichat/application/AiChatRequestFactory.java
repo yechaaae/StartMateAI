@@ -6,7 +6,7 @@ import com.kakao.backend.aichat.dto.AiChatRequestMessage;
 import com.kakao.backend.aichat.dto.AiChatUserProfilePayload;
 import com.kakao.backend.aichat.dto.AiRecentMessagePayload;
 import com.kakao.backend.chat.domain.ChatMessage;
-import com.kakao.backend.user.domain.StartupProfile;
+import com.kakao.backend.startupProfile.model.StartupProfile;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -94,7 +94,9 @@ public class AiChatRequestFactory {
                 firstNonBlank(profile.getBusinessRegion(), profile.getResidenceRegion()),
                 profile.getInitialBudget(),
                 split(profile.getInterestField()),
-                split(profile.getPreferredBusinessType()),
+                profile.getPreferredBusinessType() == null
+                        ? List.of()
+                        : List.of(profile.getPreferredBusinessType().getLabel()),
                 "예비창업",
                 "medium",
                 profile.getDiagnosisSummary()

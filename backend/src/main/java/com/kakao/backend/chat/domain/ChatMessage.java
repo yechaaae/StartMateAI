@@ -2,7 +2,7 @@ package com.kakao.backend.chat.domain;
 
 import com.kakao.backend.agent.domain.Agent;
 import com.kakao.backend.common.domain.BaseCreatedEntity;
-import com.kakao.backend.user.domain.User;
+import com.kakao.backend.user.model.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
