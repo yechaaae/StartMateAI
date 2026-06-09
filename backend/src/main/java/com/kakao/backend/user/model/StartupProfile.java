@@ -1,4 +1,4 @@
-package com.kakao.backend.user.domain;
+package com.kakao.backend.user.model;
 
 import com.kakao.backend.common.domain.BaseTimeEntity;
 import jakarta.persistence.Column;
@@ -21,6 +21,7 @@ import lombok.Setter;
 @Entity
 @Table(name = "startup_profile")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+// 사용자의 창업 준비 상태와 선호 조건을 저장하는 프로필입니다.
 public class StartupProfile extends BaseTimeEntity {
 
     @Id
@@ -66,6 +67,7 @@ public class StartupProfile extends BaseTimeEntity {
     @Column(name = "diagnosis_summary", columnDefinition = "text")
     private String diagnosisSummary;
 
+    // 기본 창업 프로필을 생성합니다.
     public static StartupProfile create() {
         return new StartupProfile();
     }

@@ -1,4 +1,4 @@
-package com.kakao.backend.user.domain;
+package com.kakao.backend.user.model;
 
 import com.kakao.backend.common.domain.BaseTimeEntity;
 import com.kakao.backend.workspace.domain.Workspace;
@@ -23,6 +23,7 @@ import lombok.Setter;
 @Entity
 @Table(name = "users")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+// 서비스에 가입한 사용자의 계정 정보와 연결된 작업 공간을 표현합니다.
 public class User extends BaseTimeEntity {
 
     @Id
@@ -50,11 +51,20 @@ public class User extends BaseTimeEntity {
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Workspace> workspaces = new ArrayList<>();
 
+    // 외부 로그인 등 비밀번호 없이 생성되는 사용자를 위한 기본 생성 메서드입니다.
     public static User create(String email, String nickname, String role) {
         User user = new User();
         user.setEmail(email);
         user.setNickname(nickname);
         user.setRole(role);
+        return user;
+    }
+
+    // 이메일과 비밀번호를 사용하는 로컬 가입 사용자를 생성합니다.
+    public static User createLocal(String email, String password, String nickname) {
+        User user = create(email, nickname, "USER");
+        user.setPassword(password);
+        user.setProvider("LOCAL");
         return user;
     }
 }
