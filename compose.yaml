@@ -1,9 +1,29 @@
 services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: startmate
+      MYSQL_USER: startmate
+      MYSQL_PASSWORD: startmate
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
   backend:
     build:
       context: ./backend
+    depends_on:
+      - mysql
     environment:
-      SPRING_AUTOCONFIGURE_EXCLUDE: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/startmate?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=utf8
+      SPRING_DATASOURCE_USERNAME: startmate
+      SPRING_DATASOURCE_PASSWORD: startmate
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      DATA_GO_KR_SERVICE_KEY: ${DATA_GO_KR_SERVICE_KEY:-}
+      BIZINFO_API_KEY: ${BIZINFO_API_KEY:-}
+      YOUTH_CENTER_API_KEY: ${YOUTH_CENTER_API_KEY:-}
     ports:
       - "8080:8080"
 
@@ -14,3 +34,6 @@ services:
       - backend
     ports:
       - "80:80"
+
+volumes:
+  mysql-data:
