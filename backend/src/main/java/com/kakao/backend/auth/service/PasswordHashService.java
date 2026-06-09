@@ -1,4 +1,4 @@
-package com.kakao.backend.user.service;
+package com.kakao.backend.auth.service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
