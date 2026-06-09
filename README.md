@@ -23,7 +23,7 @@ npm run build
 
 ## Docker Compose
 
-Build and run both services:
+Build and run services with MySQL:
 
 ```bash
 docker compose up --build
@@ -33,3 +33,12 @@ Services:
 
 - Frontend: `http://localhost`
 - Backend: `http://localhost:8080`
+- MySQL: `localhost:3306` (`startmate` / `startmate`)
+
+## Hackathon Data MVP APIs
+
+- `POST /api/seeds/import`: demo seed data import
+- `POST /api/support-programs/sync?source=all`: K-Startup / Bizinfo / YouthCenter sync, with demo fallback
+- `POST /api/support-programs/recommend`: profile-based support program recommendation
+- `POST /api/stores/import-csv`: SBIZ store CSV import, with demo fallback when `filePath` is blank
+- `POST /api/commercial-areas/analyze`: area and industry competitor count
