@@ -1,7 +1,0 @@
-package com.kakao.backend.workspace.infrastructure;
-
-import com.kakao.backend.domain.Workspace;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-public interface WorkspaceRepository extends JpaRepository<Workspace, Long> {
-}
