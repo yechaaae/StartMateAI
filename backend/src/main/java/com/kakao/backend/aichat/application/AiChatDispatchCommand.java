@@ -22,6 +22,7 @@ public record AiChatDispatchCommand(
         Long selectedIdeaId,
         List<String> candidateAgents,
         List<ChatMessage> recentMessages,
-        Map<String, Object> currentResult
+        Map<String, Object> currentResult,
+        Map<String, Object> referenceData
 ) {
 }

@@ -1,6 +1,10 @@
 package com.kakao.backend.aichat.dto;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 public record AiChatRequestMessage(
+        String version,
+        String messageType,
         String requestId,
         Long workspaceId,
         Long roomId,
@@ -10,8 +14,6 @@ public record AiChatRequestMessage(
         String targetFeature,
         String sessionType,
         String intent,
-        String message,
-        AiChatUserProfilePayload profile,
-        AiChatContextPayload context
+        JsonNode payload
 ) {
 }

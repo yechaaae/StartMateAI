@@ -676,6 +676,80 @@
   color: var(--ink-3);
 }
 
+.chat-loading,
+.chat-error-banner,
+.chat-status-banner {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.chat-loading {
+  background: #f5f6f9;
+  color: var(--ink-3);
+}
+
+.chat-error-banner {
+  background: #fff2f2;
+  color: #a63c3c;
+}
+
+.chat-status-banner {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  background: #f5f6f9;
+  color: var(--ink-2);
+}
+
+.chat-status-banner b {
+  font-size: 12px;
+}
+
+.chat-status-banner.queued,
+.chat-status-banner.processing {
+  background: #f5f6ff;
+  color: #4752a3;
+}
+
+.chat-status-banner.completed {
+  background: #eef9f0;
+  color: #2f7a46;
+}
+
+.chat-status-banner.failed {
+  background: #fff2f2;
+  color: #a63c3c;
+}
+
+.chat-connection {
+  align-self: center;
+  padding: 8px 11px;
+  border-radius: 999px;
+  background: #eef0f5;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.chat-connection.connected {
+  background: #eef9f0;
+  color: #2f7a46;
+}
+
+.chat-connection.connecting {
+  background: #f5f6ff;
+  color: #4752a3;
+}
+
+.chat-connection.error {
+  background: #fff2f2;
+  color: #a63c3c;
+}
+
 .agent-stack {
   display: flex;
   justify-content: center;
