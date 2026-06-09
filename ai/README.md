@@ -7,7 +7,7 @@ AI 기반 맞춤형 창업 실행 파트너의 멀티에이전트 API 서버 골
 ## 실행
 
 ```powershell
-cd c:\ssafy\해커톤\ai
+cd c:\ssafy\해커톤\StartMateAI\ai
 py -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
 Copy-Item .env.example .env
@@ -69,6 +69,14 @@ recommendation
 ```
 
 상세 설명은 [docs/agent_contract.md](docs/agent_contract.md)를 참고한다.
+
+## 대화 세션 메모리
+
+`/ai/chat`, `/ai/chat/stream`은 `session_id`를 받을 수 있다. 첫 요청에서 생략하면 서버가 새 세션을 만들고, 응답의 `data.chat_session_id`로 돌려준다. 프론트는 이 값을 다음 요청의 `session_id`로 다시 보내면 된다.
+
+서버는 세션별로 최근 메시지와 누적 프로필을 메모리에 저장한다. 예를 들어 첫 질문에서 "부산, 300만원, 주 10시간"을 말하면 다음 질문에서 같은 정보를 다시 묻지 않고 `memory.profile`에 유지한다. 이 메모리는 현재 인메모리 방식이라 서버를 재시작하면 초기화된다.
+
+시뮬레이션의 `data.session_id`와 채팅의 `data.chat_session_id`는 서로 다른 값이다.
 
 ## 예시 요청
 

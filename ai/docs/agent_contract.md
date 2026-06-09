@@ -45,6 +45,7 @@ OperationAgent
 공통 필드 외에도 각 에이전트는 기존 특화 필드를 유지한다.
 
 - `IdeaAgent`: `recommendations`, `ranking_basis`, `score_breakdown`, `matched_keywords`, `why_recommended`
+- `ProfileAgent`: `effective_profile`, `inferred_profile_patch`, `readiness_scores`, `clarifying_questions`, `agent_hints`, `profile_summary`
 - `PolicyAgent`: `matches`, `checklist`, `top_policy`, `score_breakdown`, `retrieval`, `source_chunks`, `eligibility_gaps`, `required_documents`, `application_strategy`
 - `FinanceAgent`: `monthly_revenue_krw`, `break_even_units_per_day`, `what_if_scenarios`
 - `SimulationAgent`: `session_id`, `current_event`, `metrics`, `history_tail`, `final_report`
