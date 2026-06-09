@@ -1,29 +1,145 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import '../App.css'
 import { features } from '../shared/data/features'
 import { workspaces } from '../shared/data/workspaces'
+import { authApi, startupProfileApi } from '../shared/api/client'
 import { Sidebar } from '../features/layout/Sidebar'
 import { DiscussPage } from '../features/pages/DiscussPage'
 import { FeaturePage } from '../features/pages/FeaturePage'
 import { HomePage } from '../features/pages/HomePage'
 import { Landing } from '../features/pages/Landing'
+import { LoginPage } from '../features/pages/LoginPage'
 import { Onboarding } from '../features/pages/Onboarding'
 import { SavedPage } from '../features/pages/SavedPage'
+import { SignupPage } from '../features/pages/SignupPage'
+
+const publicRoutes = new Set(['landing', 'login', 'signup'])
+const LOGIN_HINT_KEY = 'sm_logged_in'
 
 export default function App() {
   const [route, setRoute] = useState(() => localStorage.getItem('sm_route') || 'landing')
   const [workspace, setWorkspace] = useState(workspaces[0])
-  useEffect(() => localStorage.setItem('sm_route', route), [route])
-  const full = route === 'landing' || route === 'onboarding'
-  const page = useMemo(() => {
-    if (route === 'landing') return <Landing go={setRoute} />
-    if (route === 'onboarding') return <Onboarding go={setRoute} />
-    if (route === 'discuss') return <DiscussPage />
-    if (route === 'saved') return <SavedPage />
-    if (features[route]) return <FeaturePage key={route} id={route} go={setRoute} />
-    return <HomePage go={setRoute} workspace={workspace} />
-  }, [route, workspace])
+  const [user, setUser] = useState(null)
+  const [profileStatus, setProfileStatus] = useState(null)
+  const [checkingSession, setCheckingSession] = useState(
+    () => !publicRoutes.has(route) || localStorage.getItem(LOGIN_HINT_KEY) === 'true',
+  )
+  const sessionRestored = useRef(false)
 
-  if (full) return <div className="app-root">{page}</div>
-  return <div className="app-root"><Sidebar route={route} go={setRoute} workspace={workspace} setWorkspace={setWorkspace} />{page}</div>
+  useEffect(() => {
+    localStorage.setItem('sm_route', route)
+  }, [route])
+
+  const moveByProfileStatus = async (nextRoute = route) => {
+    const status = await startupProfileApi.status()
+    setProfileStatus(status)
+
+    if (status.requiresOnboarding) {
+      setRoute('onboarding')
+      return status
+    }
+
+    if (publicRoutes.has(nextRoute) || nextRoute === 'onboarding') {
+      setRoute('home')
+    }
+
+    return status
+  }
+
+  const handleAuthSuccess = async (nextUser) => {
+    localStorage.setItem(LOGIN_HINT_KEY, 'true')
+    setUser(nextUser)
+    await moveByProfileStatus('home')
+  }
+
+  const handleOnboardingComplete = async () => {
+    const status = await startupProfileApi.status()
+    setProfileStatus(status)
+    setRoute('home')
+  }
+
+  const handleLogout = async () => {
+    try {
+      await authApi.logout()
+    } finally {
+      setUser(null)
+      setProfileStatus(null)
+      localStorage.removeItem(LOGIN_HINT_KEY)
+      setRoute('landing')
+    }
+  }
+
+  useEffect(() => {
+    if (sessionRestored.current) {
+      return
+    }
+    sessionRestored.current = true
+
+    if (publicRoutes.has(route) && localStorage.getItem(LOGIN_HINT_KEY) !== 'true') {
+      return
+    }
+
+    const restoreSession = async () => {
+      try {
+        const currentUser = await authApi.me()
+        setUser(currentUser)
+        await moveByProfileStatus(route)
+      } catch {
+        setUser(null)
+        setProfileStatus(null)
+        localStorage.removeItem(LOGIN_HINT_KEY)
+        if (!publicRoutes.has(route)) {
+          setRoute('landing')
+        }
+      } finally {
+        setCheckingSession(false)
+      }
+    }
+
+    restoreSession()
+    // 최초 진입 때만 서버 세션을 확인합니다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const guardedRoute = !user && !publicRoutes.has(route) ? 'landing' : route
+  const full = publicRoutes.has(guardedRoute) || guardedRoute === 'onboarding'
+
+  let page
+  if (checkingSession) {
+    page = <main className="loading-page"><h2>StartMate AI를 준비하고 있어요</h2><p>세션 상태를 확인하는 중입니다.</p></main>
+  } else if (guardedRoute === 'landing') {
+    page = <Landing go={setRoute} user={user} onLogout={handleLogout} />
+  } else if (guardedRoute === 'login') {
+    page = <LoginPage go={setRoute} onLogin={handleAuthSuccess} />
+  } else if (guardedRoute === 'signup') {
+    page = <SignupPage go={setRoute} onSignup={handleAuthSuccess} />
+  } else if (guardedRoute === 'onboarding' || profileStatus?.requiresOnboarding) {
+    page = <Onboarding onComplete={handleOnboardingComplete} />
+  } else if (guardedRoute === 'discuss') {
+    page = <DiscussPage />
+  } else if (guardedRoute === 'saved') {
+    page = <SavedPage />
+  } else if (features[guardedRoute]) {
+    page = <FeaturePage key={guardedRoute} id={guardedRoute} go={setRoute} />
+  } else {
+    page = <HomePage go={setRoute} workspace={workspace} />
+  }
+
+  if (full) {
+    return <div className="app-root">{page}</div>
+  }
+
+  return (
+    <div className="app-root">
+      <Sidebar
+        route={guardedRoute}
+        go={setRoute}
+        workspace={workspace}
+        setWorkspace={setWorkspace}
+        user={user}
+        onLogout={handleLogout}
+      />
+      {page}
+    </div>
+  )
 }
