@@ -64,4 +64,8 @@ public class StartupProfile extends BaseTimeEntity {
     @Lob
     @Column(name = "diagnosis_summary", columnDefinition = "text")
     private String diagnosisSummary;
+
+    public static StartupProfile create() {
+        return new StartupProfile();
+    }
 }

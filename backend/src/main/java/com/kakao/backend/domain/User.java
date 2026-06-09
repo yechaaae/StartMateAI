@@ -47,4 +47,12 @@ public class User extends BaseTimeEntity {
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Workspace> workspaces = new ArrayList<>();
+
+    public static User create(String email, String nickname, String role) {
+        User user = new User();
+        user.setEmail(email);
+        user.setNickname(nickname);
+        user.setRole(role);
+        return user;
+    }
 }

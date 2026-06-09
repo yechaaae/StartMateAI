@@ -47,4 +47,24 @@ public class ChatMessage extends BaseCreatedEntity {
 
     @Column(name = "metadata", columnDefinition = "json")
     private String metadata;
+
+    public static ChatMessage userMessage(ChatRoom chatRoom, User user, String content, String metadata) {
+        ChatMessage message = new ChatMessage();
+        message.setChatRoom(chatRoom);
+        message.setUser(user);
+        message.setSenderType("USER");
+        message.setContent(content);
+        message.setMetadata(metadata);
+        return message;
+    }
+
+    public static ChatMessage agentMessage(ChatRoom chatRoom, Agent agent, String content, String metadata) {
+        ChatMessage message = new ChatMessage();
+        message.setChatRoom(chatRoom);
+        message.setAgent(agent);
+        message.setSenderType("AGENT");
+        message.setContent(content);
+        message.setMetadata(metadata);
+        return message;
+    }
 }
