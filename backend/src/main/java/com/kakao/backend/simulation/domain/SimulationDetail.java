@@ -30,7 +30,7 @@ public class SimulationDetail {
     @JoinColumn(name = "simulation_result_id", nullable = false)
     private SimulationResult simulationResult;
 
-    @Column(name = "day")
+    @Column(name = "simulation_day")
     private Integer day;
 
     @Column(name = "title")
