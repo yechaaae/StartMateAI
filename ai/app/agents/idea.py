@@ -96,8 +96,9 @@ class IdeaAgent(BaseAgent):
         count: int,
     ) -> tuple[list[dict[str, Any]], dict[str, Any], list[str]]:
         warnings: list[str] = []
+        llm_diagnostics: dict[str, Any] | None = None
         if self.llm.is_enabled:
-            candidates = await self._generate_candidates_with_llm(profile, count)
+            candidates, llm_diagnostics = await self._generate_candidates_with_llm(profile, count)
             if candidates:
                 return (
                     candidates,
@@ -106,25 +107,35 @@ class IdeaAgent(BaseAgent):
                         "fallback_used": False,
                         "requested_count": count,
                         "candidate_count": len(candidates),
+                        "diagnostics": llm_diagnostics,
                     },
                     warnings,
                 )
+            warnings.extend(llm_diagnostics.get("warnings", []) if llm_diagnostics else [])
             warnings.append("idea_llm_generation_failed_fallback_used")
 
         fallback_candidates = self._fallback_candidates(profile, count)
-        return (
-            fallback_candidates,
-            {
-                "generated_by": "rule_fallback",
-                "fallback_used": True,
-                "llm_enabled": self.llm.is_enabled,
-                "requested_count": count,
-                "candidate_count": len(fallback_candidates),
-            },
-            warnings,
-        )
+        generation = {
+            "generated_by": "rule_fallback",
+            "fallback_used": True,
+            "llm_enabled": self.llm.is_enabled,
+            "requested_count": count,
+            "candidate_count": len(fallback_candidates),
+        }
+        if llm_diagnostics:
+            generation["llm_diagnostics"] = llm_diagnostics
+        return (fallback_candidates, generation, warnings)
 
-    async def _generate_candidates_with_llm(self, profile: StartupProfile, count: int) -> list[dict[str, Any]]:
+    async def _generate_candidates_with_llm(
+        self,
+        profile: StartupProfile,
+        count: int,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        diagnostics: dict[str, Any] = {
+            "attempted": True,
+            "warnings": [],
+            "requested_count": count,
+        }
         prompt = (
             "너는 창업 아이템 발굴 에이전트다. 사용자의 프로필을 보고 30일 안에 검증 가능한 창업 아이템 후보를 생성해라.\n"
             "반드시 JSON object 하나만 출력해라. Markdown, 설명문, 주석은 출력하지 마라.\n\n"
@@ -166,11 +177,42 @@ class IdeaAgent(BaseAgent):
                 temperature=0.45,
                 fallback="{}",
             )
+            diagnostics["raw_preview"] = self._debug_preview(raw)
             parsed = self._parse_json_object(raw)
+            diagnostics["parsed_type"] = type(parsed).__name__
             ideas = parsed.get("ideas") if isinstance(parsed, dict) else None
-            return self._sanitize_candidates(ideas if isinstance(ideas, list) else [], profile, source="llm")[:count]
-        except Exception:
-            return []
+            if not isinstance(ideas, list):
+                diagnostics["failure_reason"] = "missing_or_invalid_ideas_array"
+                diagnostics["parsed_keys"] = sorted(parsed) if isinstance(parsed, dict) else []
+                diagnostics["warnings"].append("idea_llm_generation_missing_ideas_array")
+                return [], diagnostics
+
+            candidates = self._sanitize_candidates(ideas, profile, source="llm")[:count]
+            diagnostics["parsed_idea_count"] = len(ideas)
+            diagnostics["sanitized_candidate_count"] = len(candidates)
+            if not candidates:
+                diagnostics["failure_reason"] = "no_valid_candidates_after_sanitize"
+                diagnostics["warnings"].append("idea_llm_generation_no_valid_candidates")
+            return candidates, diagnostics
+        except Exception as error:
+            diagnostics["failure_reason"] = "exception"
+            diagnostics["error_type"] = error.__class__.__name__
+            diagnostics["error_message"] = self._debug_preview(str(error), limit=1000)
+            diagnostics["warnings"].append(f"idea_llm_generation_error:{error.__class__.__name__}")
+            return [], diagnostics
+
+    def _debug_preview(self, value: Any, *, limit: int = 800) -> str:
+        text = self._redact_sensitive(str(value)).replace("\r", "\\r").replace("\n", "\\n")
+        if len(text) <= limit:
+            return text
+        return text[:limit] + "...<truncated>"
+
+    def _redact_sensitive(self, text: str) -> str:
+        settings = getattr(self.llm, "settings", None)
+        api_key = getattr(settings, "gms_api_key", "") if settings else ""
+        if api_key:
+            text = text.replace(api_key, "<redacted>")
+        return text
 
     def _sanitize_candidates(
         self,
