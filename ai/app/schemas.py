@@ -20,12 +20,21 @@ IntentName = Literal[
 
 
 class StartupProfile(BaseModel):
+    age: int | None = Field(default=None, ge=0, le=120)
     major: str | None = None
     experiences: list[str] = Field(default_factory=list)
     region: str | None = None
     budget_krw: int | None = None
+    available_hours_per_week: int | None = Field(default=None, ge=0, le=168)
+    target_income_krw: int | None = Field(default=None, ge=0)
+    has_team: bool | None = None
+    owned_assets: list[str] = Field(default_factory=list)
+    customer_network: list[str] = Field(default_factory=list)
+    confirmed_absent_fields: list[str] = Field(default_factory=list)
     interests: list[str] = Field(default_factory=list)
     preferred_channels: list[str] = Field(default_factory=list)
+    preferred_business_types: list[str] = Field(default_factory=list)
+    avoid_business_types: list[str] = Field(default_factory=list)
     startup_stage: str = "예비창업"
     risk_tolerance: Literal["low", "medium", "high"] = "medium"
     memo: str | None = None
@@ -51,6 +60,7 @@ class ChatRequest(BaseModel):
     message: str
     profile: StartupProfile = Field(default_factory=StartupProfile)
     intent: IntentName = "auto"
+    session_id: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -63,6 +73,7 @@ class LLMChatRequest(BaseModel):
 class ProfileRequest(BaseModel):
     profile: StartupProfile
     question: str | None = None
+    use_llm_extraction: bool = True
 
 
 class IdeaRequest(BaseModel):

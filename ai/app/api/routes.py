@@ -1,6 +1,7 @@
 import asyncio
 import json
 from typing import AsyncIterator
+from uuid import uuid4
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -29,6 +30,7 @@ from app.schemas import (
     ProfileRequest,
     SimulationChoiceRequest,
     SimulationStartRequest,
+    StartupProfile,
 )
 
 router = APIRouter()
@@ -49,6 +51,7 @@ operation_agent = OperationAgent(llm)
 marketing_agent = MarketingAgent(llm)
 simulation_agent = SimulationAgent(llm)
 simulation_sessions: dict[str, dict] = {}
+chat_sessions: dict[str, dict] = {}
 
 orchestrator = OrchestratorAgent(
     profile_agent=profile_agent,
@@ -75,7 +78,11 @@ async def health() -> dict[str, str | bool]:
 
 @router.post("/ai/chat", response_model=AgentResponse)
 async def chat(request: ChatRequest) -> AgentResponse:
-    response = await orchestrator.run(request)
+    session_id, stateful_request = _stateful_chat_request(request)
+    response = await orchestrator.run(stateful_request)
+    _remember_chat_response(session_id, stateful_request, response)
+    response.data["chat_session_id"] = session_id
+    response.data["memory"] = _memory_view(session_id)
     if response.intent == "simulation" and response.data.get("state"):
         simulation_sessions[response.data["session_id"]] = response.data["state"]
     return response
@@ -83,13 +90,108 @@ async def chat(request: ChatRequest) -> AgentResponse:
 
 @router.post("/ai/chat/stream")
 async def chat_stream(request: ChatRequest) -> StreamingResponse:
+    session_id, stateful_request = _stateful_chat_request(request)
     return StreamingResponse(
-        _multi_agent_event_stream(request),
+        _multi_agent_event_stream(stateful_request, session_id=session_id),
         media_type="application/x-ndjson; charset=utf-8",
     )
 
 
-async def _multi_agent_event_stream(request: ChatRequest) -> AsyncIterator[str]:
+def _stateful_chat_request(request: ChatRequest) -> tuple[str, ChatRequest]:
+    session_id = request.session_id or str(request.context.get("session_id") or uuid4())
+    stored = chat_sessions.get(session_id, {})
+    stored_profile = stored.get("profile")
+    merged_profile = _merge_profiles(stored_profile, request.profile)
+    context = dict(request.context)
+    context["session_id"] = session_id
+    if stored.get("messages"):
+        context["chat_memory"] = stored["messages"][-8:]
+    return session_id, request.model_copy(update={"profile": merged_profile, "session_id": session_id, "context": context})
+
+
+def _merge_profiles(previous: dict | StartupProfile | None, current: StartupProfile) -> StartupProfile:
+    data = {}
+    if previous:
+        data.update(previous.model_dump() if isinstance(previous, StartupProfile) else previous)
+    current_data = current.model_dump()
+    list_fields = {
+        "experiences",
+        "owned_assets",
+        "customer_network",
+        "confirmed_absent_fields",
+        "interests",
+        "preferred_channels",
+        "preferred_business_types",
+        "avoid_business_types",
+    }
+    for key, value in current_data.items():
+        if key in list_fields:
+            data[key] = _ordered_unique([*(data.get(key) or []), *(value or [])])
+            if key == "experiences" and value:
+                data["confirmed_absent_fields"] = [
+                    item for item in data.get("confirmed_absent_fields", []) if item != "experiences"
+                ]
+        elif _is_informative_profile_value(key, value, data):
+            data[key] = value
+        elif key not in data:
+            data[key] = value
+    return StartupProfile.model_validate(data)
+
+
+def _is_informative_profile_value(key: str, value, existing_data: dict) -> bool:
+    if value in {None, ""}:
+        return False
+    if key == "risk_tolerance" and value == "medium" and existing_data.get(key):
+        return False
+    if key == "startup_stage" and value == StartupProfile().startup_stage and existing_data.get(key):
+        return False
+    return True
+
+
+def _remember_chat_response(session_id: str, request: ChatRequest, response: AgentResponse) -> None:
+    profile = _extract_effective_profile(response) or request.profile.model_dump()
+    session = chat_sessions.setdefault(session_id, {"messages": []})
+    session["profile"] = profile
+    session["last_response_intent"] = response.intent
+    session["last_agent"] = response.agent
+    session["messages"].append({"role": "user", "content": request.message})
+    session["messages"].append({"role": "assistant", "content": response.summary})
+    session["messages"] = session["messages"][-12:]
+
+
+def _extract_effective_profile(response: AgentResponse) -> dict | None:
+    data = response.data or {}
+    if isinstance(data.get("effective_profile"), dict):
+        return data["effective_profile"]
+    profile_data = data.get("profile")
+    if isinstance(profile_data, dict) and isinstance(profile_data.get("effective_profile"), dict):
+        return profile_data["effective_profile"]
+    return None
+
+
+def _memory_view(session_id: str) -> dict:
+    session = chat_sessions.get(session_id, {})
+    return {
+        "session_id": session_id,
+        "profile": session.get("profile"),
+        "message_count": len(session.get("messages", [])),
+        "last_agent": session.get("last_agent"),
+        "last_response_intent": session.get("last_response_intent"),
+    }
+
+
+def _ordered_unique(values: list) -> list:
+    seen = set()
+    result = []
+    for value in values:
+        item = str(value).strip()
+        if item and item not in seen:
+            seen.add(item)
+            result.append(value)
+    return result
+
+
+async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) -> AsyncIterator[str]:
     def event(name: str, data: dict) -> str:
         return json.dumps({"event": name, "data": data}, ensure_ascii=False) + "\n"
 
@@ -111,8 +213,19 @@ async def _multi_agent_event_stream(request: ChatRequest) -> AsyncIterator[str]:
         return name, result
 
     if request.intent not in {"auto", "collaboration", "roadmap"}:
-        yield event("start", {"message": "단일 에이전트 요청을 실행합니다.", "intent": request.intent})
+        yield event(
+            "start",
+            {
+                "message": "단일 에이전트 요청을 실행합니다.",
+                "intent": request.intent,
+                "chat_session_id": session_id,
+                "memory": _memory_view(session_id),
+            },
+        )
         response = await orchestrator.run(request)
+        _remember_chat_response(session_id, request, response)
+        response.data["chat_session_id"] = session_id
+        response.data["memory"] = _memory_view(session_id)
         yield event("agent_result", response_view(response))
         yield event("final", response.model_dump(mode="json"))
         return
@@ -122,6 +235,8 @@ async def _multi_agent_event_stream(request: ChatRequest) -> AsyncIterator[str]:
         {
             "message": "협업형 멀티에이전트 토론을 시작합니다.",
             "requested_intent": request.intent,
+            "chat_session_id": session_id,
+            "memory": _memory_view(session_id),
         },
     )
 
@@ -134,13 +249,19 @@ async def _multi_agent_event_stream(request: ChatRequest) -> AsyncIterator[str]:
             "purpose": "사용자 조건, 아이템 후보, 지원사업 가능성을 동시에 검토합니다.",
         },
     )
+    effective_profile = await profile_agent.build_effective_profile_async(request.profile, request.message)
     round1_tasks = [
         asyncio.create_task(
-            run_named("ProfileAgent", profile_agent.run(ProfileRequest(profile=request.profile, question=request.message)))
+            run_named(
+                "ProfileAgent",
+                profile_agent.run(
+                    ProfileRequest(profile=effective_profile, question=request.message, use_llm_extraction=False)
+                ),
+            )
         ),
-        asyncio.create_task(run_named("IdeaAgent", idea_agent.run(IdeaRequest(profile=request.profile, count=3)))),
+        asyncio.create_task(run_named("IdeaAgent", idea_agent.run(IdeaRequest(profile=effective_profile, count=3)))),
         asyncio.create_task(
-            run_named("PolicyAgent", policy_agent.run(PolicyRequest(profile=request.profile, query=request.message, limit=3)))
+            run_named("PolicyAgent", policy_agent.run(PolicyRequest(profile=effective_profile, query=request.message, limit=3)))
         ),
     ]
     round1: dict[str, AgentResponse] = {}
@@ -190,7 +311,7 @@ async def _multi_agent_event_stream(request: ChatRequest) -> AsyncIterator[str]:
                 "FinanceAgent",
                 finance_agent.run(
                     FinanceRequest(
-                        profile=request.profile,
+                        profile=effective_profile,
                         assumption=FinanceAssumption(item_name=top_idea_name),
                     )
                 ),
@@ -201,7 +322,7 @@ async def _multi_agent_event_stream(request: ChatRequest) -> AsyncIterator[str]:
                 "MarketingAgent",
                 marketing_agent.run(
                     MarketingRequest(
-                        profile=request.profile,
+                        profile=effective_profile,
                         product_name=top_idea_name,
                         target_customer=request.context.get("target_customer"),
                         place=request.context.get("place"),
@@ -214,7 +335,7 @@ async def _multi_agent_event_stream(request: ChatRequest) -> AsyncIterator[str]:
         asyncio.create_task(
             run_named(
                 "OperationAgent",
-                operation_agent.run(OperationRequest(profile=request.profile, business_name=top_idea_name)),
+                operation_agent.run(OperationRequest(profile=effective_profile, business_name=top_idea_name)),
             )
         ),
     ]
@@ -306,6 +427,9 @@ async def _multi_agent_event_stream(request: ChatRequest) -> AsyncIterator[str]:
         sources=policies.sources,
         warnings=policies.warnings,
     )
+    _remember_chat_response(session_id, request, final_response)
+    final_response.data["chat_session_id"] = session_id
+    final_response.data["memory"] = _memory_view(session_id)
     yield event("final", final_response.model_dump(mode="json"))
 
 

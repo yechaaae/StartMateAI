@@ -50,20 +50,26 @@ class OrchestratorAgent:
 
         if intent == "profile":
             result = await self.profile_agent.run(ProfileRequest(profile=request.profile, question=request.message))
+            effective_profile = self._effective_profile_from_response(result, request.profile)
         elif intent == "idea":
-            result = await self.idea_agent.run(IdeaRequest(profile=request.profile))
+            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
+            result = await self.idea_agent.run(IdeaRequest(profile=effective_profile))
         elif intent == "policy":
-            result = await self.policy_agent.run(PolicyRequest(profile=request.profile, query=request.message))
+            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
+            result = await self.policy_agent.run(PolicyRequest(profile=effective_profile, query=request.message))
         elif intent == "finance":
-            result = await self.finance_agent.run(FinanceRequest(profile=request.profile))
+            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
+            result = await self.finance_agent.run(FinanceRequest(profile=effective_profile))
         elif intent == "operation":
+            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
             result = await self.operation_agent.run(
-                OperationRequest(profile=request.profile, business_name=request.context.get("business_name", "테스트 매장"))
+                OperationRequest(profile=effective_profile, business_name=request.context.get("business_name", "테스트 매장"))
             )
         elif intent == "marketing":
+            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
             result = await self.marketing_agent.run(
                 MarketingRequest(
-                    profile=request.profile,
+                    profile=effective_profile,
                     product_name=request.context.get("product_name", "창업 상품"),
                     event_date=request.context.get("event_date"),
                     target_customer=request.context.get("target_customer"),
@@ -73,15 +79,31 @@ class OrchestratorAgent:
                 )
             )
         elif intent == "simulation":
-            result = self.simulation_agent.start(self._simulation_start_request(request))
+            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
+            result = self.simulation_agent.start(self._simulation_start_request(request, effective_profile))
         elif intent in {"collaboration", "roadmap"}:
             result = await self._collaborative_consultation(request)
+            effective_profile = self._effective_profile_from_response(result, request.profile)
         else:
             result = await self._collaborative_consultation(request)
+            effective_profile = self._effective_profile_from_response(result, request.profile)
 
+        result.data.setdefault("effective_profile", effective_profile.model_dump())
         result.data["routed_by"] = self.name
         result.data["user_message"] = request.message
         return result
+
+    def _effective_profile_from_response(
+        self,
+        response: AgentResponse,
+        fallback_profile,
+    ):
+        if isinstance(response.data.get("effective_profile"), dict):
+            return type(fallback_profile).model_validate(response.data["effective_profile"])
+        profile_data = response.data.get("profile")
+        if isinstance(profile_data, dict) and isinstance(profile_data.get("effective_profile"), dict):
+            return type(fallback_profile).model_validate(profile_data["effective_profile"])
+        return fallback_profile
 
     def _detect_intent(self, message: str) -> str:
         text = message.lower()
@@ -103,7 +125,7 @@ class OrchestratorAgent:
             return "profile"
         return "collaboration"
 
-    def _simulation_start_request(self, request: ChatRequest) -> SimulationStartRequest:
+    def _simulation_start_request(self, request: ChatRequest, profile=None) -> SimulationStartRequest:
         business_type = request.context.get("business_type", "content")
         if business_type not in {"cafe", "commerce", "content", "popup", "service"}:
             business_type = "content"
@@ -111,7 +133,7 @@ class OrchestratorAgent:
         if difficulty not in {"easy", "normal", "hard"}:
             difficulty = "normal"
         return SimulationStartRequest(
-            profile=request.profile,
+            profile=profile or request.profile,
             item_name=request.context.get("item_name", "로컬 SNS 콘텐츠 스튜디오"),
             business_type=business_type,
             difficulty=difficulty,
@@ -119,9 +141,12 @@ class OrchestratorAgent:
         )
 
     async def _collaborative_consultation(self, request: ChatRequest) -> AgentResponse:
-        profile_task = self.profile_agent.run(ProfileRequest(profile=request.profile, question=request.message))
-        ideas_task = self.idea_agent.run(IdeaRequest(profile=request.profile, count=3))
-        policies_task = self.policy_agent.run(PolicyRequest(profile=request.profile, query=request.message, limit=3))
+        effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
+        profile_task = self.profile_agent.run(
+            ProfileRequest(profile=effective_profile, question=request.message, use_llm_extraction=False)
+        )
+        ideas_task = self.idea_agent.run(IdeaRequest(profile=effective_profile, count=3))
+        policies_task = self.policy_agent.run(PolicyRequest(profile=effective_profile, query=request.message, limit=3))
         profile, ideas, policies = await asyncio.gather(profile_task, ideas_task, policies_task)
 
         top_idea = self._pick_top_idea(ideas)
@@ -130,13 +155,13 @@ class OrchestratorAgent:
 
         finance_task = self.finance_agent.run(
             FinanceRequest(
-                profile=request.profile,
+                profile=effective_profile,
                 assumption=FinanceAssumption(item_name=top_idea_name),
             )
         )
         marketing_task = self.marketing_agent.run(
             MarketingRequest(
-                profile=request.profile,
+                profile=effective_profile,
                 product_name=top_idea_name,
                 target_customer=request.context.get("target_customer"),
                 place=request.context.get("place"),
@@ -145,7 +170,7 @@ class OrchestratorAgent:
             )
         )
         operation_task = self.operation_agent.run(
-            OperationRequest(profile=request.profile, business_name=top_idea_name)
+            OperationRequest(profile=effective_profile, business_name=top_idea_name)
         )
         finance, marketing, operation = await asyncio.gather(finance_task, marketing_task, operation_task)
 

@@ -38,13 +38,21 @@ class BaseAgent:
         data.update(payload or {})
         return data
 
-    async def polish_summary(self, *, task: str, data: dict[str, Any], fallback: str) -> str:
+    async def polish_summary(
+        self,
+        *,
+        task: str,
+        data: dict[str, Any],
+        fallback: str,
+        instructions: str | None = None,
+    ) -> str:
         if not self.llm.is_enabled:
             return fallback
 
         prompt = (
             "아래 JSON 결과를 바탕으로 사용자가 바로 이해할 수 있는 한국어 요약을 "
             "2문장 이내로 작성하세요. 과장하지 말고 다음 행동을 포함하세요.\n\n"
+            f"{instructions.strip() + chr(10) + chr(10) if instructions else ''}"
             f"task: {task}\n"
             f"data: {json.dumps(data, ensure_ascii=False)}"
         )
