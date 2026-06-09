@@ -1,0 +1,16 @@
+export const profile = {
+  name: '김민서',
+  role: '예비창업자',
+  loc: '부산',
+  major: '시각디자인',
+  career: '카페 매니저 1년',
+  interest: '브랜드, 로컬, 디저트',
+  region: '부산 해운대구',
+  capital: '100만 원',
+  team: '1인 창업',
+  tags: ['디자인 역량', 'SNS 운영 경험', '오프라인 중심'],
+  fit: 78,
+  strength: '디자인 감각과 SNS 운영 경험',
+  weakness: '초기 자금 부족',
+  recommend: '저비용 온라인 기반 창업',
+}
