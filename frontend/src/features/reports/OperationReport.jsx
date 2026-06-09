@@ -1,0 +1,3 @@
+import { Card } from '../../shared/components/Card'
+
+export const OperationReport = ({ data, go }) => <div className="report-stack"><Card><div className="kpi-grid">{data.kpis.map(([label, value, delta, good]) => <div key={label}><small>{label}</small><b>{value}</b><em className={good === false ? 'bad' : good ? 'good' : ''}>{delta}</em></div>)}</div>{data.products.map(([name, pct]) => <div className="bar-row" key={name}><span>{name}</span><b>{pct}%</b><i><em style={{ width: `${pct}%`, background: 'var(--a-operation)' }} /></i></div>)}</Card><Card><h3>개선 제안</h3>{data.suggestions.map(([title, body, link]) => <div className="suggest-card" key={title}><b>{title}</b><p>{body}</p>{link && <button onClick={() => go(link)}>SNS 홍보 자동화로 이동</button>}</div>)}</Card></div>
