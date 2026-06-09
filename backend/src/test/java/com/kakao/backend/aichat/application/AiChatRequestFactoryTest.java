@@ -6,8 +6,9 @@ import com.kakao.backend.aichat.dto.AiChatContextPayload;
 import com.kakao.backend.aichat.dto.AiChatRequestMessage;
 import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRoom;
-import com.kakao.backend.user.model.StartupProfile;
 import com.kakao.backend.user.model.User;
+import com.kakao.backend.startupProfile.model.PreferredBusinessType;
+import com.kakao.backend.startupProfile.model.StartupProfile;
 import com.kakao.backend.workspace.domain.Workspace;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +32,7 @@ class AiChatRequestFactoryTest {
         profile.setInterestField("카페, 로컬");
         profile.setBusinessRegion("부산");
         profile.setInitialBudget(1_000_000);
-        profile.setPreferredBusinessType("오프라인");
+        profile.setPreferredBusinessType(PreferredBusinessType.OFFLINE);
         profile.setDiagnosisSummary("소자본 창업에 적합");
         profile.setStrengthTags("브랜딩, 콘텐츠");
 
