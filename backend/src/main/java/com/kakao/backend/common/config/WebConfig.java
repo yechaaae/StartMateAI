@@ -18,14 +18,14 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(loginRequiredInterceptor)
-                .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/auth/**");
+                .addPathPatterns("/**")
+                .excludePathPatterns("/auth/**");
     }
 
     // 프론트 개발 서버가 세션 쿠키를 포함해 API를 호출할 수 있도록 허용합니다.
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/api/**")
+        registry.addMapping("/**")
                 .allowedOriginPatterns(
                         "http://localhost:*",
                         "http://127.0.0.1:*")

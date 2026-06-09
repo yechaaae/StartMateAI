@@ -1,11 +1,11 @@
-package com.kakao.backend.user.controller;
+package com.kakao.backend.auth.controller;
 
-import com.kakao.backend.user.dto.AuthUserResponse;
-import com.kakao.backend.user.dto.LoginRequest;
-import com.kakao.backend.user.dto.SignupRequest;
-import com.kakao.backend.user.service.AuthException;
-import com.kakao.backend.user.service.AuthService;
-import com.kakao.backend.user.service.AuthSession;
+import com.kakao.backend.auth.dto.AuthUserResponse;
+import com.kakao.backend.auth.dto.LoginRequest;
+import com.kakao.backend.auth.dto.SignupRequest;
+import com.kakao.backend.auth.service.AuthException;
+import com.kakao.backend.auth.service.AuthService;
+import com.kakao.backend.auth.service.AuthSession;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

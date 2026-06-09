@@ -1,6 +1,6 @@
 package com.kakao.backend.common.presentation;
 
-import com.kakao.backend.user.service.AuthException;
+import com.kakao.backend.auth.service.AuthException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;

@@ -1,6 +1,6 @@
 package com.kakao.backend.common.presentation;
 
-import com.kakao.backend.user.service.AuthSession;
+import com.kakao.backend.auth.service.AuthSession;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;

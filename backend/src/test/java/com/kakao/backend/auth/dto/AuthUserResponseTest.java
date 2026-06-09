@@ -1,4 +1,4 @@
-package com.kakao.backend.user.dto;
+package com.kakao.backend.auth.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

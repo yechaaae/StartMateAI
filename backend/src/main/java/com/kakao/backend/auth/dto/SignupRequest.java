@@ -1,4 +1,4 @@
-package com.kakao.backend.user.dto;
+package com.kakao.backend.auth.dto;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 

@@ -1,4 +1,4 @@
-package com.kakao.backend.user.service;
+package com.kakao.backend.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -7,9 +7,9 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-import com.kakao.backend.user.dto.AuthUserResponse;
-import com.kakao.backend.user.dto.LoginRequest;
-import com.kakao.backend.user.dto.SignupRequest;
+import com.kakao.backend.auth.dto.AuthUserResponse;
+import com.kakao.backend.auth.dto.LoginRequest;
+import com.kakao.backend.auth.dto.SignupRequest;
 import com.kakao.backend.user.model.User;
 import com.kakao.backend.user.repository.UserRepository;
 import java.util.Optional;

@@ -1,4 +1,4 @@
-package com.kakao.backend.user.dto;
+package com.kakao.backend.auth.dto;
 
 import com.kakao.backend.user.model.User;
 import org.springframework.web.util.HtmlUtils;
