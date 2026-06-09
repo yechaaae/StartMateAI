@@ -30,9 +30,10 @@ const StartMateLogo = () => (
   </svg>
 )
 
-export const Sidebar = ({ route, go, workspace, setWorkspace }) => {
+export const Sidebar = ({ route, go, workspace, setWorkspace, user, onLogout }) => {
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const switcherRef = useRef(null)
+  const displayName = user?.nickname || profile.name
 
   useEffect(() => {
     const close = (event) => {
@@ -57,7 +58,7 @@ export const Sidebar = ({ route, go, workspace, setWorkspace }) => {
       </div>
 
       <button className={route === 'discuss' ? 'discuss-btn on' : 'discuss-btn'} onClick={() => go('discuss')}>
-        <Icon name="discuss" size={18} /> AI와 토론하기
+        <Icon name="discuss" size={18} /> AI와 논의하기
       </button>
 
       <nav>
@@ -75,19 +76,19 @@ export const Sidebar = ({ route, go, workspace, setWorkspace }) => {
           {workspaceOpen && (
             <div className="workspace-modal">
               <div className="workspace-modal-list">
-                {workspaces.map((ws) => (
+                {workspaces.map((nextWorkspace) => (
                   <button
-                    className={workspace.id === ws.id ? 'on' : ''}
-                    key={ws.id}
+                    className={workspace.id === nextWorkspace.id ? 'on' : ''}
+                    key={nextWorkspace.id}
                     onClick={() => {
-                      setWorkspace(ws)
+                      setWorkspace(nextWorkspace)
                       setWorkspaceOpen(false)
                       go('home')
                     }}
                   >
                     <div>
-                      <b>{ws.name}</b>
-                      <small>{ws.desc}</small>
+                      <b>{nextWorkspace.name}</b>
+                      <small>{nextWorkspace.desc}</small>
                     </div>
                   </button>
                 ))}
@@ -103,15 +104,23 @@ export const Sidebar = ({ route, go, workspace, setWorkspace }) => {
         <p>AI 기능</p>
         {featureOrder.map((id) => {
           const feature = features[id]
-          return <button key={id} className={route === id ? 'on' : ''} onClick={() => go(id)}><Icon name={feature.icon} />{feature.title}</button>
+          return (
+            <button key={id} className={route === id ? 'on' : ''} onClick={() => go(id)}>
+              <Icon name={feature.icon} />{feature.title}
+            </button>
+          )
         })}
         <p>보관함</p>
-        <button className={route === 'saved' ? 'on' : ''} onClick={() => go('saved')}><Icon name="bookmark" />저장한 결과</button>
+        <button className={route === 'saved' ? 'on' : ''} onClick={() => go('saved')}>
+          <Icon name="bookmark" />저장한 결과
+        </button>
       </nav>
+
       <div className="user-box">
-        <span>{profile.name.slice(0, 1)}</span>
-        <b>{profile.name}</b>
-        <small>{profile.role} · {profile.loc}</small>
+        <span>{displayName.slice(0, 1)}</span>
+        <b>{displayName}</b>
+        <small>{user?.email || `${profile.role} · ${profile.loc}`}</small>
+        <button type="button" onClick={onLogout}>로그아웃</button>
       </div>
     </aside>
   )
