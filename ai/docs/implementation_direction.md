@@ -5,14 +5,14 @@
 PDF 기획서 기준 AI 파트는 `Orchestrator Agent`가 사용자 의도를 판단하고 아래 전문 에이전트로 위임하는 구조로 잡았다.
 
 - `ProfileAgent`: JSON 프로필과 자연어 질문을 합쳐 `effective_profile`을 만들고 강점, 제약조건, 준비도 점수, 추가 질문을 정리. 확실한 숫자/부정 표현은 규칙으로 검증하고, GMS가 켜져 있으면 LLM 기반 구조화 추출로 경험, 관심 분야, 채널 선호 같은 자연어 표현을 보정한다.
-- `IdeaAgent`: 창업 아이템 3~5개 추천
+- `IdeaAgent`: GMS가 켜져 있으면 LLM으로 맞춤 아이템 후보를 JSON 생성하고, 코드는 예산/경험/관심 분야/채널/리스크/30일 검증 가능성을 점수화해 상위 3~5개 추천
 - `PolicyAgent`: 지원사업 공고 검색/RAG 매칭, 제출 서류 체크리스트 생성
 - `FinanceAgent`: 초기비용, 예상 매출, 손익분기점, 30일 운영 시뮬레이션
 - `SimulationAgent`: 30일 동안 이벤트와 선택지를 제공하는 게임형 창업 체험
 - `OperationAgent`: 매출, 재고, 리뷰 기반 운영 피드백과 다음 주 계획
 - `MarketingAgent`: SNS 릴스 훅, 15초 콘티, 게시글, 해시태그, 업로드 일정 생성
 
-현재는 해커톤 데모가 바로 붙을 수 있도록 deterministic rule + mock LLM 형태로 동작한다. GMS API 형식이 확정되면 `app/core/gms_client.py`만 수정하거나 환경변수만 채우면 된다.
+현재는 해커톤 데모가 바로 붙을 수 있도록 GMS LLM + deterministic rule fallback 형태로 동작한다. GMS API 형식이 바뀌면 `app/core/gms_client.py`만 수정하거나 환경변수만 채우면 된다.
 
 `ProfileAgent`는 단독 호출과 멀티에이전트 호출 양쪽에서 사용된다. 단독 호출에서는 사용자에게 보여줄 프로필 분석과 추가 질문을 반환하고, 멀티에이전트 호출에서는 `effective_profile`, `readiness_scores`, `agent_hints`를 Orchestrator와 다른 에이전트의 판단 근거로 제공한다.
 
