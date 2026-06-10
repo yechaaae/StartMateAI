@@ -140,6 +140,7 @@ export const Onboarding = ({ onComplete }) => {
   }
 
   const moveBack = () => {
+    if (saved) return
     setError('')
     setStepIndex((current) => Math.max(current - 1, 0))
   }
@@ -181,6 +182,17 @@ export const Onboarding = ({ onComplete }) => {
     flowRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }, [stepIndex])
 
+  useEffect(() => {
+    if (saved) {
+      const preventBack = () => {
+        window.history.pushState(null, '', window.location.href)
+      }
+      window.history.pushState(null, '', window.location.href)
+      window.addEventListener('popstate', preventBack)
+      return () => window.removeEventListener('popstate', preventBack)
+    }
+  }, [saved])
+
   if (saved) {
     return (
       <main className="loading-page">
@@ -194,7 +206,12 @@ export const Onboarding = ({ onComplete }) => {
   return (
     <main className="onboarding-shell" ref={flowRef}>
       <section className="onboarding-flow">
-        <button type="button" className="onboarding-brand" onClick={moveBack} disabled={stepIndex === 0}>
+        <button
+          type="button"
+          className="onboarding-brand"
+          onClick={moveBack}
+          disabled={stepIndex === 0 || saved}
+        >
           <BrandMark /><b>StartMate AI</b>
         </button>
 
