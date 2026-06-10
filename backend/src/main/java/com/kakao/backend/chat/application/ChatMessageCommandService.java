@@ -2,6 +2,7 @@ package com.kakao.backend.chat.application;
 
 import com.kakao.backend.aichat.application.AiChatDispatchCommand;
 import com.kakao.backend.aichat.application.AiChatDispatchService;
+import com.kakao.backend.aichat.application.AiChatExternalReferenceDataService;
 import com.kakao.backend.aichat.application.AiChatReferenceContextService;
 import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRoom;
@@ -28,6 +29,7 @@ public class ChatMessageCommandService {
     private final StartupProfileRepository startupProfileRepository;
     private final AiChatDispatchService aiChatDispatchService;
     private final AiChatReferenceContextService aiChatReferenceContextService;
+    private final AiChatExternalReferenceDataService aiChatExternalReferenceDataService;
     private final ChatSseService chatSseService;
     private final ChatRequestStatusService chatRequestStatusService;
     private final ChatCandidateAgentResolver chatCandidateAgentResolver;
@@ -39,6 +41,7 @@ public class ChatMessageCommandService {
             StartupProfileRepository startupProfileRepository,
             AiChatDispatchService aiChatDispatchService,
             AiChatReferenceContextService aiChatReferenceContextService,
+            AiChatExternalReferenceDataService aiChatExternalReferenceDataService,
             ChatSseService chatSseService,
             ChatRequestStatusService chatRequestStatusService,
             ChatCandidateAgentResolver chatCandidateAgentResolver
@@ -49,6 +52,7 @@ public class ChatMessageCommandService {
         this.startupProfileRepository = startupProfileRepository;
         this.aiChatDispatchService = aiChatDispatchService;
         this.aiChatReferenceContextService = aiChatReferenceContextService;
+        this.aiChatExternalReferenceDataService = aiChatExternalReferenceDataService;
         this.chatSseService = chatSseService;
         this.chatRequestStatusService = chatRequestStatusService;
         this.chatCandidateAgentResolver = chatCandidateAgentResolver;
@@ -99,6 +103,7 @@ public class ChatMessageCommandService {
                 command.currentResult() == null ? Map.of() : command.currentResult(),
                 Map.of()
         );
+        Map<String, Object> referenceData = mergedReferenceData(dispatchCommand);
         dispatchCommand = new AiChatDispatchCommand(
                 dispatchCommand.requestId(),
                 dispatchCommand.workspace(),
@@ -114,7 +119,7 @@ public class ChatMessageCommandService {
                 dispatchCommand.candidateAgents(),
                 dispatchCommand.recentMessages(),
                 dispatchCommand.currentResult(),
-                aiChatReferenceContextService.resolve(dispatchCommand)
+                referenceData
         );
 
         try {
@@ -160,5 +165,19 @@ public class ChatMessageCommandService {
         return room.getTargetFeature() == null || room.getTargetFeature().isBlank()
                 ? "FREE_CHAT"
                 : "FEATURE_CHAT";
+    }
+
+    private Map<String, Object> mergedReferenceData(AiChatDispatchCommand command) {
+        Map<String, Object> referenceData = new java.util.LinkedHashMap<>();
+        Map<String, Object> savedReferenceData = aiChatReferenceContextService.resolve(command);
+        if (savedReferenceData != null && !savedReferenceData.isEmpty()) {
+            referenceData.putAll(savedReferenceData);
+        }
+
+        Map<String, Object> externalData = aiChatExternalReferenceDataService.resolve(command);
+        if (externalData != null && !externalData.isEmpty()) {
+            referenceData.put("externalData", externalData);
+        }
+        return referenceData;
     }
 }
