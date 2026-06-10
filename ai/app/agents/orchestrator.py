@@ -49,85 +49,22 @@ class OrchestratorAgent:
         self.simulation_agent = simulation_agent
 
     async def run(self, request: ChatRequest) -> AgentResponse:
-        plan_meta: dict[str, Any] | None = None
-        agent_plan: list[str] | None = None
-        if request.intent == "auto":
-            agent_plan, plan_meta = await self.plan_agents(request)
-            if len(agent_plan) > 1 and "collaboration" not in agent_plan:
-                result = await self._selective_consultation(request, agent_plan, plan_meta)
-                effective_profile = self._effective_profile_from_response(result, request.profile)
-                result.data.setdefault("effective_profile", effective_profile.model_dump())
-                result.data["routed_by"] = self.name
-                result.data["user_message"] = request.message
-                return result
-            intent = agent_plan[0]
-        else:
-            intent = request.intent
-
-        if intent == "profile":
-            result = await self.profile_agent.run(ProfileRequest(profile=request.profile, question=request.message))
-            effective_profile = self._effective_profile_from_response(result, request.profile)
-        elif intent == "idea":
-            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
-            result = await self.idea_agent.run(IdeaRequest(profile=effective_profile))
-        elif intent == "policy":
-            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
-            result = await self.policy_agent.run(PolicyRequest(profile=effective_profile, query=request.message))
-        elif intent == "finance":
-            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
-            finance_assumption, finance_extraction = await self._finance_assumption_from_request(request)
-            result = await self.finance_agent.run(
-                FinanceRequest(
-                    profile=effective_profile,
-                    assumption=finance_assumption,
-                )
-            )
-            result.data["finance_input_extraction"] = finance_extraction
-            if request.intent == "auto" and self._should_follow_up_policy(result):
-                result = await self._finance_policy_follow_up(
-                    request=request,
-                    effective_profile=effective_profile,
-                    finance_response=result,
-                    plan_meta=plan_meta,
-                    initial_plan=agent_plan or ["finance"],
-                )
-        elif intent == "operation":
-            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
-            result = await self.operation_agent.run(
-                OperationRequest(profile=effective_profile, business_name=request.context.get("business_name", "테스트 매장"))
-            )
-        elif intent == "marketing":
-            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
-            result = await self.marketing_agent.run(
-                MarketingRequest(
-                    profile=effective_profile,
-                    product_name=request.context.get("product_name", "창업 상품"),
-                    event_date=request.context.get("event_date"),
-                    target_customer=request.context.get("target_customer"),
-                    place=request.context.get("place"),
-                    brand_tone=request.context.get("brand_tone", "친근하고 실행력 있는"),
-                    goal=request.message,
-                )
-            )
-        elif intent == "simulation":
-            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
-            result = self.simulation_agent.start(self._simulation_start_request(request, effective_profile))
-        elif intent in {"collaboration", "roadmap"}:
+        state = await self._build_orchestration_state(request)
+        if state["mode"] == "collaboration":
             result = await self._collaborative_consultation(request)
-            effective_profile = self._effective_profile_from_response(result, request.profile)
-        else:
-            result = await self._collaborative_consultation(request)
-            effective_profile = self._effective_profile_from_response(result, request.profile)
+            return self._annotate_response(result, state)
 
-        result.data.setdefault("effective_profile", effective_profile.model_dump())
-        if plan_meta is not None and agent_plan is not None:
-            result.data["agent_plan"] = {
-                "selected_intents": agent_plan,
-                "planner": plan_meta,
-            }
-        result.data["routed_by"] = self.name
-        result.data["user_message"] = request.message
-        return result
+        await self._run_agents(state, state["plan"])
+        followups = await self._plan_followups(state)
+        if followups:
+            state["followups"] = followups
+            await self._run_agents(state, followups)
+
+        if len(state["results"]) == 1 and not followups:
+            result = next(iter(state["results"].values()))
+        else:
+            result = self._synthesize_selective_response(state)
+        return self._annotate_response(result, state)
 
     def _effective_profile_from_response(
         self,
@@ -140,6 +77,153 @@ class OrchestratorAgent:
         if isinstance(profile_data, dict) and isinstance(profile_data.get("effective_profile"), dict):
             return type(fallback_profile).model_validate(profile_data["effective_profile"])
         return fallback_profile
+
+    async def _build_orchestration_state(self, request: ChatRequest) -> dict[str, Any]:
+        if request.intent == "auto":
+            plan, plan_meta = await self.plan_agents(request)
+        else:
+            plan = ["collaboration"] if request.intent == "roadmap" else [request.intent]
+            plan_meta = {"source": "explicit_intent"}
+
+        mode = "collaboration" if plan == ["collaboration"] else "selective"
+        effective_profile = None
+        if mode == "selective":
+            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
+
+        return {
+            "request": request,
+            "mode": mode,
+            "plan": plan,
+            "plan_meta": plan_meta,
+            "effective_profile": effective_profile,
+            "results": {},
+            "followups": [],
+            "followup_meta": {},
+        }
+
+    async def _run_agents(self, state: dict[str, Any], intents: list[str]) -> None:
+        pending = [intent for intent in intents if intent not in state["results"]]
+        if not pending:
+            return
+        pairs = await asyncio.gather(*(self._run_agent(state, intent) for intent in pending))
+        for intent, response in pairs:
+            state["results"][intent] = response
+
+    async def _run_agent(self, state: dict[str, Any], intent: str) -> tuple[str, AgentResponse]:
+        request: ChatRequest = state["request"]
+        effective_profile = state["effective_profile"] or request.profile
+
+        if intent == "profile":
+            response = await self.profile_agent.run(
+                ProfileRequest(profile=effective_profile, question=request.message, use_llm_extraction=False)
+            )
+            return intent, response
+        if intent == "idea":
+            return intent, await self.idea_agent.run(IdeaRequest(profile=effective_profile))
+        if intent == "policy":
+            query = state.get("policy_query") or request.message
+            return intent, await self.policy_agent.run(
+                PolicyRequest(profile=effective_profile, query=query, limit=3)
+            )
+        if intent == "finance":
+            finance_assumption, finance_extraction = await self._finance_assumption_from_request(request)
+            response = await self.finance_agent.run(
+                FinanceRequest(profile=effective_profile, assumption=finance_assumption)
+            )
+            response.data["finance_input_extraction"] = finance_extraction
+            return intent, response
+        if intent == "operation":
+            return intent, await self.operation_agent.run(
+                OperationRequest(
+                    profile=effective_profile,
+                    business_name=request.context.get(
+                        "business_name",
+                        request.context.get("item_name", request.context.get("product_name", "테스트 매장")),
+                    ),
+                )
+            )
+        if intent == "marketing":
+            return intent, await self.marketing_agent.run(
+                MarketingRequest(
+                    profile=effective_profile,
+                    product_name=request.context.get("product_name", request.context.get("item_name", "창업 상품")),
+                    event_date=request.context.get("event_date"),
+                    target_customer=request.context.get("target_customer"),
+                    place=request.context.get("place"),
+                    brand_tone=request.context.get("brand_tone", "친근하고 실행력 있는"),
+                    goal=request.message,
+                )
+            )
+        if intent == "simulation":
+            return intent, self.simulation_agent.start(self._simulation_start_request(request, effective_profile))
+        return intent, await self._collaborative_consultation(request)
+
+    async def _plan_followups(self, state: dict[str, Any]) -> list[str]:
+        results: dict[str, AgentResponse] = state["results"]
+        followups: list[str] = []
+        finance = results.get("finance")
+        if finance and "policy" not in results and self._should_follow_up_policy(finance):
+            state["policy_query"] = self._policy_query_from_finance(state["request"].message, finance)
+            state["followup_meta"]["policy"] = self._finance_policy_trigger_reason(finance)
+            followups.append("policy")
+        return self._unique(followups)
+
+    def _synthesize_selective_response(self, state: dict[str, Any]) -> AgentResponse:
+        request: ChatRequest = state["request"]
+        results: dict[str, AgentResponse] = state["results"]
+        selected_intents = self._unique([*state["plan"], *state.get("followups", [])])
+        agent_names = [response.agent for response in results.values()]
+        contracts = [self._contract_summary(response) for response in results.values()]
+
+        data: dict[str, Any] = {
+            "collaboration_mode": "selective_dynamic_agents",
+            "selected_intents": selected_intents,
+            "selected_agents": agent_names,
+            "selection_reason": self._agent_plan_reason(
+                request.message,
+                selected_intents,
+                state.get("plan_meta"),
+                state.get("followup_meta"),
+            ),
+            "agent_results": {intent: response.data for intent, response in results.items()},
+            "agent_contracts": contracts,
+        }
+        if state.get("effective_profile") is not None:
+            data["effective_profile"] = state["effective_profile"].model_dump()
+        for intent, response in results.items():
+            data[intent] = response.data
+
+        return AgentResponse(
+            intent="selective_collaboration",
+            agent=self.name,
+            summary=f"{', '.join(agent_names)}만 선택해 이 질문에 필요한 범위로 검토했습니다.",
+            data=data,
+            next_actions=self._unique(
+                [
+                    action
+                    for response in results.values()
+                    for action in response.next_actions[:2]
+                ]
+            ),
+            sources=[source for response in results.values() for source in response.sources],
+            warnings=self._unique([warning for response in results.values() for warning in response.warnings]),
+        )
+
+    def _annotate_response(self, response: AgentResponse, state: dict[str, Any]) -> AgentResponse:
+        request: ChatRequest = state["request"]
+        effective_profile = state.get("effective_profile")
+        if effective_profile is None:
+            effective_profile = self._effective_profile_from_response(response, request.profile)
+        response.data.setdefault("effective_profile", effective_profile.model_dump())
+        response.data["agent_plan"] = {
+            "selected_intents": state["plan"],
+            "followups": state.get("followups", []),
+            "planner": state.get("plan_meta"),
+            "followup_meta": state.get("followup_meta", {}),
+        }
+        response.data["routed_by"] = self.name
+        response.data["user_message"] = request.message
+        return response
 
     def _detect_intent(self, message: str) -> str:
         return self._heuristic_agent_plan(message)[0]
@@ -291,102 +375,29 @@ class OrchestratorAgent:
         intents: list[str],
         plan_meta: dict[str, Any] | None = None,
     ) -> AgentResponse:
-        effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
-
-        async def run_intent(intent: str) -> tuple[str, AgentResponse]:
-            if intent == "profile":
-                return intent, await self.profile_agent.run(
-                    ProfileRequest(profile=effective_profile, question=request.message, use_llm_extraction=False)
-                )
-            if intent == "idea":
-                return intent, await self.idea_agent.run(IdeaRequest(profile=effective_profile))
-            if intent == "policy":
-                return intent, await self.policy_agent.run(
-                    PolicyRequest(profile=effective_profile, query=request.message, limit=3)
-                )
-            if intent == "finance":
-                finance_assumption, finance_extraction = await self._finance_assumption_from_request(request)
-                response = await self.finance_agent.run(
-                    FinanceRequest(profile=effective_profile, assumption=finance_assumption)
-                )
-                response.data["finance_input_extraction"] = finance_extraction
-                return intent, response
-            if intent == "operation":
-                return intent, await self.operation_agent.run(
-                    OperationRequest(
-                        profile=effective_profile,
-                        business_name=request.context.get(
-                            "business_name",
-                            request.context.get("item_name", request.context.get("product_name", "테스트 매장")),
-                        ),
-                    )
-                )
-            if intent == "marketing":
-                return intent, await self.marketing_agent.run(
-                    MarketingRequest(
-                        profile=effective_profile,
-                        product_name=request.context.get("product_name", request.context.get("item_name", "창업 상품")),
-                        event_date=request.context.get("event_date"),
-                        target_customer=request.context.get("target_customer"),
-                        place=request.context.get("place"),
-                        brand_tone=request.context.get("brand_tone", "친근하고 실행력 있는"),
-                        goal=request.message,
-                    )
-                )
-            if intent == "simulation":
-                return intent, self.simulation_agent.start(self._simulation_start_request(request, effective_profile))
-            return intent, await self._collaborative_consultation(request)
-
-        pairs = await asyncio.gather(*(run_intent(intent) for intent in intents))
-        responses = {intent: response for intent, response in pairs}
-        if "finance" in responses and "policy" not in responses and self._should_follow_up_policy(responses["finance"]):
-            policy_query = self._policy_query_from_finance(request.message, responses["finance"])
-            responses["policy"] = await self.policy_agent.run(
-                PolicyRequest(profile=effective_profile, query=policy_query, limit=3)
-            )
-            intents = self._unique([*intents, "policy"])
-        agent_names = [response.agent for response in responses.values()]
-        contracts = [self._contract_summary(response) for response in responses.values()]
-
-        data: dict[str, Any] = {
-            "collaboration_mode": "selective_dynamic_agents",
-            "selected_intents": intents,
-            "selected_agents": agent_names,
-            "selection_reason": self._agent_plan_reason(request.message, intents, plan_meta),
-            "agent_results": {intent: response.data for intent, response in responses.items()},
-            "agent_contracts": contracts,
-            "effective_profile": effective_profile.model_dump(),
+        state = {
+            "request": request,
+            "mode": "selective",
+            "plan": intents,
+            "plan_meta": plan_meta or {"source": "manual_selective"},
+            "effective_profile": await self.profile_agent.build_effective_profile_async(request.profile, request.message),
+            "results": {},
+            "followups": [],
+            "followup_meta": {},
         }
-        for intent, response in responses.items():
-            data[intent] = response.data
-
-        warnings = []
-        sources = []
-        for response in responses.values():
-            warnings.extend(response.warnings)
-            sources.extend(response.sources)
-
-        return AgentResponse(
-            intent="selective_collaboration",
-            agent=self.name,
-            summary=f"{', '.join(agent_names)}만 선택해 이 질문에 필요한 범위로 검토했습니다.",
-            data=data,
-            next_actions=self._unique(
-                [
-                    action
-                    for response in responses.values()
-                    for action in response.next_actions[:2]
-                ]
-            ),
-            sources=sources,
-            warnings=self._unique(warnings),
-        )
+        await self._run_agents(state, intents)
+        followups = await self._plan_followups(state)
+        if followups:
+            state["followups"] = followups
+            await self._run_agents(state, followups)
+        return self._synthesize_selective_response(state)
 
     def _agent_plan_reason(
         self,
         message: str,
         intents: list[str],
         plan_meta: dict[str, Any] | None = None,
+        followup_meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         labels = {
             "finance": "예산/매출/손익/객단가 등 재정 판단 표현",
@@ -401,6 +412,7 @@ class OrchestratorAgent:
             "message_preview": message[:160],
             "matched": {intent: labels.get(intent, intent) for intent in intents},
             "planner": plan_meta or {"source": "unknown"},
+            "followups": followup_meta or {},
         }
 
     def _should_follow_up_policy(self, finance_response: AgentResponse) -> bool:
