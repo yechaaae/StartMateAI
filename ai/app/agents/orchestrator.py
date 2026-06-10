@@ -83,6 +83,14 @@ class OrchestratorAgent:
                 )
             )
             result.data["finance_input_extraction"] = finance_extraction
+            if request.intent == "auto" and self._should_follow_up_policy(result):
+                result = await self._finance_policy_follow_up(
+                    request=request,
+                    effective_profile=effective_profile,
+                    finance_response=result,
+                    plan_meta=plan_meta,
+                    initial_plan=agent_plan or ["finance"],
+                )
         elif intent == "operation":
             effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
             result = await self.operation_agent.run(
@@ -331,6 +339,12 @@ class OrchestratorAgent:
 
         pairs = await asyncio.gather(*(run_intent(intent) for intent in intents))
         responses = {intent: response for intent, response in pairs}
+        if "finance" in responses and "policy" not in responses and self._should_follow_up_policy(responses["finance"]):
+            policy_query = self._policy_query_from_finance(request.message, responses["finance"])
+            responses["policy"] = await self.policy_agent.run(
+                PolicyRequest(profile=effective_profile, query=policy_query, limit=3)
+            )
+            intents = self._unique([*intents, "policy"])
         agent_names = [response.agent for response in responses.values()]
         contracts = [self._contract_summary(response) for response in responses.values()]
 
@@ -388,6 +402,99 @@ class OrchestratorAgent:
             "matched": {intent: labels.get(intent, intent) for intent in intents},
             "planner": plan_meta or {"source": "unknown"},
         }
+
+    def _should_follow_up_policy(self, finance_response: AgentResponse) -> bool:
+        data = finance_response.data or {}
+        budget = data.get("budget_analysis") or {}
+        support = data.get("support_handoff") or {}
+        if budget.get("status") == "funding_gap":
+            return True
+        if (budget.get("funding_gap_krw") or 0) > 0:
+            return True
+        if support.get("needed_support_types"):
+            return True
+        if data.get("risk_grade") == "C" and data.get("monthly_profit_krw", 0) <= 0:
+            return True
+        return False
+
+    async def _finance_policy_follow_up(
+        self,
+        *,
+        request: ChatRequest,
+        effective_profile,
+        finance_response: AgentResponse,
+        plan_meta: dict[str, Any] | None,
+        initial_plan: list[str],
+    ) -> AgentResponse:
+        policy_query = self._policy_query_from_finance(request.message, finance_response)
+        policy_response = await self.policy_agent.run(
+            PolicyRequest(profile=effective_profile, query=policy_query, limit=3)
+        )
+        selected_intents = self._unique([*initial_plan, "policy"])
+        selected_agents = [finance_response.agent, policy_response.agent]
+        contracts = [
+            self._contract_summary(finance_response),
+            self._contract_summary(policy_response),
+        ]
+        data = {
+            "collaboration_mode": "result_triggered_follow_up",
+            "selected_intents": selected_intents,
+            "selected_agents": selected_agents,
+            "selection_reason": {
+                "message_preview": request.message[:160],
+                "planner": plan_meta or {"source": "unknown"},
+                "trigger": self._finance_policy_trigger_reason(finance_response),
+            },
+            "finance": finance_response.data,
+            "policy": policy_response.data,
+            "agent_results": {
+                "finance": finance_response.data,
+                "policy": policy_response.data,
+            },
+            "agent_contracts": contracts,
+            "effective_profile": effective_profile.model_dump(),
+        }
+        return AgentResponse(
+            intent="selective_collaboration",
+            agent=self.name,
+            summary=(
+                "재정 검토에서 자금/지원 매칭 필요가 감지되어 FinanceAgent 결과에 PolicyAgent 검토를 이어 붙였습니다."
+            ),
+            data=data,
+            next_actions=self._unique(
+                [
+                    *finance_response.next_actions[:2],
+                    *policy_response.next_actions[:2],
+                ]
+            ),
+            sources=policy_response.sources,
+            warnings=self._unique([*finance_response.warnings, *policy_response.warnings]),
+        )
+
+    def _finance_policy_trigger_reason(self, finance_response: AgentResponse) -> dict[str, Any]:
+        data = finance_response.data or {}
+        budget = data.get("budget_analysis") or {}
+        support = data.get("support_handoff") or {}
+        return {
+            "budget_status": budget.get("status"),
+            "funding_gap_krw": budget.get("funding_gap_krw"),
+            "monthly_profit_krw": data.get("monthly_profit_krw"),
+            "risk_grade": data.get("risk_grade"),
+            "needed_support_types": support.get("needed_support_types", []),
+        }
+
+    def _policy_query_from_finance(self, message: str, finance_response: AgentResponse) -> str:
+        data = finance_response.data or {}
+        support = data.get("support_handoff") or {}
+        keywords = support.get("policy_query_keywords") or []
+        support_types = support.get("needed_support_types") or []
+        parts = [
+            message,
+            "재정 검토 결과 자금 또는 지원사업 매칭이 필요합니다.",
+            f"필요 지원 유형: {', '.join(map(str, support_types))}" if support_types else "",
+            f"검색 키워드: {', '.join(map(str, keywords))}" if keywords else "",
+        ]
+        return " ".join(part for part in parts if part)
 
     async def _finance_assumption_from_request(self, request: ChatRequest) -> tuple[FinanceAssumption, dict[str, Any]]:
         context = request.context

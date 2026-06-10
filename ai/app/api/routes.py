@@ -253,12 +253,13 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
         return
 
     if stream_intent not in {"auto", "collaboration", "roadmap"}:
-        single_agent_request = request.model_copy(update={"intent": stream_intent})
+        single_agent_request = request if request.intent == "auto" else request.model_copy(update={"intent": stream_intent})
         yield event(
             "start",
             {
-                "message": "단일 에이전트 요청을 실행합니다.",
+                "message": "단일 에이전트로 시작하고 필요하면 후속 에이전트를 실행합니다.",
                 "intent": stream_intent,
+                "planner": plan_meta,
                 "chat_session_id": session_id,
                 "memory": _memory_view(session_id),
             },
@@ -267,7 +268,24 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
         _remember_chat_response(session_id, single_agent_request, response)
         response.data["chat_session_id"] = session_id
         response.data["memory"] = _memory_view(session_id)
-        yield event("agent_result", response_view(response))
+        if response.intent == "selective_collaboration":
+            for contract in response.data.get("agent_contracts", []):
+                yield event(
+                    "agent_result",
+                    {
+                        "agent": contract.get("agent"),
+                        "intent": "selective",
+                        "summary": contract.get("recommendation"),
+                        "position": contract.get("position"),
+                        "score": contract.get("score"),
+                        "risks": contract.get("risks", []),
+                        "missing_inputs": contract.get("missing_inputs", []),
+                        "recommendation": contract.get("recommendation"),
+                        "data": contract,
+                    },
+                )
+        else:
+            yield event("agent_result", response_view(response))
         yield event("final", response.model_dump(mode="json"))
         return
 
