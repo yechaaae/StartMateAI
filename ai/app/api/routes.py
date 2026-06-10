@@ -385,7 +385,7 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
     yield event(
         "orchestrator_step",
         {
-            "step": "후보 압축",
+            "step": "후보 선정",
             "message": f"IdeaAgent의 1순위 후보인 {top_idea_name}을 기준 아이템으로 선택했습니다.",
             "selected_idea": top_idea,
             "round1_synthesis": round1_synthesis,
@@ -501,7 +501,7 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
         "recommended_flow": [
             "프로필 제약조건 확정",
             f"{top_idea_name} 기준 30일 테스트 설계",
-            "초기 현금 필요액과 손익분기점 재검산",
+            "초기 현금 필요액과 손익분기점 재계산",
             "지원사업 상위 후보 신청 가능성 확인",
             "SNS 홍보 소재 제작 후 고객 반응 측정",
         ],
@@ -510,13 +510,13 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
         intent="collaboration",
         agent=orchestrator.name,
         summary=(
-            "여러 전문 에이전트가 순차 라운드로 의견을 제시했고, Orchestrator가 충돌을 조정해 "
+            "여러 전문 에이전트가 동시에 후보를 검토했고, Orchestrator가 충돌을 조정해 "
             f"{top_idea_name} 중심의 실행안을 합의했습니다."
         ),
         data=final_data,
         next_actions=[
             "선정 아이템의 실제 고객 5명을 인터뷰",
-            "임대료, 예상 방문자 수, 객단가를 실제 값으로 입력",
+            "재료비, 예상 방문수, 객단가를 실제 값으로 입력",
             "지원사업 상위 후보의 신청 서류 체크리스트 작성",
             "SNS 테스트 콘텐츠 1개를 제작해 반응 측정",
         ],

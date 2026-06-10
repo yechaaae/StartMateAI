@@ -178,7 +178,6 @@ class CommercialAreaRequest(BaseModel):
     query: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
 
-
 class MarketingRequest(BaseModel):
     profile: StartupProfile = Field(default_factory=StartupProfile)
     product_name: str
@@ -187,3 +186,6 @@ class MarketingRequest(BaseModel):
     place: str | None = None
     brand_tone: str = "친근하고 실행력 있는"
     goal: str = "방문과 문의를 늘리기"
+    channel: str | None = None
+    objective: str | None = None
+    schedule: str | None = None

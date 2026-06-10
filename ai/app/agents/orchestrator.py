@@ -314,15 +314,7 @@ class OrchestratorAgent:
             )
         if intent == "marketing":
             return intent, await self.marketing_agent.run(
-                MarketingRequest(
-                    profile=effective_profile,
-                    product_name=request.context.get("product_name", request.context.get("item_name", "창업 상품")),
-                    event_date=request.context.get("event_date"),
-                    target_customer=request.context.get("target_customer"),
-                    place=request.context.get("place"),
-                    brand_tone=request.context.get("brand_tone", "친근하고 실행력 있는"),
-                    goal=request.message,
-                )
+                self._marketing_request_from_context(request, effective_profile)
             )
         if intent == "simulation":
             return intent, self.simulation_agent.start(self._simulation_start_request(request, effective_profile))
@@ -1006,6 +998,128 @@ class OrchestratorAgent:
         if number > 1:
             number /= 100
         return number
+
+    def _marketing_request_from_context(self, request: ChatRequest, profile=None) -> MarketingRequest:
+        context = request.context or {}
+        message = request.message or ""
+        feature_payload = self._dict_at(context, "featurePayload") or self._dict_at(context, "feature_payload")
+        current_result = (
+            self._dict_at(context, "currentResult")
+            or self._dict_at(feature_payload, "currentResult")
+            or self._dict_at(context, "current_result")
+        )
+        business_context = (
+            self._dict_at(context, "businessContext")
+            or self._dict_at(current_result, "businessContext")
+            or self._dict_at(feature_payload, "businessContext")
+        )
+        selected_idea = self._dict_at(business_context, "selectedIdea")
+
+        product_name = (
+            context.get("product_name")
+            or context.get("item_name")
+            or self._title_at(selected_idea)
+            or self._infer_marketing_product(message)
+            or "창업 상품"
+        )
+        return MarketingRequest(
+            profile=profile or request.profile,
+            product_name=str(product_name),
+            event_date=context.get("event_date") or self._infer_marketing_event_date(message),
+            target_customer=context.get("target_customer") or self._infer_marketing_target(message, profile or request.profile),
+            place=context.get("place") or self._infer_marketing_place(message, profile or request.profile),
+            brand_tone=context.get("brand_tone", "친근하고 실행력 있는"),
+            goal=message,
+            channel=context.get("channel") or self._infer_marketing_channel(message),
+            objective=context.get("objective") or self._infer_marketing_objective(message),
+            schedule=context.get("schedule"),
+        )
+
+    def _infer_marketing_product(self, message: str) -> str | None:
+        patterns = [
+            r"([\w가-힣\s]{2,30}?)\s*(?:홍보|마케팅|릴스|게시글|콘텐츠|문구)",
+            r"([\w가-힣\s]{2,30}?)\s*(?:팝업|스토어)\s*(?:홍보|마케팅|하려고|하고)",
+            r"(수제\s*쿠키|쿠키\s*팝업|팝업\s*카페|음료\s*스탠드|스마트\s*운영\s*점검\s*서비스)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, message)
+            if match:
+                value = re.sub(r"\s+", " ", match.group(1)).strip(" ,.!?\n\t")
+                value = re.sub(r"^(혹시|이번|지금|내가|저희|우리)\s*", "", value).strip()
+                value = re.sub(r"^[가-힣A-Za-z0-9\s]+에서\s+", "", value).strip()
+                if value:
+                    return value
+        if "쿠키" in message:
+            return "수제 쿠키 팝업"
+        if "카페" in message:
+            return "팝업 카페"
+        if "요식" in message or "음식" in message:
+            return "요식업 창업 아이템"
+        return None
+
+    def _infer_marketing_event_date(self, message: str) -> str | None:
+        patterns = [
+            r"((?:이번|다음)\s*(?:주|주말|달|월|금요일|토요일|일요일))",
+            r"(\d{1,2}\s*월\s*\d{1,2}\s*일)",
+            r"(\d{1,2}\s*일\s*(?:동안|간))",
+            r"(D-\d+)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, message)
+            if match:
+                return match.group(1).strip()
+        return None
+
+    def _infer_marketing_target(self, message: str, profile=None) -> str | None:
+        target_keywords = {
+            "대학생": "대학생",
+            "직장인": "직장인",
+            "청년": "청년 고객",
+            "소상공인": "소상공인",
+            "부모": "가족 고객",
+            "아이": "가족 고객",
+            "커플": "커플 고객",
+        }
+        found = [label for keyword, label in target_keywords.items() if keyword in message]
+        if found:
+            return ", ".join(self._unique(found))
+        region = getattr(profile, "region", None) or "로컬"
+        if any(keyword in message for keyword in ["쿠키", "디저트", "카페", "음료", "요식"]):
+            return f"{region} 직장인, 대학생, 디저트 관심 고객"
+        if any(keyword in message for keyword in ["매장", "운영", "점검", "소상공인"]):
+            return f"{region} 소상공인과 매장 운영자"
+        return None
+
+    def _infer_marketing_place(self, message: str, profile=None) -> str | None:
+        region_match = re.search(r"(구미|김천|대구|서울|부산|광주|대전|인천|울산|경북|경남|전북|전남|충북|충남|강원|제주)", message)
+        region = region_match.group(1) if region_match else getattr(profile, "region", None)
+        if "온라인" in message or "인스타" in message:
+            return f"{region + ' ' if region else ''}온라인 판매 채널"
+        if "팝업" in message or "길거리" in message or "오프라인" in message:
+            return f"{region + ' ' if region else ''}팝업 현장"
+        if region:
+            return f"{region} 판매 채널"
+        return None
+
+    def _infer_marketing_channel(self, message: str) -> str | None:
+        if any(keyword in message.lower() for keyword in ["릴스", "reels", "인스타", "instagram"]):
+            return "Instagram Reels"
+        if any(keyword in message.lower() for keyword in ["쇼츠", "shorts", "유튜브"]):
+            return "YouTube Shorts"
+        if "블로그" in message or "검색" in message:
+            return "Blog/Search"
+        if "전단" in message or "길거리" in message:
+            return "Offline Flyer"
+        return None
+
+    def _infer_marketing_objective(self, message: str) -> str | None:
+        if any(keyword in message for keyword in ["예약", "문의", "구매", "판매"]):
+            return "예약/문의 전환"
+        if any(keyword in message for keyword in ["방문", "팝업", "행사", "길거리"]):
+            return "방문 유도"
+        if any(keyword in message for keyword in ["홍보", "인지", "브랜딩"]):
+            return "인지도 확보"
+        return None
 
     def _operation_request_from_context(self, request: ChatRequest, profile=None) -> OperationRequest:
         context = request.context or {}
