@@ -77,9 +77,7 @@ export default function App() {
 
     await refreshStartupProfile()
 
-    if (publicRoutes.has(nextRoute) || nextRoute === 'onboarding') {
-      setRoute('home')
-    }
+    setRoute(nextRoute === 'onboarding' || publicRoutes.has(nextRoute) ? 'home' : nextRoute)
 
     return status
   }
