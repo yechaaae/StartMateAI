@@ -1,6 +1,6 @@
 package com.kakao.backend.aichat.dto;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import java.util.Map;
 
 public record AiChatRequestMessage(
         String version,
@@ -14,6 +14,6 @@ public record AiChatRequestMessage(
         String targetFeature,
         String sessionType,
         String intent,
-        JsonNode payload
+        Map<String, Object> payload
 ) {
 }

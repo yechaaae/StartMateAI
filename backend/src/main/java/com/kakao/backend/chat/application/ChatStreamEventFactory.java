@@ -2,6 +2,7 @@ package com.kakao.backend.chat.application;
 
 import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRequestStatus;
+import com.kakao.backend.chat.dto.ChatAgentProgressPayload;
 import com.kakao.backend.chat.dto.ChatStreamEventResponse;
 import com.kakao.backend.chat.dto.ChatStreamMessagePayload;
 import com.kakao.backend.chat.dto.ChatRequestStatusPayload;
@@ -22,6 +23,7 @@ public class ChatStreamEventFactory {
                 roomId,
                 now(),
                 null,
+                null,
                 null
         );
     }
@@ -41,6 +43,7 @@ public class ChatStreamEventFactory {
                         message.getMetadata(),
                         format(message.getCreatedAt())
                 ),
+                null,
                 null
         );
     }
@@ -58,7 +61,20 @@ public class ChatStreamEventFactory {
                         status.getStatus(),
                         status.getErrorMessage(),
                         format(status.getUpdatedAt())
-                )
+                ),
+                null
+        );
+    }
+
+    public ChatStreamEventResponse agentProgressEvent(Long roomId, ChatAgentProgressPayload payload) {
+        return new ChatStreamEventResponse(
+                UUID.randomUUID().toString(),
+                "AGENT_PROGRESS",
+                roomId,
+                now(),
+                null,
+                null,
+                payload
         );
     }
 

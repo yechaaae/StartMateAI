@@ -6,6 +6,7 @@ public record ChatStreamEventResponse(
         Long roomId,
         String occurredAt,
         ChatStreamMessagePayload message,
-        ChatRequestStatusPayload status
+        ChatRequestStatusPayload status,
+        ChatAgentProgressPayload agentProgress
 ) {
 }

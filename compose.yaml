@@ -34,6 +34,20 @@ services:
       timeout: 5s
       retries: 10
 
+  ai-mock:
+    build:
+      context: ./ai-mock
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SPRING_RABBITMQ_HOST: ${SPRING_RABBITMQ_HOST:-rabbitmq}
+      SPRING_RABBITMQ_PORT: ${SPRING_RABBITMQ_PORT:-5672}
+      SPRING_RABBITMQ_USERNAME: ${SPRING_RABBITMQ_USERNAME:-startmate}
+      SPRING_RABBITMQ_PASSWORD: ${SPRING_RABBITMQ_PASSWORD:-startmate}
+      STARTMATE_AI_CHAT_REQUEST_QUEUE: ${STARTMATE_AI_CHAT_REQUEST_QUEUE:-chat.request}
+      STARTMATE_AI_CHAT_RESPONSE_QUEUE: ${STARTMATE_AI_CHAT_RESPONSE_QUEUE:-chat.response}
+
   backend:
     build:
       context: ./backend

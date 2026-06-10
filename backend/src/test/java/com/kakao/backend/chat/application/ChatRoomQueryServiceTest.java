@@ -40,25 +40,26 @@ class ChatRoomQueryServiceTest {
     private ChatRoomQueryService chatRoomQueryService;
 
     @Test
-    void returnsExistingFreeDiscussionRoom() {
+    void returnsLatestFreeDiscussionRoom() {
         User user = User.create("test@example.com", "tester", "USER");
         user.setId(2L);
 
-        Workspace workspace = Workspace.create("워크스페이스", "ACTIVE");
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
         workspace.setId(1L);
         workspace.setUser(user);
 
-        ChatRoom room = ChatRoom.create(workspace, "자유 상담실", "FREE_DISCUSSION", null);
+        ChatRoom room = ChatRoom.create(workspace, "Free discussion 2", "FREE_DISCUSSION", null);
         room.setId(10L);
 
         when(userRepository.findById(2L)).thenReturn(Optional.of(user));
-        when(chatRoomRepository.findFirstByWorkspaceUserIdAndRoomTypeOrderByIdAsc(2L, "FREE_DISCUSSION"))
+        when(chatRoomRepository.findFirstByWorkspaceUserIdAndRoomTypeOrderByIdDesc(2L, "FREE_DISCUSSION"))
                 .thenReturn(Optional.of(room));
 
         FreeChatRoomResult result = chatRoomQueryService.getOrCreateFreeRoom(2L);
 
         assertThat(result.roomId()).isEqualTo(10L);
         assertThat(result.workspaceId()).isEqualTo(1L);
+        assertThat(result.title()).isEqualTo("Free discussion 2");
         assertThat(result.created()).isFalse();
     }
 
@@ -67,16 +68,18 @@ class ChatRoomQueryServiceTest {
         User user = User.create("test@example.com", "tester", "USER");
         user.setId(2L);
 
-        Workspace workspace = Workspace.create("워크스페이스", "ACTIVE");
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
         workspace.setId(1L);
         workspace.setUser(user);
 
-        ChatRoom createdRoom = ChatRoom.create(workspace, "자유 상담실", "FREE_DISCUSSION", null);
+        ChatRoom createdRoom = ChatRoom.create(workspace, "Free discussion", "FREE_DISCUSSION", null);
         createdRoom.setId(10L);
 
         when(userRepository.findById(2L)).thenReturn(Optional.of(user));
-        when(chatRoomRepository.findFirstByWorkspaceUserIdAndRoomTypeOrderByIdAsc(2L, "FREE_DISCUSSION"))
+        when(chatRoomRepository.findFirstByWorkspaceUserIdAndRoomTypeOrderByIdDesc(2L, "FREE_DISCUSSION"))
                 .thenReturn(Optional.empty());
+        when(chatRoomRepository.findByWorkspaceUserIdAndRoomTypeOrderByIdDesc(2L, "FREE_DISCUSSION"))
+                .thenReturn(List.of());
         when(workspaceRepository.findFirstByUserIdAndStatusOrderByIdAsc(2L, "ACTIVE"))
                 .thenReturn(Optional.of(workspace));
         when(chatRoomRepository.save(any(ChatRoom.class))).thenReturn(createdRoom);
@@ -85,7 +88,75 @@ class ChatRoomQueryServiceTest {
 
         assertThat(result.roomId()).isEqualTo(10L);
         assertThat(result.workspaceId()).isEqualTo(1L);
+        assertThat(result.title()).isEqualTo("Free discussion");
         assertThat(result.created()).isTrue();
+    }
+
+    @Test
+    void listsFreeDiscussionRooms() {
+        User user = User.create("test@example.com", "tester", "USER");
+        user.setId(2L);
+
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
+        workspace.setId(1L);
+        workspace.setUser(user);
+
+        ChatRoom latest = ChatRoom.create(workspace, "Free discussion 2", "FREE_DISCUSSION", null);
+        latest.setId(11L);
+        ChatRoom previous = ChatRoom.create(workspace, "Free discussion", "FREE_DISCUSSION", null);
+        previous.setId(10L);
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user));
+        when(chatRoomRepository.findByWorkspaceUserIdAndRoomTypeOrderByIdDesc(2L, "FREE_DISCUSSION"))
+                .thenReturn(List.of(latest, previous));
+
+        List<FreeChatRoomResult> results = chatRoomQueryService.getFreeRooms(2L);
+
+        assertThat(results).hasSize(2);
+        assertThat(results.get(0).roomId()).isEqualTo(11L);
+        assertThat(results.get(1).roomId()).isEqualTo(10L);
+    }
+
+    @Test
+    void updatesFreeDiscussionRoomTitle() {
+        User user = User.create("test@example.com", "tester", "USER");
+        user.setId(2L);
+
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
+        workspace.setId(1L);
+        workspace.setUser(user);
+
+        ChatRoom room = ChatRoom.create(workspace, "Free discussion", "FREE_DISCUSSION", null);
+        room.setId(10L);
+
+        when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user));
+
+        FreeChatRoomResult result = chatRoomQueryService.updateFreeRoomTitle(10L, 2L, "  Investor Q&A  ");
+
+        assertThat(result.roomId()).isEqualTo(10L);
+        assertThat(result.title()).isEqualTo("Investor Q&A");
+        assertThat(room.getTitle()).isEqualTo("Investor Q&A");
+        assertThat(result.created()).isFalse();
+    }
+
+    @Test
+    void rejectsBlankRoomTitleUpdate() {
+        User user = User.create("test@example.com", "tester", "USER");
+        user.setId(2L);
+
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
+        workspace.setUser(user);
+
+        ChatRoom room = ChatRoom.create(workspace, "Free discussion", "FREE_DISCUSSION", null);
+        room.setId(10L);
+
+        when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> chatRoomQueryService.updateFreeRoomTitle(10L, 2L, "   "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Chat room title is required.");
     }
 
     @Test
@@ -93,15 +164,15 @@ class ChatRoomQueryServiceTest {
         User user = User.create("test@example.com", "tester", "USER");
         user.setId(2L);
 
-        Workspace workspace = Workspace.create("워크스페이스", "ACTIVE");
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
         workspace.setUser(user);
 
-        ChatRoom room = ChatRoom.create(workspace, "자유 상담실", "FREE_DISCUSSION", null);
+        ChatRoom room = ChatRoom.create(workspace, "Free discussion", "FREE_DISCUSSION", null);
         room.setId(10L);
 
-        ChatMessage first = ChatMessage.userMessage(room, user, "안녕", null);
+        ChatMessage first = ChatMessage.userMessage(room, user, "hello", null);
         first.setId(100L);
-        ChatMessage second = ChatMessage.agentMessage(room, null, "무엇을 도와줄까?", "{\"requestId\":\"req-1\"}");
+        ChatMessage second = ChatMessage.agentMessage(room, null, "How can I help?", "{\"requestId\":\"req-1\"}");
         second.setId(101L);
 
         when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));
@@ -125,10 +196,10 @@ class ChatRoomQueryServiceTest {
         User anotherUser = User.create("other@example.com", "other", "USER");
         anotherUser.setId(3L);
 
-        Workspace workspace = Workspace.create("워크스페이스", "ACTIVE");
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
         workspace.setUser(owner);
 
-        ChatRoom room = ChatRoom.create(workspace, "자유 상담실", "FREE_DISCUSSION", null);
+        ChatRoom room = ChatRoom.create(workspace, "Free discussion", "FREE_DISCUSSION", null);
         room.setId(10L);
 
         when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));

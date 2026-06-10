@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChatRoomQueryService {
 
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+    private static final String FREE_DISCUSSION = "FREE_DISCUSSION";
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -41,9 +42,42 @@ public class ChatRoomQueryService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found."));
 
-        return chatRoomRepository.findFirstByWorkspaceUserIdAndRoomTypeOrderByIdAsc(userId, "FREE_DISCUSSION")
+        return chatRoomRepository.findFirstByWorkspaceUserIdAndRoomTypeOrderByIdDesc(userId, FREE_DISCUSSION)
                 .map(room -> toFreeRoomResult(room, false))
                 .orElseGet(() -> createFreeRoom(user));
+    }
+
+    public List<FreeChatRoomResult> getFreeRooms(Long userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found."));
+
+        return chatRoomRepository.findByWorkspaceUserIdAndRoomTypeOrderByIdDesc(userId, FREE_DISCUSSION).stream()
+                .map(room -> toFreeRoomResult(room, false))
+                .toList();
+    }
+
+    @Transactional
+    public FreeChatRoomResult createNewFreeRoom(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found."));
+        return createFreeRoom(user);
+    }
+
+    @Transactional
+    public FreeChatRoomResult updateFreeRoomTitle(Long roomId, Long userId, String title) {
+        ChatRoom room = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new IllegalArgumentException("Chat room not found."));
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found."));
+
+        validateRoomOwnership(room, user);
+        validateFreeDiscussionRoom(room);
+
+        String normalizedTitle = normalizeTitle(title);
+        room.rename(normalizedTitle);
+
+        return toFreeRoomResult(room, false);
     }
 
     public ChatMessageHistoryResult getMessageHistory(Long roomId, Long userId) {
@@ -65,14 +99,38 @@ public class ChatRoomQueryService {
     private FreeChatRoomResult createFreeRoom(User user) {
         Workspace workspace = workspaceRepository.findFirstByUserIdAndStatusOrderByIdAsc(user.getId(), "ACTIVE")
                 .orElseGet(() -> {
-                    Workspace created = Workspace.create("자유 상담 워크스페이스", "ACTIVE");
+                    Workspace created = Workspace.create("Free discussion workspace", "ACTIVE");
                     created.setUser(user);
                     return workspaceRepository.save(created);
                 });
 
-        ChatRoom room = ChatRoom.create(workspace, "자유 상담실", "FREE_DISCUSSION", null);
+        int existingCount = chatRoomRepository.findByWorkspaceUserIdAndRoomTypeOrderByIdDesc(user.getId(), FREE_DISCUSSION).size();
+        String title = existingCount == 0 ? "Free discussion" : "Free discussion " + (existingCount + 1);
+
+        ChatRoom room = ChatRoom.create(workspace, title, FREE_DISCUSSION, null);
         ChatRoom saved = chatRoomRepository.save(room);
         return toFreeRoomResult(saved, true);
+    }
+
+    private void validateFreeDiscussionRoom(ChatRoom room) {
+        if (!FREE_DISCUSSION.equals(room.getRoomType())) {
+            throw new IllegalArgumentException("Only free discussion rooms can be renamed here.");
+        }
+    }
+
+    private String normalizeTitle(String title) {
+        if (title == null) {
+            throw new IllegalArgumentException("Chat room title is required.");
+        }
+
+        String normalized = title.trim();
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("Chat room title is required.");
+        }
+        if (normalized.length() > 60) {
+            throw new IllegalArgumentException("Chat room title must be 60 characters or fewer.");
+        }
+        return normalized;
     }
 
     private FreeChatRoomResult toFreeRoomResult(ChatRoom room, boolean created) {

@@ -5,6 +5,7 @@ import com.kakao.backend.chat.application.ChatRoomQueryService;
 import com.kakao.backend.chat.application.FreeChatRoomResult;
 import com.kakao.backend.chat.dto.ChatMessageHistoryItemResponse;
 import com.kakao.backend.chat.dto.ChatMessageHistoryResponse;
+import com.kakao.backend.chat.dto.FreeChatRoomListResponse;
 import com.kakao.backend.chat.dto.FreeChatRoomResponse;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -27,14 +28,15 @@ public class ChatQueryController {
     @GetMapping("/free-room")
     public ResponseEntity<FreeChatRoomResponse> getFreeRoom(@RequestParam Long userId) {
         FreeChatRoomResult result = chatRoomQueryService.getOrCreateFreeRoom(userId);
-        return ResponseEntity.ok(new FreeChatRoomResponse(
-                result.roomId(),
-                result.workspaceId(),
-                result.title(),
-                result.roomType(),
-                result.targetFeature(),
-                result.created()
-        ));
+        return ResponseEntity.ok(toResponse(result));
+    }
+
+    @GetMapping("/free-rooms")
+    public ResponseEntity<FreeChatRoomListResponse> getFreeRooms(@RequestParam Long userId) {
+        List<FreeChatRoomResponse> rooms = chatRoomQueryService.getFreeRooms(userId).stream()
+                .map(this::toResponse)
+                .toList();
+        return ResponseEntity.ok(new FreeChatRoomListResponse(rooms));
     }
 
     @GetMapping("/rooms/{roomId}/messages")
@@ -56,5 +58,16 @@ public class ChatQueryController {
                 .toList();
 
         return ResponseEntity.ok(new ChatMessageHistoryResponse(result.roomId(), messages));
+    }
+
+    private FreeChatRoomResponse toResponse(FreeChatRoomResult result) {
+        return new FreeChatRoomResponse(
+                result.roomId(),
+                result.workspaceId(),
+                result.title(),
+                result.roomType(),
+                result.targetFeature(),
+                result.created()
+        );
     }
 }

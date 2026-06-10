@@ -29,7 +29,7 @@ class AiChatResultSupportServiceTest {
                 2L,
                 "IDEA",
                 "COMPLETED",
-                objectMapper.valueToTree(java.util.Map.of(
+                java.util.Map.of(
                         "result", java.util.Map.of(
                                 "targetFeature", "IDEA",
                                 "resultType", "BUSINESS_IDEA_RESULT",
@@ -39,7 +39,7 @@ class AiChatResultSupportServiceTest {
                                 "referenceId", 44,
                                 "payload", java.util.Map.of("score", 87)
                         )
-                ))
+                )
         );
 
         AiChatPromotedResult promotedResult = supportService.extract(response).orElseThrow();
@@ -69,7 +69,7 @@ class AiChatResultSupportServiceTest {
                 2L,
                 "FREE_DISCUSSION",
                 "COMPLETED",
-                objectMapper.valueToTree(java.util.Map.of(
+                java.util.Map.of(
                         "result", java.util.Map.of(
                                 "targetFeature", "FREE_DISCUSSION",
                                 "resultType", "FREE_CHAT_NOTE",
@@ -77,9 +77,10 @@ class AiChatResultSupportServiceTest {
                                 "shouldCreateResult", false,
                                 "payload", java.util.Map.of()
                         )
-                ))
+                )
         );
 
         assertThat(supportService.extract(response)).isEmpty();
     }
 }
+

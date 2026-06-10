@@ -69,7 +69,7 @@ class AiChatDispatchServiceTest {
                 null,
                 "FREE_CHAT",
                 "auto",
-                new ObjectMapper().valueToTree(Map.of("common", Map.of("message", "hello")))
+                Map.of("common", Map.of("message", "hello"))
         );
 
         when(factory.create(command)).thenReturn(request);
@@ -81,3 +81,4 @@ class AiChatDispatchServiceTest {
         verify(gateway).publish(request);
     }
 }
+

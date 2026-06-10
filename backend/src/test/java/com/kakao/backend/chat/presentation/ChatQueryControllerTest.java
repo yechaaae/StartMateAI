@@ -8,6 +8,7 @@ import com.kakao.backend.chat.application.ChatMessageHistoryResult;
 import com.kakao.backend.chat.application.ChatRoomQueryService;
 import com.kakao.backend.chat.application.FreeChatRoomResult;
 import com.kakao.backend.chat.dto.ChatMessageHistoryResponse;
+import com.kakao.backend.chat.dto.FreeChatRoomListResponse;
 import com.kakao.backend.chat.dto.FreeChatRoomResponse;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,7 @@ class ChatQueryControllerTest {
     @Test
     void getsOrCreatesFreeRoom() {
         when(chatRoomQueryService.getOrCreateFreeRoom(2L))
-                .thenReturn(new FreeChatRoomResult(10L, 1L, "자유 상담실", "FREE_DISCUSSION", null, true));
+                .thenReturn(new FreeChatRoomResult(10L, 1L, "Free discussion", "FREE_DISCUSSION", null, true));
 
         FreeChatRoomResponse response = chatQueryController.getFreeRoom(2L).getBody();
 
@@ -39,13 +40,28 @@ class ChatQueryControllerTest {
     }
 
     @Test
+    void getsFreeRoomList() {
+        when(chatRoomQueryService.getFreeRooms(2L))
+                .thenReturn(List.of(
+                        new FreeChatRoomResult(11L, 1L, "Free discussion 2", "FREE_DISCUSSION", null, false),
+                        new FreeChatRoomResult(10L, 1L, "Free discussion", "FREE_DISCUSSION", null, false)
+                ));
+
+        FreeChatRoomListResponse response = chatQueryController.getFreeRooms(2L).getBody();
+
+        assertThat(response).isNotNull();
+        assertThat(response.rooms()).hasSize(2);
+        assertThat(response.rooms().get(0).roomId()).isEqualTo(11L);
+    }
+
+    @Test
     void getsMessageHistory() {
         when(chatRoomQueryService.getMessageHistory(10L, 2L)).thenReturn(
                 new ChatMessageHistoryResult(
                         10L,
                         List.of(
-                                new ChatMessageHistoryItemResult(100L, 2L, null, "USER", "안녕", null, null),
-                                new ChatMessageHistoryItemResult(101L, null, 5L, "AGENT", "무엇을 도와줄까?", "{\"requestId\":\"req-1\"}", null)
+                                new ChatMessageHistoryItemResult(100L, 2L, null, "USER", "hello", null, null),
+                                new ChatMessageHistoryItemResult(101L, null, 5L, "AGENT", "How can I help?", "{\"requestId\":\"req-1\"}", null)
                         )
                 )
         );

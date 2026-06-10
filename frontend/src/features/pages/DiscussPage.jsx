@@ -1,70 +1,84 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { agents } from '../../shared/data/agents'
 import { AgentAvatar } from '../../shared/components/AgentAvatar'
+import { Icon } from '../../shared/components/Icon'
 import { ChatInput } from '../chat/ChatInput'
 import { ChatRow } from '../chat/ChatRow'
 import { TypingRow } from '../chat/TypingRow'
-import { CHAT_USER_ID, createChatEventSource, getChatMessages, getFreeChatRoom, sendChatMessage } from '../chat/chatApi'
-import { normalizeChatMessage, normalizeStatusEvent, upsertMessage } from '../chat/chatMappers'
+import {
+  CHAT_USER_ID,
+  createChatEventSource,
+  createFreeChatRoom,
+  getChatMessages,
+  getFreeChatRoom,
+  getFreeChatRooms,
+  sendChatMessage,
+  updateFreeChatRoomTitle,
+} from '../chat/chatApi'
+import {
+  normalizeAgentProgressEvent,
+  normalizeAgentProgressMessage,
+  normalizeChatMessage,
+  normalizeStatusEvent,
+  upsertMessage,
+} from '../chat/chatMappers'
 
 export const DiscussPage = () => {
   const [items, setItems] = useState([])
+  const [rooms, setRooms] = useState([])
   const [room, setRoom] = useState(null)
   const [connection, setConnection] = useState('idle')
   const [loading, setLoading] = useState(true)
+  const [creatingRoom, setCreatingRoom] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [statusMap, setStatusMap] = useState({})
+  const [agentProgress, setAgentProgress] = useState(null)
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false)
+  const [editingRoomId, setEditingRoomId] = useState(null)
+  const [titleDraft, setTitleDraft] = useState('')
+  const [savingTitle, setSavingTitle] = useState(false)
   const scroll = useRef(null)
+  const sessionMenuRef = useRef(null)
 
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight
   }, [items, statusMap])
 
   useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!sessionMenuRef.current?.contains(event.target)) {
+        setSessionMenuOpen(false)
+        setEditingRoomId(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  useEffect(() => {
     let active = true
-    let eventSource
 
     const bootstrap = async () => {
       try {
         setLoading(true)
         setError('')
 
-        const nextRoom = await getFreeChatRoom(CHAT_USER_ID)
+        const roomListResponse = await getFreeChatRooms(CHAT_USER_ID)
         if (!active) return
-        setRoom(nextRoom)
 
-        const history = await getChatMessages(nextRoom.roomId, CHAT_USER_ID)
-        if (!active) return
-        setItems(history.messages.map(normalizeChatMessage))
-
-        eventSource = createChatEventSource(nextRoom.roomId, CHAT_USER_ID)
-        setConnection('connecting')
-
-        eventSource.addEventListener('chat-connected', () => {
-          if (!active) return
-          setConnection('connected')
-        })
-
-        eventSource.addEventListener('chat-message', (event) => {
-          if (!active) return
-          const payload = JSON.parse(event.data)
-          if (!payload.message) return
-          setItems((prev) => upsertMessage(prev, normalizeChatMessage(payload.message)))
-        })
-
-        eventSource.addEventListener('chat-status', (event) => {
-          if (!active) return
-          const payload = JSON.parse(event.data)
-          if (!payload.status) return
-          const nextStatus = normalizeStatusEvent(payload.status)
-          setStatusMap((prev) => ({ ...prev, [nextStatus.requestId]: nextStatus }))
-        })
-
-        eventSource.onerror = () => {
-          if (!active) return
-          setConnection('error')
+        const nextRooms = roomListResponse.rooms ?? []
+        if (nextRooms.length) {
+          setRooms(nextRooms)
+          setRoom(nextRooms[0])
+          return
         }
+
+        const fallbackRoom = await getFreeChatRoom(CHAT_USER_ID)
+        if (!active) return
+        setRooms([fallbackRoom])
+        setRoom(fallbackRoom)
       } catch (nextError) {
         if (!active) return
         setError(nextError.message ?? '채팅 연결을 준비하지 못했습니다.')
@@ -77,12 +91,92 @@ export const DiscussPage = () => {
 
     return () => {
       active = false
-      eventSource?.close()
     }
   }, [])
 
+  useEffect(() => {
+    if (!room?.roomId) return undefined
+
+    let active = true
+    const eventSource = createChatEventSource(room.roomId, CHAT_USER_ID)
+
+    const loadHistory = async () => {
+      try {
+        setLoading(true)
+        setError('')
+        setItems([])
+        setStatusMap({})
+        setAgentProgress(null)
+        setConnection('connecting')
+
+        const history = await getChatMessages(room.roomId, CHAT_USER_ID)
+        if (!active) return
+        setItems(history.messages.map(normalizeChatMessage))
+      } catch (nextError) {
+        if (!active) return
+        setError(nextError.message ?? '이전 대화를 불러오지 못했습니다.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    loadHistory()
+
+    eventSource.addEventListener('chat-connected', () => {
+      if (!active) return
+      setConnection('connected')
+    })
+
+    eventSource.addEventListener('chat-message', (event) => {
+      if (!active) return
+      const payload = JSON.parse(event.data)
+      if (!payload.message) return
+      setItems((prev) => upsertMessage(prev, normalizeChatMessage(payload.message)))
+    })
+
+    eventSource.addEventListener('chat-status', (event) => {
+      if (!active) return
+      const payload = JSON.parse(event.data)
+      if (!payload.status) return
+      const nextStatus = normalizeStatusEvent(payload.status)
+      setStatusMap((prev) => ({ ...prev, [nextStatus.requestId]: nextStatus }))
+    })
+
+    eventSource.addEventListener('agent-progress', (event) => {
+      if (!active) return
+      const payload = JSON.parse(event.data)
+      if (!payload.agentProgress) return
+      const nextProgress = normalizeAgentProgressEvent(payload.agentProgress)
+      setAgentProgress(nextProgress)
+      if (nextProgress.agent && nextProgress.message) {
+        setItems((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
+      }
+    })
+
+    eventSource.onerror = () => {
+      if (!active) return
+      setConnection('error')
+    }
+
+    return () => {
+      active = false
+      eventSource.close()
+    }
+  }, [room?.roomId])
+
   const latestStatus = useMemo(() => Object.values(statusMap).at(-1) ?? null, [statusMap])
-  const typing = latestStatus && ['QUEUED', 'PROCESSING'].includes(latestStatus.status) ? 'profile' : null
+  const typing = agentProgress?.agent?.status === 'running'
+    ? agentProgress.agent.key
+    : latestStatus && ['QUEUED', 'PROCESSING'].includes(latestStatus.status)
+      ? 'profile'
+      : null
+
+  const updateRoomState = (updatedRoom) => {
+    setRooms((prev) => prev.map((candidate) => (
+      candidate.roomId === updatedRoom.roomId ? updatedRoom : candidate
+    )))
+    setRoom((prev) => (prev?.roomId === updatedRoom.roomId ? updatedRoom : prev))
+  }
 
   const send = async (text) => {
     if (sending || !room?.roomId) return
@@ -90,6 +184,7 @@ export const DiscussPage = () => {
     setError('')
 
     try {
+      setAgentProgress(null)
       const response = await sendChatMessage(room.roomId, {
         userId: CHAT_USER_ID,
         content: text,
@@ -129,15 +224,151 @@ export const DiscussPage = () => {
     }
   }
 
+  const createSession = async () => {
+    if (creatingRoom) return
+    setCreatingRoom(true)
+    setError('')
+
+    try {
+      const createdRoom = await createFreeChatRoom(CHAT_USER_ID)
+      setRooms((prev) => [createdRoom, ...prev])
+      setRoom(createdRoom)
+      setSessionMenuOpen(false)
+      setEditingRoomId(null)
+    } catch (nextError) {
+      setError(nextError.message ?? '새 자유 상담실을 만들지 못했습니다.')
+    } finally {
+      setCreatingRoom(false)
+    }
+  }
+
+  const startEditingTitle = (candidateRoom) => {
+    setEditingRoomId(candidateRoom.roomId)
+    setTitleDraft(candidateRoom.title ?? '')
+    setSessionMenuOpen(true)
+  }
+
+  const cancelEditingTitle = () => {
+    setEditingRoomId(null)
+    setTitleDraft('')
+  }
+
+  const submitTitleUpdate = async (roomId) => {
+    if (savingTitle) return
+
+    try {
+      setSavingTitle(true)
+      setError('')
+      const updatedRoom = await updateFreeChatRoomTitle(roomId, CHAT_USER_ID, titleDraft)
+      updateRoomState(updatedRoom)
+      setEditingRoomId(null)
+      setTitleDraft('')
+    } catch (nextError) {
+      setError(nextError.message ?? '세션 이름을 수정하지 못했습니다.')
+    } finally {
+      setSavingTitle(false)
+    }
+  }
+
   return (
     <main className="discuss-page">
       <div className="page-title compact">
         <div>
           <h1>AI와 자유 상담하기</h1>
-          <p>창업 아이템, 자금, 지원사업, 홍보까지 자유롭게 질문할 수 있어요.</p>
+          <p>창업 아이템, 자금, 지원사업, 홍보까지 자유롭게 질문하고 이어서 대화해보세요.</p>
         </div>
         <div className={`chat-connection ${connection}`}>
-          {connection === 'connected' ? '실시간 연결됨' : connection === 'connecting' ? '연결 중' : connection === 'error' ? '연결 문제' : '준비 중'}
+          {connection === 'connected'
+            ? '실시간 연결됨'
+            : connection === 'connecting'
+              ? '연결 중'
+              : connection === 'error'
+                ? '연결 문제'
+                : '준비 중'}
+        </div>
+      </div>
+
+      <div className="chat-session-bar">
+        <button className="chat-session-new" onClick={createSession} disabled={creatingRoom || sending}>
+          <Icon name="plus" size={16} />
+          <span>{creatingRoom ? '만드는 중' : '새 상담 시작'}</span>
+        </button>
+
+        <div className="chat-session-picker" ref={sessionMenuRef}>
+          <button
+            className={sessionMenuOpen ? 'chat-session-trigger on' : 'chat-session-trigger'}
+            onClick={() => setSessionMenuOpen((prev) => !prev)}
+            disabled={!rooms.length}
+          >
+            <div className="chat-session-trigger-copy">
+              <small>상담 세션</small>
+              <b>{room?.title ?? '세션 선택'}</b>
+            </div>
+            <Icon name="chevron" size={16} />
+          </button>
+
+          {sessionMenuOpen && (
+            <div className="chat-session-menu">
+              {rooms.map((candidateRoom) => {
+                const isEditing = editingRoomId === candidateRoom.roomId
+                const isSelected = candidateRoom.roomId === room?.roomId
+
+                return (
+                  <div
+                    key={candidateRoom.roomId}
+                    className={isSelected ? 'chat-session-option on' : 'chat-session-option'}
+                  >
+                    {isEditing ? (
+                      <form
+                        className="chat-session-edit"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          submitTitleUpdate(candidateRoom.roomId)
+                        }}
+                      >
+                        <input
+                          value={titleDraft}
+                          onChange={(event) => setTitleDraft(event.target.value)}
+                          placeholder="세션 이름"
+                          autoFocus
+                          maxLength={60}
+                        />
+                        <button type="submit" disabled={savingTitle}>
+                          <Icon name="check" size={14} />
+                        </button>
+                        <button type="button" className="ghost" onClick={cancelEditingTitle} disabled={savingTitle}>
+                          취소
+                        </button>
+                      </form>
+                    ) : (
+                      <>
+                        <button
+                          className="chat-session-select"
+                          onClick={() => {
+                            setRoom(candidateRoom)
+                            setSessionMenuOpen(false)
+                            setEditingRoomId(null)
+                          }}
+                        >
+                          <div>
+                            <b>{candidateRoom.title}</b>
+                            <small>{isSelected ? '현재 보고 있는 세션' : '이 세션으로 전환'}</small>
+                          </div>
+                        </button>
+                        <button
+                          className="chat-session-rename"
+                          onClick={() => startEditingTitle(candidateRoom)}
+                          aria-label={`${candidateRoom.title} 이름 수정`}
+                        >
+                          <Icon name="edit" size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -164,10 +395,10 @@ export const DiscussPage = () => {
 
       <ChatInput
         onSend={send}
-        disabled={sending || loading || connection === 'error'}
+        disabled={sending || loading || connection === 'error' || !room?.roomId}
         placeholder="창업에 대한 고민을 자유롭게 물어보세요."
         suggestions={[
-          '자금 100만원으로 가능한 창업 아이템 추천해줘',
+          '지금 100만원으로 가능한 창업 아이템 추천해줘',
           '지원사업 신청 가능성 높은 방향을 알려줘',
           'SNS 홍보 문구를 만들어줘',
         ]}

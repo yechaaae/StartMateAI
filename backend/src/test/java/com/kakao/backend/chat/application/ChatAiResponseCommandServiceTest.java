@@ -82,10 +82,10 @@ class ChatAiResponseCommandServiceTest {
                 2L,
                 "IDEA",
                 "COMPLETED",
-                new ObjectMapper().valueToTree(java.util.Map.of(
+                java.util.Map.of(
                         "common", java.util.Map.of("message", "summary"),
                         "result", java.util.Map.of("resultType", "BUSINESS_IDEA_RESULT")
-                ))
+                )
         );
 
         when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));
@@ -122,9 +122,9 @@ class ChatAiResponseCommandServiceTest {
                 2L,
                 "IDEA",
                 "FAILED",
-                new ObjectMapper().valueToTree(java.util.Map.of(
+                java.util.Map.of(
                         "error", java.util.Map.of("message", "agent error")
-                ))
+                )
         );
 
         ChatMessage savedMessage = chatAiResponseCommandService.handle(response);
@@ -156,3 +156,4 @@ class ChatAiResponseCommandServiceTest {
                 .hasMessage("Chat room not found.");
     }
 }
+

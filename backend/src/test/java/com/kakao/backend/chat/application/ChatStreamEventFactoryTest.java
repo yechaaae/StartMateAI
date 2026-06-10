@@ -6,6 +6,8 @@ import com.kakao.backend.agent.domain.Agent;
 import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRequestStatus;
 import com.kakao.backend.chat.domain.ChatRoom;
+import com.kakao.backend.chat.dto.ChatAgentDescriptorPayload;
+import com.kakao.backend.chat.dto.ChatAgentProgressPayload;
 import com.kakao.backend.chat.dto.ChatStreamEventResponse;
 import com.kakao.backend.user.model.User;
 import com.kakao.backend.workspace.domain.Workspace;
@@ -67,5 +69,30 @@ class ChatStreamEventFactoryTest {
         assertThat(response.status()).isNotNull();
         assertThat(response.status().requestId()).isEqualTo("req-123");
         assertThat(response.status().status()).isEqualTo("QUEUED");
+        assertThat(response.agentProgress()).isNull();
+    }
+
+    @Test
+    void buildsAgentProgressEventEnvelope() {
+        ChatAgentProgressPayload payload = new ChatAgentProgressPayload(
+                "req-123",
+                "PROCESSING",
+                "IDEA",
+                "AGENT_STARTED",
+                "FreeDiscussionOrchestrator",
+                2,
+                "Policy agent is analyzing support programs.",
+                new ChatAgentDescriptorPayload("policy_agent", "Policy Agent", "Support program discovery", "running"),
+                java.util.List.of()
+        );
+
+        ChatStreamEventResponse response = chatStreamEventFactory.agentProgressEvent(10L, payload);
+
+        assertThat(response.eventType()).isEqualTo("AGENT_PROGRESS");
+        assertThat(response.roomId()).isEqualTo(10L);
+        assertThat(response.agentProgress()).isNotNull();
+        assertThat(response.agentProgress().eventType()).isEqualTo("AGENT_STARTED");
+        assertThat(response.message()).isNull();
+        assertThat(response.status()).isNull();
     }
 }

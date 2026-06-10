@@ -2,10 +2,9 @@ package com.kakao.backend.chat.application;
 
 import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRequestStatus;
-import com.kakao.backend.chat.domain.ChatRoom;
+import com.kakao.backend.chat.dto.ChatAgentProgressPayload;
 import com.kakao.backend.chat.dto.ChatStreamEventResponse;
 import com.kakao.backend.chat.infrastructure.ChatRoomRepository;
-import com.kakao.backend.user.model.User;
 import com.kakao.backend.user.repository.UserRepository;
 import java.io.IOException;
 import java.util.Map;
@@ -35,13 +34,7 @@ public class ChatSseService {
     }
 
     public SseEmitter subscribe(Long roomId, Long userId) {
-        ChatRoom room = chatRoomRepository.findById(roomId)
-                .orElseThrow(() -> new IllegalArgumentException("Chat room not found."));
-
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found."));
-
-        validateRoomOwnership(room, user);
+        validateSubscription(roomId, userId);
 
         SseEmitter emitter = new SseEmitter(DEFAULT_TIMEOUT);
         String emitterId = UUID.randomUUID().toString();
@@ -92,6 +85,21 @@ public class ChatSseService {
                 sendEvent(emitter, emitterId, status.getRoomId(), "chat-status", response));
     }
 
+    public void publishAgentProgress(Long roomId, ChatAgentProgressPayload payload) {
+        if (roomId == null || payload == null) {
+            return;
+        }
+
+        Map<String, SseEmitter> roomEmitters = emittersByRoom.get(roomId);
+        if (roomEmitters == null || roomEmitters.isEmpty()) {
+            return;
+        }
+
+        ChatStreamEventResponse response = chatStreamEventFactory.agentProgressEvent(roomId, payload);
+        roomEmitters.forEach((emitterId, emitter) ->
+                sendEvent(emitter, emitterId, roomId, "agent-progress", response));
+    }
+
     private void sendEvent(SseEmitter emitter, String emitterId, Long roomId, String eventName, Object response) {
         try {
             emitter.send(SseEmitter.event()
@@ -102,11 +110,14 @@ public class ChatSseService {
         }
     }
 
-    private void validateRoomOwnership(ChatRoom room, User user) {
-        if (room.getWorkspace() == null || room.getWorkspace().getUser() == null) {
-            throw new IllegalArgumentException("Chat room workspace owner is missing.");
+    private void validateSubscription(Long roomId, Long userId) {
+        if (!userRepository.existsById(userId)) {
+            throw new IllegalArgumentException("User not found.");
         }
-        if (!room.getWorkspace().getUser().getId().equals(user.getId())) {
+        if (!chatRoomRepository.existsById(roomId)) {
+            throw new IllegalArgumentException("Chat room not found.");
+        }
+        if (!chatRoomRepository.existsByIdAndWorkspaceUserId(roomId, userId)) {
             throw new IllegalArgumentException("User cannot subscribe to this room.");
         }
     }

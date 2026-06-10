@@ -6,8 +6,12 @@ import static org.mockito.Mockito.when;
 
 import com.kakao.backend.chat.application.ChatMessageCommandService;
 import com.kakao.backend.chat.application.ChatMessageSendResult;
+import com.kakao.backend.chat.application.ChatRoomQueryService;
+import com.kakao.backend.chat.application.FreeChatRoomResult;
 import com.kakao.backend.chat.dto.ChatMessageSendResponse;
+import com.kakao.backend.chat.dto.FreeChatRoomResponse;
 import com.kakao.backend.chat.dto.SendChatMessageRequest;
+import com.kakao.backend.chat.dto.UpdateChatRoomTitleRequest;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -22,11 +26,14 @@ class ChatCommandControllerTest {
     @Mock
     private ChatMessageCommandService chatMessageCommandService;
 
+    @Mock
+    private ChatRoomQueryService chatRoomQueryService;
+
     @InjectMocks
     private ChatCommandController chatCommandController;
 
     @Test
-    void sendsMessageThroughCommandService() throws Exception {
+    void sendsMessageThroughCommandService() {
         when(chatMessageCommandService.send(any())).thenReturn(
                 new ChatMessageSendResult("req-123", 10L, 100L, "USER", "아이템 추천해줘")
         );
@@ -52,5 +59,21 @@ class ChatCommandControllerTest {
         assertThat(response.messageId()).isEqualTo(100L);
         assertThat(response.senderType()).isEqualTo("USER");
         assertThat(response.content()).isEqualTo("아이템 추천해줘");
+    }
+
+    @Test
+    void updatesFreeRoomTitle() {
+        when(chatRoomQueryService.updateFreeRoomTitle(10L, 2L, "Investor Q&A"))
+                .thenReturn(new FreeChatRoomResult(10L, 1L, "Investor Q&A", "FREE_DISCUSSION", null, false));
+
+        FreeChatRoomResponse response = chatCommandController.updateFreeRoomTitle(
+                10L,
+                new UpdateChatRoomTitleRequest(2L, "Investor Q&A")
+        ).getBody();
+
+        assertThat(response).isNotNull();
+        assertThat(response.roomId()).isEqualTo(10L);
+        assertThat(response.title()).isEqualTo("Investor Q&A");
+        assertThat(response.created()).isFalse();
     }
 }

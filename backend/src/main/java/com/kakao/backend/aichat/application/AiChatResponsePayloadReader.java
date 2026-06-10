@@ -1,9 +1,9 @@
 package com.kakao.backend.aichat.application;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kakao.backend.aichat.dto.AiChatResponseMessage;
 import com.kakao.backend.aichat.dto.AiChatResultPayload;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -46,8 +46,8 @@ public class AiChatResponsePayloadReader {
             return response.result();
         }
 
-        JsonNode resultNode = nodeAt(response.payload(), "result");
-        if (resultNode == null || resultNode.isMissingNode() || resultNode.isNull()) {
+        Object resultNode = nodeAt(response.payload(), "result");
+        if (!(resultNode instanceof Map<?, ?>)) {
             return null;
         }
         return objectMapper.convertValue(resultNode, AiChatResultPayload.class);
@@ -61,26 +61,27 @@ public class AiChatResponsePayloadReader {
         );
     }
 
-    private JsonNode nodeAt(JsonNode root, String... path) {
+    @SuppressWarnings("unchecked")
+    private Object nodeAt(Map<String, Object> root, String... path) {
         if (root == null) {
             return null;
         }
-        JsonNode current = root;
+        Object current = root;
         for (String segment : path) {
-            if (current == null) {
+            if (!(current instanceof Map<?, ?> currentMap)) {
                 return null;
             }
-            current = current.path(segment);
+            current = ((Map<String, Object>) currentMap).get(segment);
         }
         return current;
     }
 
-    private String textAt(JsonNode root, String... path) {
-        JsonNode node = nodeAt(root, path);
-        if (node == null || node.isMissingNode() || node.isNull()) {
+    private String textAt(Map<String, Object> root, String... path) {
+        Object node = nodeAt(root, path);
+        if (node == null) {
             return null;
         }
-        String text = node.asText();
+        String text = String.valueOf(node);
         return text == null || text.isBlank() ? null : text;
     }
 

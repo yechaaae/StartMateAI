@@ -2,7 +2,6 @@ package com.kakao.backend.aichat.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kakao.backend.aichat.dto.AiChatRequestMessage;
 import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRoom;
@@ -16,7 +15,7 @@ import org.junit.jupiter.api.Test;
 
 class AiChatRequestFactoryTest {
 
-    private final AiChatRequestFactory factory = new AiChatRequestFactory(new ObjectMapper());
+    private final AiChatRequestFactory factory = new AiChatRequestFactory(new com.fasterxml.jackson.databind.ObjectMapper());
 
     @Test
     void buildsFlexibleAiChatRequestEnvelope() {
@@ -72,13 +71,21 @@ class AiChatRequestFactoryTest {
         assertThat(request.userId()).isEqualTo(2L);
         assertThat(request.targetFeature()).isEqualTo("IDEA");
         assertThat(request.intent()).isEqualTo("idea");
-        assertThat(request.payload().path("common").path("message").asText()).isEqualTo("Recommend ideas");
-        assertThat(request.payload().path("profile").path("major").asText()).isEqualTo("planner");
-        assertThat(request.payload().path("profile").path("budgetKrw").asInt()).isEqualTo(1_000_000);
-        assertThat(request.payload().path("conversation").path("recentMessages")).hasSize(1);
-        assertThat(request.payload().path("resultContext").path("currentResultType").asText()).isEqualTo("BUSINESS_IDEA_RESULT");
-        assertThat(request.payload().path("resultContext").path("currentResultId").asLong()).isEqualTo(44L);
-        assertThat(request.payload().path("options").path("candidateAgents")).hasSize(3);
-        assertThat(request.payload().path("reference").path("referenceId").asLong()).isEqualTo(44L);
+        java.util.Map<?, ?> common = (java.util.Map<?, ?>) request.payload().get("common");
+        java.util.Map<?, ?> profilePayload = (java.util.Map<?, ?>) request.payload().get("profile");
+        java.util.Map<?, ?> conversation = (java.util.Map<?, ?>) request.payload().get("conversation");
+        java.util.Map<?, ?> resultContext = (java.util.Map<?, ?>) request.payload().get("resultContext");
+        java.util.Map<?, ?> options = (java.util.Map<?, ?>) request.payload().get("options");
+        java.util.Map<?, ?> reference = (java.util.Map<?, ?>) request.payload().get("reference");
+
+        assertThat(common.get("message")).isEqualTo("Recommend ideas");
+        assertThat(profilePayload.get("major")).isEqualTo("planner");
+        assertThat(profilePayload.get("budgetKrw")).isEqualTo(1_000_000);
+        assertThat((java.util.List<?>) conversation.get("recentMessages")).hasSize(1);
+        assertThat(resultContext.get("currentResultType")).isEqualTo("BUSINESS_IDEA_RESULT");
+        assertThat(resultContext.get("currentResultId")).isEqualTo(44L);
+        assertThat((java.util.List<?>) options.get("candidateAgents")).hasSize(3);
+        assertThat(reference.get("referenceId")).isEqualTo(44L);
     }
 }
+

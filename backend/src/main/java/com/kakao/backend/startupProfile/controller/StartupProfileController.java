@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/profile")
+@RequestMapping("/api/profile")
 @RequiredArgsConstructor
 // 로그인한 사용자의 창업 프로필 상태 조회와 온보딩 저장 API를 담당합니다.
 public class StartupProfileController {

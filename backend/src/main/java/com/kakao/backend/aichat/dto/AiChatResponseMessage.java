@@ -1,6 +1,5 @@
 package com.kakao.backend.aichat.dto;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
 
@@ -19,7 +18,7 @@ public record AiChatResponseMessage(
         Long userId,
         String targetFeature,
         String status,
-        JsonNode payload
+        Map<String, Object> payload
 ) {
 
     public AiChatResponseMessage(
