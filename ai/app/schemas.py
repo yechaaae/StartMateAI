@@ -15,6 +15,7 @@ IntentName = Literal[
     "simulation",
     "operation",
     "marketing",
+    "commercial_area",
     "collaboration",
     "roadmap",
 ]
@@ -86,6 +87,7 @@ class PolicyRequest(BaseModel):
     profile: StartupProfile
     query: str | None = None
     limit: int = Field(default=5, ge=1, le=10)
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class LegalRequest(BaseModel):
@@ -151,6 +153,12 @@ class OperationRequest(BaseModel):
     inventory_notes: list[str] = Field(default_factory=list)
     customer_feedback: list[str] = Field(default_factory=list)
     metrics: list[OperationMetric] = Field(default_factory=list)
+
+
+class CommercialAreaRequest(BaseModel):
+    profile: StartupProfile = Field(default_factory=StartupProfile)
+    query: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class MarketingRequest(BaseModel):

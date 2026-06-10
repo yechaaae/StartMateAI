@@ -10,6 +10,7 @@ from app.agents.finance import FinanceAgent
 from app.agents.idea import IdeaAgent
 from app.agents.legal import LegalAgent
 from app.agents.marketing import MarketingAgent
+from app.agents.commercial_area import CommercialAreaAgent
 from app.agents.operation import OperationAgent
 from app.agents.orchestrator import OrchestratorAgent
 from app.agents.policy import PolicyAgent
@@ -22,6 +23,7 @@ from app.rag.legal_retriever import LegalRetriever
 from app.schemas import (
     AgentResponse,
     ChatRequest,
+    CommercialAreaRequest,
     FinanceAssumption,
     FinanceRequest,
     IdeaRequest,
@@ -58,6 +60,7 @@ legal_agent = LegalAgent(llm, legal_retriever)
 finance_agent = FinanceAgent(llm)
 operation_agent = OperationAgent(llm)
 marketing_agent = MarketingAgent(llm)
+commercial_area_agent = CommercialAreaAgent(llm)
 simulation_agent = SimulationAgent(llm)
 simulation_sessions: dict[str, dict] = {}
 chat_sessions: dict[str, dict] = {}
@@ -70,6 +73,7 @@ orchestrator = OrchestratorAgent(
     finance_agent=finance_agent,
     operation_agent=operation_agent,
     marketing_agent=marketing_agent,
+    commercial_area_agent=commercial_area_agent,
     simulation_agent=simulation_agent,
 )
 
@@ -339,7 +343,10 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
         ),
         asyncio.create_task(run_named("IdeaAgent", idea_agent.run(IdeaRequest(profile=effective_profile, count=3)))),
         asyncio.create_task(
-            run_named("PolicyAgent", policy_agent.run(PolicyRequest(profile=effective_profile, query=request.message, limit=3)))
+            run_named(
+                "PolicyAgent",
+                policy_agent.run(PolicyRequest(profile=effective_profile, query=request.message, limit=3, context=request.context)),
+            )
         ),
     ]
     round1: dict[str, AgentResponse] = {}

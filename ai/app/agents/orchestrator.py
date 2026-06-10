@@ -9,6 +9,7 @@ from app.agents.finance import FinanceAgent
 from app.agents.idea import IdeaAgent
 from app.agents.legal import LegalAgent
 from app.agents.marketing import MarketingAgent
+from app.agents.commercial_area import CommercialAreaAgent
 from app.agents.operation import OperationAgent
 from app.agents.policy import PolicyAgent
 from app.agents.profile import ProfileAgent
@@ -17,6 +18,7 @@ from app.schemas import (
     AgentResponse,
     FinanceAssumption,
     ChatRequest,
+    CommercialAreaRequest,
     FinanceRequest,
     IdeaRequest,
     LegalRequest,
@@ -41,6 +43,7 @@ class OrchestratorAgent:
         finance_agent: FinanceAgent,
         operation_agent: OperationAgent,
         marketing_agent: MarketingAgent,
+        commercial_area_agent: CommercialAreaAgent,
         simulation_agent: SimulationAgent,
     ):
         self.profile_agent = profile_agent
@@ -50,6 +53,7 @@ class OrchestratorAgent:
         self.finance_agent = finance_agent
         self.operation_agent = operation_agent
         self.marketing_agent = marketing_agent
+        self.commercial_area_agent = commercial_area_agent
         self.simulation_agent = simulation_agent
 
     async def run(self, request: ChatRequest) -> AgentResponse:
@@ -127,7 +131,7 @@ class OrchestratorAgent:
         if intent == "policy":
             query = state.get("policy_query") or request.message
             return intent, await self.policy_agent.run(
-                PolicyRequest(profile=effective_profile, query=query, limit=3)
+                PolicyRequest(profile=effective_profile, query=query, limit=3, context=request.context)
             )
         if intent == "legal":
             return intent, await self.legal_agent.run(
@@ -149,6 +153,10 @@ class OrchestratorAgent:
                         request.context.get("item_name", request.context.get("product_name", "테스트 매장")),
                     ),
                 )
+            )
+        if intent == "commercial_area":
+            return intent, await self.commercial_area_agent.run(
+                CommercialAreaRequest(profile=effective_profile, query=request.message, context=request.context)
             )
         if intent == "marketing":
             return intent, await self.marketing_agent.run(
@@ -257,6 +265,7 @@ class OrchestratorAgent:
             "- finance: budget, price, revenue, cost, margin, BEP, cash flow, feasibility\n"
             "- operation: inventory, staffing, store operations, reviews, execution process\n"
             "- marketing: SNS, reels, captions, promotion, customer acquisition\n"
+            "- commercial_area: store location, local commercial area, nearby competitors, market density\n"
             "- simulation: 30-day game-like simulation or choice-based scenario\n"
             "- collaboration: broad end-to-end consultation when the user asks for an overall plan or intent is genuinely ambiguous\n\n"
             "Rules:\n"
@@ -316,6 +325,7 @@ class OrchestratorAgent:
             "finance",
             "operation",
             "marketing",
+            "commercial_area",
             "simulation",
             "collaboration",
             "roadmap",
@@ -367,6 +377,8 @@ class OrchestratorAgent:
             plan.append("finance")
         if any(keyword in text for keyword in ["운영", "재고", "리뷰", "피드백", "매장"]):
             plan.append("operation")
+        if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "경쟁", "주변 점포", "연남동", "마포구"]):
+            plan.append("commercial_area")
         if any(keyword in text for keyword in ["sns", "홍보", "릴스", "게시글", "해시태그"]):
             plan.append("marketing")
         if any(keyword in text for keyword in ["프로필", "분석", "강점", "조건"]):
@@ -416,6 +428,7 @@ class OrchestratorAgent:
             "idea": "아이템 추천/창업 후보 탐색 표현",
             "operation": "운영/재고/리뷰/매장 관리 표현",
             "marketing": "SNS/홍보/콘텐츠 표현",
+            "commercial_area": "상권/입지/경쟁점/주변 점포 분석 표현",
             "profile": "사용자 조건/강점/프로필 분석 표현",
             "simulation": "30일 체험/게임/선택지 표현",
         }
@@ -451,7 +464,7 @@ class OrchestratorAgent:
     ) -> AgentResponse:
         policy_query = self._policy_query_from_finance(request.message, finance_response)
         policy_response = await self.policy_agent.run(
-            PolicyRequest(profile=effective_profile, query=policy_query, limit=3)
+            PolicyRequest(profile=effective_profile, query=policy_query, limit=3, context=request.context)
         )
         selected_intents = self._unique([*initial_plan, "policy"])
         selected_agents = [finance_response.agent, policy_response.agent]
@@ -801,7 +814,7 @@ class OrchestratorAgent:
             ProfileRequest(profile=effective_profile, question=request.message, use_llm_extraction=False)
         )
         ideas_task = self.idea_agent.run(IdeaRequest(profile=effective_profile, count=3))
-        policies_task = self.policy_agent.run(PolicyRequest(profile=effective_profile, query=request.message, limit=3))
+        policies_task = self.policy_agent.run(PolicyRequest(profile=effective_profile, query=request.message, limit=3, context=request.context))
         profile, ideas, policies = await asyncio.gather(profile_task, ideas_task, policies_task)
 
         top_idea = self._pick_top_idea(ideas)
