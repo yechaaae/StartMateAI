@@ -85,6 +85,8 @@ export const FeaturePage = ({
   startupProfile,
   workspaceContext,
   onWorkspaceContextChange,
+  workspace,
+  setWorkspace,
 }) => {
   const feature = features[id]
   const agent = agents[feature.agent]
@@ -475,6 +477,8 @@ export const FeaturePage = ({
           data={data}
           setData={setData}
           go={go}
+          workspace={workspace}
+          setWorkspace={setWorkspace}
           selectedIdeaRank={selectedIdeaRank}
           onSelectIdea={setSelectedIdeaRank}
           selectedSupportTitle={selectedSupportTitle}

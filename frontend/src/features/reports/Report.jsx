@@ -10,6 +10,8 @@ export const Report = ({
   data,
   setData,
   go,
+  workspace,
+  setWorkspace,
   selectedIdeaRank,
   onSelectIdea,
   selectedSupportTitle,
@@ -25,7 +27,18 @@ export const Report = ({
   planGoal,
   onChangePlanGoal,
 }) => {
-  if (id === 'item') return <ItemReport data={data} go={go} selectedIdeaRank={selectedIdeaRank} onSelectIdea={onSelectIdea} />
+  if (id === 'item') {
+    return (
+      <ItemReport
+        data={data}
+        go={go}
+        workspace={workspace}
+        setWorkspace={setWorkspace}
+        selectedIdeaRank={selectedIdeaRank}
+        onSelectIdea={onSelectIdea}
+      />
+    )
+  }
   if (id === 'simulator') return <SimReport data={data} />
   if (id === 'support') {
     return (

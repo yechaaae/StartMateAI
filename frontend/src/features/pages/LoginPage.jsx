@@ -1,20 +1,79 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BrandMark } from '../../shared/components/BrandMark'
 import { Icon } from '../../shared/components/Icon'
 import { authApi } from '../../shared/api/client'
+import {
+  canRevealNextAuthField,
+  getNextAuthRevealCount,
+  getVisibleAuthFieldNames,
+  isAuthStepValueReady,
+} from './authStepFlow'
+
+const loginFields = [
+  {
+    name: 'email',
+    label: '이메일',
+    type: 'email',
+    placeholder: 'startmate@example.com',
+    autoComplete: 'email',
+  },
+  {
+    name: 'password',
+    label: '비밀번호',
+    type: 'password',
+    placeholder: '비밀번호',
+    autoComplete: 'current-password',
+  },
+]
 
 export const LoginPage = ({ go, onLogin }) => {
   const [form, setForm] = useState({ email: '', password: '' })
+  const [revealedCount, setRevealedCount] = useState(1)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const passwordRef = useRef(null)
+  const visibleFieldNames = getVisibleAuthFieldNames(loginFields, revealedCount)
+  const canSubmit = loginFields.every((field) => isAuthStepValueReady(field.name, form[field.name]))
+  const showPassword = visibleFieldNames.includes('password')
+  const allFieldsVisible = revealedCount >= loginFields.length
+  const canPressPrimary = allFieldsVisible
+    ? canSubmit
+    : canRevealNextAuthField(loginFields, revealedCount, form)
+
+  const revealNextField = () => {
+    setRevealedCount((current) => getNextAuthRevealCount(loginFields, current, form))
+  }
 
   const update = (event) => {
     setForm((current) => ({ ...current, [event.target.name]: event.target.value }))
+    setError('')
+  }
+
+  const completeField = (event) => {
+    if (event.type === 'keydown' && event.key !== 'Enter') {
+      return
+    }
+
+    if (event.type === 'keydown') {
+      event.preventDefault()
+    }
+
+    revealNextField()
   }
 
   const submit = async (event) => {
     event.preventDefault()
     setError('')
+
+    if (!allFieldsVisible) {
+      revealNextField()
+      return
+    }
+
+    if (!canSubmit) {
+      return
+    }
+
     setSubmitting(true)
 
     try {
@@ -27,27 +86,56 @@ export const LoginPage = ({ go, onLogin }) => {
     }
   }
 
+  useEffect(() => {
+    if (showPassword && !form.password) {
+      passwordRef.current?.focus()
+    }
+  }, [form.password, showPassword])
+
   return (
     <main className="auth-page">
       <section className="auth-panel">
-        <div className="brand-line"><BrandMark /><b>StartMate AI 로그인</b></div>
+        <button type="button" className="auth-brand-link" onClick={() => go('landing')}>
+          <BrandMark /><b>StartMate AI</b>
+        </button>
         <h1>다시 만나서 반가워요</h1>
-        <p>창업 프로필과 AI 작업공간을 이어서 사용하려면 로그인해주세요.</p>
+        <p>이메일을 입력하면 비밀번호 입력칸이 자연스럽게 이어집니다.</p>
 
-        <form className="auth-form" onSubmit={submit}>
-          <label>
-            이메일
-            <input name="email" type="email" value={form.email} onChange={update} placeholder="startmate@example.com" required />
-          </label>
-          <label>
-            비밀번호
-            <input name="password" type="password" value={form.password} onChange={update} placeholder="비밀번호" required />
-          </label>
+        <form className="auth-form auth-form-expand" onSubmit={submit}>
+          {loginFields.map((field) => {
+            if (!visibleFieldNames.includes(field.name)) {
+              return null
+            }
+
+            return (
+              <label
+                className="auth-reveal-field"
+                key={field.name}
+                style={{ '--reveal-index': visibleFieldNames.indexOf(field.name) }}
+              >
+                <span className="auth-reveal-inner">
+                  <span>{field.label}</span>
+                  <input
+                    ref={field.name === 'password' ? passwordRef : undefined}
+                    name={field.name}
+                    type={field.type}
+                    value={form[field.name]}
+                    onChange={update}
+                    onBlur={completeField}
+                    onKeyDown={completeField}
+                    placeholder={field.placeholder}
+                    autoComplete={field.autoComplete}
+                    required
+                  />
+                </span>
+              </label>
+            )
+          })}
 
           {error && <div className="api-alert">{error}</div>}
 
-          <button className="auth-submit" disabled={submitting}>
-            {submitting ? '확인 중...' : '로그인'} <Icon name="arrow" size={18} />
+          <button className="auth-submit" disabled={submitting || !canPressPrimary}>
+            {submitting ? '확인 중...' : allFieldsVisible ? '로그인' : '다음'} <Icon name="arrow" size={18} />
           </button>
         </form>
 

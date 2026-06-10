@@ -89,15 +89,26 @@ class PolicyRequest(BaseModel):
 
 class FinanceAssumption(BaseModel):
     item_name: str = "소자본 창업 아이템"
+    business_type: str = "auto"
+    sales_channel: str = "auto"
+    unit_label: str = "건"
     rent_krw_per_month: int = 2_000_000
     equipment_krw: int = 2_000_000
     initial_inventory_krw: int = 1_000_000
     marketing_krw_per_month: int = 500_000
+    labor_cost_krw_per_month: int = 0
     other_fixed_cost_krw_per_month: int = 500_000
     price_per_unit_krw: int = 8_000
     expected_daily_customers: int = 40
     variable_cost_rate: float = Field(default=0.35, ge=0, le=1)
+    platform_fee_rate: float = Field(default=0.0, ge=0, le=1)
+    payment_fee_rate: float = Field(default=0.03, ge=0, le=1)
+    tax_buffer_rate: float = Field(default=0.10, ge=0, le=1)
+    packaging_cost_krw_per_unit: int = 0
+    delivery_cost_krw_per_unit: int = 0
     operating_days_per_month: int = Field(default=26, ge=1, le=31)
+    cash_reserve_months: int = Field(default=1, ge=0, le=12)
+    startup_buffer_rate: float = Field(default=0.10, ge=0, le=1)
 
 
 class FinanceRequest(BaseModel):
