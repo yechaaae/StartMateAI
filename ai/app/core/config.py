@@ -44,6 +44,9 @@ class Settings:
     rabbitmq_password: str
     ai_chat_request_queue: str
     ai_chat_response_queue: str
+    backend_internal_base_url: str
+    internal_tool_token: str
+    backend_tool_timeout_seconds: float
 
 
 @lru_cache
@@ -79,4 +82,7 @@ def get_settings() -> Settings:
         rabbitmq_password=os.getenv("SPRING_RABBITMQ_PASSWORD", os.getenv("RABBITMQ_PASSWORD", "startmate")),
         ai_chat_request_queue=os.getenv("STARTMATE_AI_CHAT_REQUEST_QUEUE", "chat.request"),
         ai_chat_response_queue=os.getenv("STARTMATE_AI_CHAT_RESPONSE_QUEUE", "chat.response"),
+        backend_internal_base_url=os.getenv("BACKEND_INTERNAL_BASE_URL", "http://backend:8080").rstrip("/"),
+        internal_tool_token=os.getenv("STARTMATE_INTERNAL_TOOL_TOKEN", "startmate-local-internal-token"),
+        backend_tool_timeout_seconds=float(os.getenv("BACKEND_TOOL_TIMEOUT_SECONDS", "10")),
     )
