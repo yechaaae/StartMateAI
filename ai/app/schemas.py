@@ -10,6 +10,7 @@ IntentName = Literal[
     "profile",
     "idea",
     "policy",
+    "legal",
     "finance",
     "simulation",
     "operation",
@@ -85,6 +86,13 @@ class PolicyRequest(BaseModel):
     profile: StartupProfile
     query: str | None = None
     limit: int = Field(default=5, ge=1, le=10)
+
+
+class LegalRequest(BaseModel):
+    profile: StartupProfile = Field(default_factory=StartupProfile)
+    query: str
+    limit: int = Field(default=5, ge=1, le=10)
+    domains: list[str] = Field(default_factory=list)
 
 
 class FinanceAssumption(BaseModel):

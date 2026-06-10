@@ -3,7 +3,11 @@ from __future__ import annotations
 import hashlib
 import math
 import re
-from typing import Protocol
+from typing import Any, Protocol
+
+import httpx
+
+from app.core.config import Settings, get_settings
 
 
 class EmbeddingProvider(Protocol):
@@ -71,3 +75,86 @@ class HashEmbeddingProvider:
                 tokens.update(compact[index : index + 3] for index in range(len(compact) - 2))
 
         return tokens
+
+
+class OpenAIEmbeddingProvider:
+    """GMS-proxied OpenAI embeddings provider with batch input support."""
+
+    def __init__(self, settings: Settings | None = None):
+        self.settings = settings or get_settings()
+        self.dimensions = int(self.settings.rag_embedding_dimensions)
+
+    def embed(self, text: str) -> list[float]:
+        return self.embed_many([text])[0]
+
+    def embed_many(self, texts: list[str], *, batch_size: int = 64) -> list[list[float]]:
+        if not texts:
+            return []
+        embeddings: list[list[float]] = []
+        for start in range(0, len(texts), batch_size):
+            embeddings.extend(self._embed_batch(texts[start : start + batch_size]))
+        return embeddings
+
+    def _embed_batch(self, texts: list[str]) -> list[list[float]]:
+        if not self.settings.gms_api_key:
+            raise RuntimeError("GMS_API_KEY is required when RAG_EMBEDDING_PROVIDER=openai.")
+
+        url = self.settings.openai_embedding_base_url.rstrip("/") + "/" + self.settings.openai_embedding_path.lstrip("/")
+        payload = {
+            "model": self.settings.openai_embedding_model,
+            "input": texts,
+        }
+        with httpx.Client(timeout=self.settings.gms_timeout_seconds) as client:
+            response = client.post(
+                url,
+                headers=self._headers(),
+                json=payload,
+            )
+            response.raise_for_status()
+        vectors = self._extract_embeddings(response.json())
+        if len(vectors) != len(texts):
+            raise RuntimeError(f"Expected {len(texts)} embeddings, got {len(vectors)}.")
+        if vectors:
+            self.dimensions = len(vectors[0])
+        return [self._normalize(vector) for vector in vectors]
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.settings.gms_api_key}",
+        }
+
+    def _extract_embeddings(self, payload: dict[str, Any]) -> list[list[float]]:
+        data = payload.get("data")
+        if not isinstance(data, list):
+            return []
+        ordered = sorted(data, key=lambda item: int(item.get("index", 0)) if isinstance(item, dict) else 0)
+        vectors = []
+        for item in ordered:
+            if not isinstance(item, dict):
+                continue
+            embedding = item.get("embedding")
+            if isinstance(embedding, list):
+                vectors.append([float(value) for value in embedding])
+        return vectors
+
+    def _normalize(self, vector: list[float]) -> list[float]:
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm == 0:
+            return vector
+        return [value / norm for value in vector]
+
+
+def get_embedding_provider(
+    provider: str | None = None,
+    *,
+    dimensions: int | None = None,
+    settings: Settings | None = None,
+) -> EmbeddingProvider:
+    settings = settings or get_settings()
+    selected = (provider or settings.rag_embedding_provider or "hash").strip().lower()
+    if selected in {"openai", "text-embedding-3-large", "gms-openai"}:
+        return OpenAIEmbeddingProvider(settings=settings)
+    if selected in {"hash", "local"}:
+        return HashEmbeddingProvider(dimensions=dimensions or settings.rag_embedding_dimensions)
+    raise ValueError(f"Unsupported embedding provider: {selected}")

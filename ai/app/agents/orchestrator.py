@@ -7,6 +7,7 @@ from typing import Any
 
 from app.agents.finance import FinanceAgent
 from app.agents.idea import IdeaAgent
+from app.agents.legal import LegalAgent
 from app.agents.marketing import MarketingAgent
 from app.agents.operation import OperationAgent
 from app.agents.policy import PolicyAgent
@@ -18,6 +19,7 @@ from app.schemas import (
     ChatRequest,
     FinanceRequest,
     IdeaRequest,
+    LegalRequest,
     MarketingRequest,
     OperationRequest,
     PolicyRequest,
@@ -35,6 +37,7 @@ class OrchestratorAgent:
         profile_agent: ProfileAgent,
         idea_agent: IdeaAgent,
         policy_agent: PolicyAgent,
+        legal_agent: LegalAgent,
         finance_agent: FinanceAgent,
         operation_agent: OperationAgent,
         marketing_agent: MarketingAgent,
@@ -43,6 +46,7 @@ class OrchestratorAgent:
         self.profile_agent = profile_agent
         self.idea_agent = idea_agent
         self.policy_agent = policy_agent
+        self.legal_agent = legal_agent
         self.finance_agent = finance_agent
         self.operation_agent = operation_agent
         self.marketing_agent = marketing_agent
@@ -124,6 +128,10 @@ class OrchestratorAgent:
             query = state.get("policy_query") or request.message
             return intent, await self.policy_agent.run(
                 PolicyRequest(profile=effective_profile, query=query, limit=3)
+            )
+        if intent == "legal":
+            return intent, await self.legal_agent.run(
+                LegalRequest(profile=effective_profile, query=request.message, limit=5)
             )
         if intent == "finance":
             finance_assumption, finance_extraction = await self._finance_assumption_from_request(request)
@@ -244,7 +252,8 @@ class OrchestratorAgent:
             "Available agents:\n"
             "- profile: user constraints, strengths, readiness, missing profile info\n"
             "- idea: business idea discovery or recommendation\n"
-            "- policy: government support programs, applications, permits, legal/regulatory/tax checklist until a LegalAgent exists\n"
+            "- policy: government support programs, applications, grant documents and deadlines\n"
+            "- legal: laws, permits, reports, contracts, tax/legal checklist, privacy, trademark, labor\n"
             "- finance: budget, price, revenue, cost, margin, BEP, cash flow, feasibility\n"
             "- operation: inventory, staffing, store operations, reviews, execution process\n"
             "- marketing: SNS, reels, captions, promotion, customer acquisition\n"
@@ -254,7 +263,7 @@ class OrchestratorAgent:
             "- Pick 1 agent for a narrow question.\n"
             "- Pick 2-3 agents when the user explicitly asks across multiple domains.\n"
             "- Do not pick collaboration when a smaller agent set can answer.\n"
-            "- If legal, permit, report, contract, tax, or regulation is asked, include policy.\n"
+            "- If legal, permit, report, contract, tax, privacy, trademark, labor, or regulation is asked, include legal.\n"
             "- If budget, price, revenue, cost, profit, BEP, or feasibility is asked, include finance.\n\n"
             "Schema:\n"
             "{\n"
@@ -303,6 +312,7 @@ class OrchestratorAgent:
             "profile",
             "idea",
             "policy",
+            "legal",
             "finance",
             "operation",
             "marketing",
@@ -328,8 +338,8 @@ class OrchestratorAgent:
 
         if any(keyword in text for keyword in ["지원사업", "공고", "정책", "서류", "마감"]):
             plan.append("policy")
-        if any(keyword in text for keyword in ["법률", "법적", "법", "인허가", "허가", "신고", "계약", "세금", "세무"]):
-            plan.append("policy")
+        if any(keyword in text for keyword in ["법률", "법적", "법", "인허가", "허가", "신고", "계약", "세금", "세무", "개인정보", "상표", "저작권", "근로", "최저임금"]):
+            plan.append("legal")
         if any(keyword in text for keyword in ["아이템", "추천", "창업 뭐", "무슨 창업"]):
             plan.append("idea")
         if any(keyword in text for keyword in ["게임", "체험", "선택지", "30일", "이벤트"]):
@@ -401,7 +411,8 @@ class OrchestratorAgent:
     ) -> dict[str, Any]:
         labels = {
             "finance": "예산/매출/손익/객단가 등 재정 판단 표현",
-            "policy": "지원사업/정책/법률/인허가/세무 관련 표현",
+            "policy": "지원사업/정책/공고/서류 관련 표현",
+            "legal": "법률/인허가/신고/계약/세무/개인정보 관련 표현",
             "idea": "아이템 추천/창업 후보 탐색 표현",
             "operation": "운영/재고/리뷰/매장 관리 표현",
             "marketing": "SNS/홍보/콘텐츠 표현",
