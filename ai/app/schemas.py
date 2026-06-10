@@ -149,9 +149,27 @@ class OperationMetric(BaseModel):
 class OperationRequest(BaseModel):
     profile: StartupProfile = Field(default_factory=StartupProfile)
     business_name: str = "테스트 매장"
+    period: str | None = None
+    notes: str | None = None
+    daily_sales_krw: list[int] = Field(default_factory=list)
     weekly_sales_krw: list[int] = Field(default_factory=list)
+    monthly_sales_krw: int | None = Field(default=None, ge=0)
+    orders: int | None = Field(default=None, ge=0)
+    ad_spend_krw: int | None = Field(default=None, ge=0)
+    material_cost_krw: int | None = Field(default=None, ge=0)
+    labor_cost_krw: int | None = Field(default=None, ge=0)
+    fixed_cost_krw: int | None = Field(default=None, ge=0)
+    impressions: int | None = Field(default=None, ge=0)
+    clicks: int | None = Field(default=None, ge=0)
+    conversion_rate: float | None = Field(default=None, ge=0, le=1)
     inventory_notes: list[str] = Field(default_factory=list)
+    stockout_items: list[str] = Field(default_factory=list)
+    slow_moving_items: list[str] = Field(default_factory=list)
     customer_feedback: list[str] = Field(default_factory=list)
+    review_keywords: list[str] = Field(default_factory=list)
+    complaints: list[str] = Field(default_factory=list)
+    channel_notes: list[str] = Field(default_factory=list)
+    product_sales: list[dict[str, Any]] = Field(default_factory=list)
     metrics: list[OperationMetric] = Field(default_factory=list)
 
 
