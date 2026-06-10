@@ -20,7 +20,9 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/auth/**",
                         "/api/auth/**",
-                        "/api/rent-references/**"
+                        "/api/rent-references/**",
+                        "/api/sns/**",
+                        "/favicon.ico"
                 );
     }
 

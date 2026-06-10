@@ -55,3 +55,13 @@ export const startupProfileApi = {
     body: JSON.stringify(payload),
   }),
 }
+
+export const threadsApi = {
+  account: () => request('/sns/threads/account'),
+  connectUrl: () => request('/sns/threads/connect-url'),
+  publish: (payload) => request('/sns/threads/publish', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  logs: () => request('/sns/threads/logs'),
+}
