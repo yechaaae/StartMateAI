@@ -6,7 +6,6 @@ import { ChatInput } from '../chat/ChatInput'
 import { ChatRow } from '../chat/ChatRow'
 import { TypingRow } from '../chat/TypingRow'
 import {
-  CHAT_USER_ID,
   createChatEventSource,
   createFreeChatRoom,
   getChatMessages,
@@ -23,7 +22,7 @@ import {
   upsertMessage,
 } from '../chat/chatMappers'
 
-export const DiscussPage = () => {
+export const DiscussPage = ({ user }) => {
   const [items, setItems] = useState([])
   const [rooms, setRooms] = useState([])
   const [room, setRoom] = useState(null)
@@ -65,7 +64,7 @@ export const DiscussPage = () => {
         setLoading(true)
         setError('')
 
-        const roomListResponse = await getFreeChatRooms(CHAT_USER_ID)
+        const roomListResponse = await getFreeChatRooms()
         if (!active) return
 
         const nextRooms = roomListResponse.rooms ?? []
@@ -75,7 +74,7 @@ export const DiscussPage = () => {
           return
         }
 
-        const fallbackRoom = await getFreeChatRoom(CHAT_USER_ID)
+        const fallbackRoom = await getFreeChatRoom()
         if (!active) return
         setRooms([fallbackRoom])
         setRoom(fallbackRoom)
@@ -98,7 +97,7 @@ export const DiscussPage = () => {
     if (!room?.roomId) return undefined
 
     let active = true
-    const eventSource = createChatEventSource(room.roomId, CHAT_USER_ID)
+    const eventSource = createChatEventSource(room.roomId)
 
     const loadHistory = async () => {
       try {
@@ -109,7 +108,7 @@ export const DiscussPage = () => {
         setAgentProgress(null)
         setConnection('connecting')
 
-        const history = await getChatMessages(room.roomId, CHAT_USER_ID)
+        const history = await getChatMessages(room.roomId)
         if (!active) return
         setItems(history.messages.map(normalizeChatMessage))
       } catch (nextError) {
@@ -186,7 +185,7 @@ export const DiscussPage = () => {
     try {
       setAgentProgress(null)
       const response = await sendChatMessage(room.roomId, {
-        userId: CHAT_USER_ID,
+        userId: user?.id ?? null,
         content: text,
         metadata: JSON.stringify({ source: 'discuss-page' }),
         intent: 'auto',
@@ -199,7 +198,7 @@ export const DiscussPage = () => {
         id: response.messageId,
         role: 'user',
         senderType: response.senderType,
-        userId: CHAT_USER_ID,
+        userId: user?.id ?? null,
         agentId: null,
         agent: null,
         text: response.content,
@@ -230,7 +229,7 @@ export const DiscussPage = () => {
     setError('')
 
     try {
-      const createdRoom = await createFreeChatRoom(CHAT_USER_ID)
+      const createdRoom = await createFreeChatRoom()
       setRooms((prev) => [createdRoom, ...prev])
       setRoom(createdRoom)
       setSessionMenuOpen(false)
@@ -259,7 +258,7 @@ export const DiscussPage = () => {
     try {
       setSavingTitle(true)
       setError('')
-      const updatedRoom = await updateFreeChatRoomTitle(roomId, CHAT_USER_ID, titleDraft)
+      const updatedRoom = await updateFreeChatRoomTitle(roomId, titleDraft)
       updateRoomState(updatedRoom)
       setEditingRoomId(null)
       setTitleDraft('')

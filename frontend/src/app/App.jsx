@@ -163,9 +163,9 @@ export default function App() {
   } else if (guardedRoute === 'onboarding' || profileStatus?.requiresOnboarding) {
     page = <Onboarding onComplete={handleOnboardingComplete} />
   } else if (guardedRoute === 'discuss') {
-    page = <DiscussPage />
+    page = <DiscussPage user={user} />
   } else if (guardedRoute === 'saved') {
-    page = <SavedPage />
+    page = <SavedPage go={setRoute} />
   } else if (guardedRoute === 'simulator') {
     page = <SimulatorPage go={setRoute} workspace={workspace} />
   } else if (features[guardedRoute]) {

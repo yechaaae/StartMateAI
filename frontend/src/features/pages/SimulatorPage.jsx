@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { savedResultApi } from '../../shared/api/client'
 import { RoadviewPicker } from '../simulator/RoadviewPicker'
 import { AssumptionForm } from '../simulator/AssumptionForm'
 import { DailyReportChart } from '../simulator/DailyReportChart'
@@ -8,6 +9,7 @@ import { AgentAvatar } from '../../shared/components/AgentAvatar'
 import { ChatInput } from '../chat/ChatInput'
 import { ChatRow } from '../chat/ChatRow'
 import { TypingRow } from '../chat/TypingRow'
+import { buildSimulationSavedReport } from '../reports/savedReportPayload'
 
 const steps = ['위치 탐색', '가정값 설정', '리포트 확인']
 
@@ -53,6 +55,7 @@ export const SimulatorPage = ({ go, workspace }) => {
     { agent: 'finance', text: '30일 시뮬레이션 리포트를 만들었어요. 가격, 광고비, 판매/이용 건수를 바꾸고 싶으면 말씀해주세요.' },
   ])
   const [busy, setBusy] = useState(false)
+  const [savingReport, setSavingReport] = useState(false)
   const [typing, setTyping] = useState(null)
   const chatRef = useRef(null)
   const agent = agents.finance
@@ -134,9 +137,23 @@ export const SimulatorPage = ({ go, workspace }) => {
     }, 900)
   }
 
-  const handleSave = () => {
-    window.alert('저장되었습니다. 백엔드 저장 API 연결 뒤에는 이 결과가 저장한 결과에 남게 됩니다.')
-    go('home')
+  const handleSave = async () => {
+    if (!report || savingReport) return
+
+    try {
+      setSavingReport(true)
+      await savedResultApi.save(buildSimulationSavedReport({
+        workspace,
+        location,
+        assumption,
+        report,
+      }))
+      go('saved')
+    } catch (error) {
+      window.alert(error.message ?? '리포트를 저장하지 못했습니다.')
+    } finally {
+      setSavingReport(false)
+    }
   }
 
   return (

@@ -34,7 +34,10 @@ public class SavedResult extends BaseCreatedEntity {
     @Column(name = "result_type", nullable = false)
     private String resultType;
 
-    @Column(name = "reference_id", nullable = false)
+    @Column(name = "source_feature", nullable = false)
+    private String sourceFeature;
+
+    @Column(name = "reference_id")
     private Long referenceId;
 
     @Column(name = "title", nullable = false)
@@ -43,4 +46,28 @@ public class SavedResult extends BaseCreatedEntity {
     @Lob
     @Column(name = "summary", columnDefinition = "text")
     private String summary;
+
+    @Lob
+    @Column(name = "payload", columnDefinition = "longtext", nullable = false)
+    private String payload;
+
+    public static SavedResult create(
+            Workspace workspace,
+            String sourceFeature,
+            String resultType,
+            Long referenceId,
+            String title,
+            String summary,
+            String payload
+    ) {
+        SavedResult savedResult = new SavedResult();
+        savedResult.setWorkspace(workspace);
+        savedResult.setSourceFeature(sourceFeature);
+        savedResult.setResultType(resultType);
+        savedResult.setReferenceId(referenceId);
+        savedResult.setTitle(title);
+        savedResult.setSummary(summary);
+        savedResult.setPayload(payload);
+        return savedResult;
+    }
 }

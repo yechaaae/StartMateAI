@@ -12,6 +12,8 @@ import com.kakao.backend.chat.dto.FreeChatRoomResponse;
 import com.kakao.backend.chat.dto.SendChatMessageRequest;
 import com.kakao.backend.chat.dto.UpdateChatRoomTitleRequest;
 import com.kakao.backend.chat.dto.UpdateFeatureChatRoomTitleRequest;
+import com.kakao.backend.common.presentation.LoginUserSessionResolver;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -27,18 +29,24 @@ public class ChatCommandController {
 
     private final ChatMessageCommandService chatMessageCommandService;
     private final ChatRoomQueryService chatRoomQueryService;
+    private final LoginUserSessionResolver loginUserSessionResolver;
 
     public ChatCommandController(
             ChatMessageCommandService chatMessageCommandService,
-            ChatRoomQueryService chatRoomQueryService
+            ChatRoomQueryService chatRoomQueryService,
+            LoginUserSessionResolver loginUserSessionResolver
     ) {
         this.chatMessageCommandService = chatMessageCommandService;
         this.chatRoomQueryService = chatRoomQueryService;
+        this.loginUserSessionResolver = loginUserSessionResolver;
     }
 
     @PostMapping("/free-rooms")
-    public ResponseEntity<FreeChatRoomResponse> createFreeRoom(@RequestBody CreateFreeChatRoomRequest request) {
-        var result = chatRoomQueryService.createNewFreeRoom(request.userId());
+    public ResponseEntity<FreeChatRoomResponse> createFreeRoom(
+            @RequestBody(required = false) CreateFreeChatRoomRequest request,
+            HttpSession session
+    ) {
+        var result = chatRoomQueryService.createNewFreeRoom(loginUserSessionResolver.resolve(session));
         return ResponseEntity.status(HttpStatus.CREATED).body(new FreeChatRoomResponse(
                 result.roomId(),
                 result.workspaceId(),
@@ -50,8 +58,14 @@ public class ChatCommandController {
     }
 
     @PostMapping("/feature-rooms")
-    public ResponseEntity<FeatureChatRoomResponse> createFeatureRoom(@RequestBody CreateFeatureChatRoomRequest request) {
-        var result = chatRoomQueryService.createNewFeatureRoom(request.userId(), request.targetFeature());
+    public ResponseEntity<FeatureChatRoomResponse> createFeatureRoom(
+            @RequestBody CreateFeatureChatRoomRequest request,
+            HttpSession session
+    ) {
+        var result = chatRoomQueryService.createNewFeatureRoom(
+                loginUserSessionResolver.resolve(session),
+                request.targetFeature()
+        );
         return ResponseEntity.status(HttpStatus.CREATED).body(new FeatureChatRoomResponse(
                 result.roomId(),
                 result.workspaceId(),
@@ -65,9 +79,14 @@ public class ChatCommandController {
     @PatchMapping("/free-rooms/{roomId}")
     public ResponseEntity<FreeChatRoomResponse> updateFreeRoomTitle(
             @PathVariable Long roomId,
-            @RequestBody UpdateChatRoomTitleRequest request
+            @RequestBody UpdateChatRoomTitleRequest request,
+            HttpSession session
     ) {
-        var result = chatRoomQueryService.updateFreeRoomTitle(roomId, request.userId(), request.title());
+        var result = chatRoomQueryService.updateFreeRoomTitle(
+                roomId,
+                loginUserSessionResolver.resolve(session),
+                request.title()
+        );
         return ResponseEntity.ok(new FreeChatRoomResponse(
                 result.roomId(),
                 result.workspaceId(),
@@ -81,11 +100,12 @@ public class ChatCommandController {
     @PatchMapping("/feature-rooms/{roomId}")
     public ResponseEntity<FeatureChatRoomResponse> updateFeatureRoomTitle(
             @PathVariable Long roomId,
-            @RequestBody UpdateFeatureChatRoomTitleRequest request
+            @RequestBody UpdateFeatureChatRoomTitleRequest request,
+            HttpSession session
     ) {
         var result = chatRoomQueryService.updateFeatureRoomTitle(
                 roomId,
-                request.userId(),
+                loginUserSessionResolver.resolve(session),
                 request.targetFeature(),
                 request.title()
         );
@@ -102,11 +122,12 @@ public class ChatCommandController {
     @PostMapping("/rooms/{roomId}/messages")
     public ResponseEntity<ChatMessageSendResponse> sendMessage(
             @PathVariable Long roomId,
-            @RequestBody SendChatMessageRequest request
+            @RequestBody SendChatMessageRequest request,
+            HttpSession session
     ) {
         ChatMessageSendResult result = chatMessageCommandService.send(new SendChatMessageCommand(
                 roomId,
-                request.userId(),
+                loginUserSessionResolver.resolve(session),
                 request.content(),
                 request.metadata(),
                 request.intent(),
