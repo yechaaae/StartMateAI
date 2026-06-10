@@ -1,6 +1,6 @@
 package com.kakao.backend.aichat.application;
 
-import com.kakao.backend.aichat.dto.AiChatContextPayload;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kakao.backend.aichat.dto.AiChatRequestMessage;
 import com.kakao.backend.aichat.dto.AiChatUserProfilePayload;
 import com.kakao.backend.aichat.dto.AiRecentMessagePayload;
@@ -8,6 +8,7 @@ import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.startupProfile.model.StartupProfile;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
@@ -15,8 +16,16 @@ import org.springframework.stereotype.Component;
 @Component
 public class AiChatRequestFactory {
 
+    private final ObjectMapper objectMapper;
+
+    public AiChatRequestFactory(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
+
     public AiChatRequestMessage create(AiChatDispatchCommand command) {
         return new AiChatRequestMessage(
+                "v1",
+                "CHAT_REQUEST",
                 command.requestId(),
                 command.workspace() != null ? command.workspace().getId() : null,
                 command.room() != null ? command.room().getId() : null,
@@ -26,10 +35,44 @@ public class AiChatRequestFactory {
                 command.room() != null ? command.room().getTargetFeature() : null,
                 command.sessionType(),
                 command.intent(),
-                command.message() != null ? command.message().getContent() : null,
-                toProfile(command.startupProfile()),
-                toContext(command)
+                toPayload(command)
         );
+    }
+
+    private Map<String, Object> toPayload(AiChatDispatchCommand command) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+
+        Map<String, Object> common = new LinkedHashMap<>();
+        putText(common, "message", command.message() != null ? command.message().getContent() : null);
+        putText(common, "metadata", command.message() != null ? command.message().getMetadata() : null);
+        payload.put("common", common);
+
+        payload.put("profile", objectMapper.convertValue(toProfile(command.startupProfile()), Map.class));
+
+        Map<String, Object> conversation = new LinkedHashMap<>();
+        putText(conversation, "roomType", command.room() != null ? command.room().getRoomType() : null);
+        putText(conversation, "targetFeature", command.room() != null ? command.room().getTargetFeature() : null);
+        conversation.put("recentMessages", objectMapper.convertValue(toRecentMessages(command), List.class));
+        payload.put("conversation", conversation);
+
+        Map<String, Object> resultContext = new LinkedHashMap<>();
+        putText(resultContext, "currentResultType", command.currentResultType());
+        putLong(resultContext, "currentResultId", command.currentResultId());
+        putLong(resultContext, "selectedIdeaId", command.selectedIdeaId());
+        resultContext.put("currentResult", command.currentResult() == null ? Map.of() : command.currentResult());
+        payload.put("resultContext", resultContext);
+
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("candidateAgents", command.candidateAgents() == null ? List.of() : command.candidateAgents());
+        putText(options, "sessionType", command.sessionType());
+        putText(options, "intent", command.intent());
+        payload.put("options", options);
+
+        if (command.referenceData() != null && !command.referenceData().isEmpty()) {
+            payload.put("reference", command.referenceData());
+        }
+
+        return payload;
     }
 
     private AiChatUserProfilePayload toProfile(StartupProfile profile) {
@@ -41,7 +84,7 @@ public class AiChatRequestFactory {
                     null,
                     List.of(),
                     List.of(),
-                    "예비창업",
+                    "pre_founder",
                     "medium",
                     null
             );
@@ -56,35 +99,18 @@ public class AiChatRequestFactory {
                 profile.getPreferredBusinessType() == null
                         ? List.of()
                         : List.of(profile.getPreferredBusinessType().getLabel()),
-                "예비창업",
+                "pre_founder",
                 "medium",
                 profile.getDiagnosisSummary()
         );
     }
 
-    private AiChatContextPayload toContext(AiChatDispatchCommand command) {
-        List<AiRecentMessagePayload> recentMessages = command.recentMessages() == null
+    private List<AiRecentMessagePayload> toRecentMessages(AiChatDispatchCommand command) {
+        return command.recentMessages() == null
                 ? List.of()
                 : command.recentMessages().stream()
                         .map(this::toRecentMessage)
                         .toList();
-
-        Map<String, Object> currentResult = command.currentResult() == null
-                ? Map.of()
-                : command.currentResult();
-
-        List<String> candidateAgents = command.candidateAgents() == null
-                ? List.of()
-                : List.copyOf(command.candidateAgents());
-
-        return new AiChatContextPayload(
-                command.currentResultType(),
-                command.currentResultId(),
-                command.selectedIdeaId(),
-                recentMessages,
-                currentResult,
-                candidateAgents
-        );
     }
 
     private AiRecentMessagePayload toRecentMessage(ChatMessage message) {
@@ -133,5 +159,17 @@ public class AiChatRequestFactory {
             return fallback;
         }
         return null;
+    }
+
+    private void putText(Map<String, Object> node, String fieldName, String value) {
+        if (value != null && !value.isBlank()) {
+            node.put(fieldName, value);
+        }
+    }
+
+    private void putLong(Map<String, Object> node, String fieldName, Long value) {
+        if (value != null) {
+            node.put(fieldName, value);
+        }
     }
 }

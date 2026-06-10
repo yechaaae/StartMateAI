@@ -58,4 +58,8 @@ public class ChatRoom extends BaseTimeEntity {
         room.setTargetFeature(targetFeature);
         return room;
     }
+
+    public void rename(String title) {
+        this.title = title;
+    }
 }

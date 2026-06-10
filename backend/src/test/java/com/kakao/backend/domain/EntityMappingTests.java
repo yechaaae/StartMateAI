@@ -7,6 +7,7 @@ import com.kakao.backend.commercialarea.domain.CommercialAreaMetric;
 import com.kakao.backend.commercialarea.domain.Store;
 import com.kakao.backend.chat.domain.ChatAgentParticipant;
 import com.kakao.backend.chat.domain.ChatMessage;
+import com.kakao.backend.chat.domain.ChatRequestStatus;
 import com.kakao.backend.chat.domain.ChatRoom;
 import com.kakao.backend.idea.domain.BusinessIdeaOption;
 import com.kakao.backend.idea.domain.BusinessIdeaResult;
@@ -46,6 +47,7 @@ class EntityMappingTests {
                 Map.entry(Agent.class, "agent"),
                 Map.entry(ChatRoom.class, "chat_room"),
                 Map.entry(ChatMessage.class, "chat_message"),
+                Map.entry(ChatRequestStatus.class, "chat_request_status"),
                 Map.entry(ChatAgentParticipant.class, "chat_agent_participant"),
                 Map.entry(BusinessIdeaResult.class, "business_idea_result"),
                 Map.entry(BusinessIdeaOption.class, "business_idea_option"),
@@ -81,6 +83,7 @@ class EntityMappingTests {
                 Agent.class,
                 ChatRoom.class,
                 ChatMessage.class,
+                ChatRequestStatus.class,
                 ChatAgentParticipant.class,
                 BusinessIdeaResult.class,
                 BusinessIdeaOption.class,

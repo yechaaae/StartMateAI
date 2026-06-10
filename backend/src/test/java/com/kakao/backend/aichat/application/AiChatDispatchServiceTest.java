@@ -4,9 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.kakao.backend.aichat.dto.AiChatContextPayload;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kakao.backend.aichat.dto.AiChatRequestMessage;
-import com.kakao.backend.aichat.dto.AiChatUserProfilePayload;
 import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRoom;
 import com.kakao.backend.user.model.User;
@@ -34,11 +33,11 @@ class AiChatDispatchServiceTest {
 
     @Test
     void dispatchPublishesFactoryOutputAndReturnsRequestId() {
-        Workspace workspace = Workspace.create("워크스페이스", "ACTIVE");
-        ChatRoom room = ChatRoom.create(workspace, "자유 상담", "FREE_DISCUSSION", null);
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
+        ChatRoom room = ChatRoom.create(workspace, "free room", "FREE_DISCUSSION", null);
         User user = User.create("test@example.com", "tester", "USER");
         StartupProfile profile = StartupProfile.create();
-        ChatMessage message = ChatMessage.userMessage(room, user, "알바를 더 뽑아야 하나?", null);
+        ChatMessage message = ChatMessage.userMessage(room, user, "hello", null);
 
         AiChatDispatchCommand command = new AiChatDispatchCommand(
                 "req-123",
@@ -54,10 +53,13 @@ class AiChatDispatchServiceTest {
                 null,
                 List.of(),
                 List.of(),
+                Map.of(),
                 Map.of()
         );
 
         AiChatRequestMessage request = new AiChatRequestMessage(
+                "v1",
+                "CHAT_REQUEST",
                 "req-123",
                 null,
                 null,
@@ -67,9 +69,7 @@ class AiChatDispatchServiceTest {
                 null,
                 "FREE_CHAT",
                 "auto",
-                "알바를 더 뽑아야 하나?",
-                new AiChatUserProfilePayload(null, List.of(), null, null, List.of(), List.of(), "예비창업", "medium", null),
-                new AiChatContextPayload(null, null, null, List.of(), Map.of(), List.of())
+                Map.of("common", Map.of("message", "hello"))
         );
 
         when(factory.create(command)).thenReturn(request);
@@ -81,3 +81,4 @@ class AiChatDispatchServiceTest {
         verify(gateway).publish(request);
     }
 }
+
