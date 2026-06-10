@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from app.agents.finance import FinanceAgent
 from app.agents.idea import IdeaAgent
+from app.agents.legal import LegalAgent
 from app.agents.marketing import MarketingAgent
 from app.agents.operation import OperationAgent
 from app.agents.orchestrator import OrchestratorAgent
@@ -17,12 +18,14 @@ from app.agents.simulation import SimulationAgent
 from app.core.config import get_settings
 from app.core.gms_client import GMSClient
 from app.rag.retriever import SupportProgramRetriever
+from app.rag.legal_retriever import LegalRetriever
 from app.schemas import (
     AgentResponse,
     ChatRequest,
     FinanceAssumption,
     FinanceRequest,
     IdeaRequest,
+    LegalRequest,
     LLMChatRequest,
     MarketingRequest,
     OperationRequest,
@@ -40,12 +43,18 @@ llm = GMSClient(settings)
 retriever = SupportProgramRetriever.from_default(
     retrieval_mode=settings.rag_retrieval_mode,
     vector_store_path=settings.rag_vector_store_path or None,
+    embedding_dimensions=settings.support_rag_embedding_dimensions,
+)
+legal_retriever = LegalRetriever(
+    chroma_path=settings.rag_chroma_path,
     embedding_dimensions=settings.rag_embedding_dimensions,
+    embedding_provider=settings.rag_embedding_provider,
 )
 
 profile_agent = ProfileAgent(llm)
 idea_agent = IdeaAgent(llm)
 policy_agent = PolicyAgent(llm, retriever)
+legal_agent = LegalAgent(llm, legal_retriever)
 finance_agent = FinanceAgent(llm)
 operation_agent = OperationAgent(llm)
 marketing_agent = MarketingAgent(llm)
@@ -57,6 +66,7 @@ orchestrator = OrchestratorAgent(
     profile_agent=profile_agent,
     idea_agent=idea_agent,
     policy_agent=policy_agent,
+    legal_agent=legal_agent,
     finance_agent=finance_agent,
     operation_agent=operation_agent,
     marketing_agent=marketing_agent,
@@ -65,7 +75,7 @@ orchestrator = OrchestratorAgent(
 
 
 @router.get("/health")
-async def health() -> dict[str, str | bool]:
+async def health() -> dict[str, object]:
     return {
         "status": "ok",
         "service": settings.app_name,
@@ -73,6 +83,7 @@ async def health() -> dict[str, str | bool]:
         "gms_configured": llm.is_configured,
         "rag_retrieval_mode": retriever.retrieval_mode,
         "rag_vector_store": retriever.vector_store is not None,
+        "legal_vector_store_count": legal_retriever.count(),
     }
 
 
@@ -213,6 +224,7 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
             "profile": "ProfileAgent",
             "idea": "IdeaAgent",
             "policy": "PolicyAgent",
+            "legal": "LegalAgent",
             "finance": "FinanceAgent",
             "operation": "OperationAgent",
             "marketing": "MarketingAgent",
@@ -536,6 +548,11 @@ async def recommend_ideas(request: IdeaRequest) -> AgentResponse:
 @router.post("/ai/policies/match", response_model=AgentResponse)
 async def match_policies(request: PolicyRequest) -> AgentResponse:
     return await policy_agent.run(request)
+
+
+@router.post("/ai/legal/check", response_model=AgentResponse)
+async def check_legal(request: LegalRequest) -> AgentResponse:
+    return await legal_agent.run(request)
 
 
 @router.post("/ai/finance/simulate", response_model=AgentResponse)

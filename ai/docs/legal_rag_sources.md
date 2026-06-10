@@ -37,6 +37,19 @@ Outputs:
 - `app/data/legal_collection_report.json`: collection status by source
 - `.rag_index/legal_sources.vector.json`: local vector index for RAG experiments
 
+## Chroma indexing
+
+For the hackathon build, use embedded Chroma. It writes a local `.chroma/` directory
+and does not require a separate Docker container.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe scripts\index_legal_chroma.py --reset
+```
+
+This creates the `legal_sources` collection from `app/data/legal_documents.json`.
+The script also runs a small query test after indexing.
+
 ## Retrieval shape
 
 LegalAgent should not rely on similarity alone. Use a checklist planner first:

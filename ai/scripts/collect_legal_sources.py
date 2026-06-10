@@ -203,13 +203,14 @@ def article_documents(
     selected: dict[str, Any],
 ) -> list[dict[str, Any]]:
     records = []
-    for node in walk_dicts(payload):
+    for node in article_nodes(payload):
         title = _first(node, "조문제목", "조제목")
-        content = _first(node, "조문내용", "조내용")
+        content = article_text(node)
         article_no = _first(node, "조문번호", "조문가지번호")
         if not content or len(strip_text(content)) < 10:
             continue
-        text = strip_text(" ".join(part for part in [article_label(article_no, title), content] if part))
+        label = article_label(article_no, title)
+        text = strip_text(content if content.startswith(label) else " ".join(part for part in [label, content] if part))
         doc_id = stable_id(source["name"], selected.get("id") or selected.get("mst") or "", article_no or title or text[:30])
         records.append(
             {
@@ -235,6 +236,52 @@ def article_documents(
             }
         )
     return dedupe_documents(records)
+
+
+def article_nodes(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    nodes: list[dict[str, Any]] = []
+    for node in walk_dicts(payload):
+        units = node.get("조문단위")
+        if isinstance(units, list):
+            nodes.extend(unit for unit in units if isinstance(unit, dict))
+        elif isinstance(units, dict):
+            nodes.append(units)
+    if nodes:
+        return nodes
+
+    return [
+        node
+        for node in walk_dicts(payload)
+        if isinstance(node, dict) and ("조문내용" in node or "조내용" in node)
+    ]
+
+
+def article_text(node: dict[str, Any]) -> str:
+    pieces: list[str] = []
+    collect_text_fields(node, pieces)
+    return strip_text(" ".join(pieces))
+
+
+def collect_text_fields(value: Any, pieces: list[str]) -> None:
+    if isinstance(value, dict):
+        for key in (
+            "조문내용",
+            "조내용",
+            "항내용",
+            "호내용",
+            "목내용",
+            "부칙내용",
+            "별표내용",
+            "서식내용",
+        ):
+            text = value.get(key)
+            if isinstance(text, str) and text.strip():
+                pieces.append(text)
+        for child in value.values():
+            collect_text_fields(child, pieces)
+    elif isinstance(value, list):
+        for child in value:
+            collect_text_fields(child, pieces)
 
 
 def build_vector_index(documents: list[dict[str, Any]], *, vector_path: Path, rebuild: bool) -> None:

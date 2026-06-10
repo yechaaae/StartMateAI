@@ -23,7 +23,13 @@ class Settings:
     use_mock_llm: bool
     rag_retrieval_mode: str
     rag_vector_store_path: str
+    support_rag_embedding_dimensions: int
+    rag_chroma_path: str
     rag_embedding_dimensions: int
+    rag_embedding_provider: str
+    openai_embedding_base_url: str
+    openai_embedding_path: str
+    openai_embedding_model: str
     gms_api_key: str
     gms_base_url: str
     gms_chat_path: str
@@ -43,7 +49,16 @@ def get_settings() -> Settings:
         use_mock_llm=_env_bool("USE_MOCK_LLM", default=not bool(api_key and base_url)),
         rag_retrieval_mode=os.getenv("RAG_RETRIEVAL_MODE", "hybrid").strip().lower(),
         rag_vector_store_path=os.getenv("RAG_VECTOR_STORE_PATH", ""),
+        support_rag_embedding_dimensions=int(os.getenv("SUPPORT_RAG_EMBEDDING_DIMENSIONS", "384")),
+        rag_chroma_path=os.getenv("RAG_CHROMA_PATH", ".chroma"),
         rag_embedding_dimensions=int(os.getenv("RAG_EMBEDDING_DIMENSIONS", "384")),
+        rag_embedding_provider=os.getenv("RAG_EMBEDDING_PROVIDER", "hash").strip().lower(),
+        openai_embedding_base_url=os.getenv(
+            "OPENAI_EMBEDDING_BASE_URL",
+            "https://gms.ssafy.io/gmsapi/api.openai.com",
+        ).strip(),
+        openai_embedding_path=os.getenv("OPENAI_EMBEDDING_PATH", "/v1/embeddings").strip(),
+        openai_embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large").strip(),
         gms_api_key=api_key,
         gms_base_url=base_url or "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com",
         gms_chat_path=os.getenv("GMS_CHAT_PATH", "/v1beta/models/gemini-2.5-flash:generateContent"),
