@@ -13,6 +13,8 @@ import com.kakao.backend.chat.dto.FeatureChatRoomListResponse;
 import com.kakao.backend.chat.dto.FeatureChatRoomResponse;
 import com.kakao.backend.chat.dto.FreeChatRoomListResponse;
 import com.kakao.backend.chat.dto.FreeChatRoomResponse;
+import com.kakao.backend.common.presentation.LoginUserSessionResolver;
+import jakarta.servlet.http.HttpSession;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,15 +28,22 @@ class ChatQueryControllerTest {
     @Mock
     private ChatRoomQueryService chatRoomQueryService;
 
+    @Mock
+    private LoginUserSessionResolver loginUserSessionResolver;
+
+    @Mock
+    private HttpSession session;
+
     @InjectMocks
     private ChatQueryController chatQueryController;
 
     @Test
     void getsOrCreatesFreeRoom() {
+        when(loginUserSessionResolver.resolve(session)).thenReturn(2L);
         when(chatRoomQueryService.getOrCreateFreeRoom(2L))
                 .thenReturn(new FreeChatRoomResult(10L, 1L, "Free discussion", "FREE_DISCUSSION", null, true));
 
-        FreeChatRoomResponse response = chatQueryController.getFreeRoom(2L).getBody();
+        FreeChatRoomResponse response = chatQueryController.getFreeRoom(session).getBody();
 
         assertThat(response).isNotNull();
         assertThat(response.roomId()).isEqualTo(10L);
@@ -44,10 +53,11 @@ class ChatQueryControllerTest {
 
     @Test
     void getsOrCreatesFeatureRoom() {
+        when(loginUserSessionResolver.resolve(session)).thenReturn(2L);
         when(chatRoomQueryService.getOrCreateFeatureRoom(2L, "ITEM"))
                 .thenReturn(new FeatureChatRoomResult(20L, 1L, "Item recommendation", "FEATURE_DISCUSSION", "ITEM", true));
 
-        FeatureChatRoomResponse response = chatQueryController.getFeatureRoom(2L, "ITEM").getBody();
+        FeatureChatRoomResponse response = chatQueryController.getFeatureRoom("ITEM", session).getBody();
 
         assertThat(response).isNotNull();
         assertThat(response.roomId()).isEqualTo(20L);
@@ -57,13 +67,14 @@ class ChatQueryControllerTest {
 
     @Test
     void getsFreeRoomList() {
+        when(loginUserSessionResolver.resolve(session)).thenReturn(2L);
         when(chatRoomQueryService.getFreeRooms(2L))
                 .thenReturn(List.of(
                         new FreeChatRoomResult(11L, 1L, "Free discussion 2", "FREE_DISCUSSION", null, false),
                         new FreeChatRoomResult(10L, 1L, "Free discussion", "FREE_DISCUSSION", null, false)
                 ));
 
-        FreeChatRoomListResponse response = chatQueryController.getFreeRooms(2L).getBody();
+        FreeChatRoomListResponse response = chatQueryController.getFreeRooms(session).getBody();
 
         assertThat(response).isNotNull();
         assertThat(response.rooms()).hasSize(2);
@@ -72,13 +83,14 @@ class ChatQueryControllerTest {
 
     @Test
     void getsFeatureRoomList() {
+        when(loginUserSessionResolver.resolve(session)).thenReturn(2L);
         when(chatRoomQueryService.getFeatureRooms(2L, "ITEM"))
                 .thenReturn(List.of(
                         new FeatureChatRoomResult(21L, 1L, "Item recommendation 2", "FEATURE_DISCUSSION", "ITEM", false),
                         new FeatureChatRoomResult(20L, 1L, "Item recommendation", "FEATURE_DISCUSSION", "ITEM", false)
                 ));
 
-        FeatureChatRoomListResponse response = chatQueryController.getFeatureRooms(2L, "ITEM").getBody();
+        FeatureChatRoomListResponse response = chatQueryController.getFeatureRooms("ITEM", session).getBody();
 
         assertThat(response).isNotNull();
         assertThat(response.rooms()).hasSize(2);
@@ -88,6 +100,7 @@ class ChatQueryControllerTest {
 
     @Test
     void getsMessageHistory() {
+        when(loginUserSessionResolver.resolve(session)).thenReturn(2L);
         when(chatRoomQueryService.getMessageHistory(10L, 2L)).thenReturn(
                 new ChatMessageHistoryResult(
                         10L,
@@ -98,7 +111,7 @@ class ChatQueryControllerTest {
                 )
         );
 
-        ChatMessageHistoryResponse response = chatQueryController.getMessages(10L, 2L).getBody();
+        ChatMessageHistoryResponse response = chatQueryController.getMessages(10L, session).getBody();
 
         assertThat(response).isNotNull();
         assertThat(response.roomId()).isEqualTo(10L);
