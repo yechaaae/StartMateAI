@@ -22,6 +22,13 @@ export const Report = ({
   onChangeSupportSearchMode,
   supportUserGoal,
   onChangeSupportUserGoal,
+  supportRegionBasis,
+  onChangeSupportRegionBasis,
+  supportSearchLoading,
+  supportHasSearched,
+  onRunSupportSearch,
+  savedSupportPrograms,
+  onDeleteSavedSupportProgram,
   focusedSectionTitle,
   onFocusSection,
   planGoal,
@@ -51,6 +58,13 @@ export const Report = ({
         onChangeSupportSearchMode={onChangeSupportSearchMode}
         supportUserGoal={supportUserGoal}
         onChangeSupportUserGoal={onChangeSupportUserGoal}
+        supportRegionBasis={supportRegionBasis}
+        onChangeSupportRegionBasis={onChangeSupportRegionBasis}
+        supportSearchLoading={supportSearchLoading}
+        supportHasSearched={supportHasSearched}
+        onRunSupportSearch={onRunSupportSearch}
+        savedSupportPrograms={savedSupportPrograms}
+        onDeleteSavedSupportProgram={onDeleteSavedSupportProgram}
       />
     )
   }
