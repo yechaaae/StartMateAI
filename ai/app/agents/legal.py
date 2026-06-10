@@ -313,6 +313,68 @@ class LegalAgent(BaseAgent):
         except Exception:
             return None
 
+    def _domain_query(self, query: str, domain: str) -> str:
+        additions = {
+            "food": "식품위생법 영업신고 영업허가 식품 제조 판매 위생",
+            "popup": "팝업스토어 플리마켓 오프라인 판매 임시영업 행사",
+            "street": "도로 점용 허가 노점 길거리 판매 옥외 영업 지자체 허가",
+            "permit": "영업신고 허가 등록 신고 지자체 관할 구청",
+            "facility": "시설기준 영업장 조리장 식품 시설 위생 기준",
+            "labeling": "식품 표시 광고 원재료 알레르기 소비기한 표시",
+            "advertising": "표시 광고 홍보 부당광고 과장광고",
+            "online": "전자상거래 통신판매 고지 청약철회 소비자보호",
+            "privacy": "개인정보 수집 이용 동의 처리",
+            "tax": "부가가치세 사업자등록 간이과세",
+            "lease": "상가 임대차 계약 보증금",
+            "labor": "근로계약 최저임금 아르바이트",
+            "intellectual_property": "상표 저작권 브랜드 로고 콘텐츠",
+        }
+        return f"{query} {additions.get(domain, domain)}"
+
+    def _infer_domains(self, query: str) -> list[str]:
+        text = query.lower()
+        checks = [
+            ("food", ["쿠키", "식품", "음식", "카페", "디저트", "요식", "위생", "제조", "판매", "조리"]),
+            ("popup", ["팝업", "팝업스토어", "플리마켓", "부스", "행사", "오프라인"]),
+            ("street", ["길거리", "도로", "노점", "옥외", "인도", "공원", "광장"]),
+            ("permit", ["신고", "허가", "인허가", "등록", "영업신고", "관련 법률", "법률"]),
+            ("facility", ["시설", "주방", "제조장", "조리장", "시설기준"]),
+            ("labeling", ["표시", "라벨", "원재료", "영양", "알레르기", "소비기한"]),
+            ("advertising", ["광고", "홍보", "후기", "과장"]),
+            ("online", ["온라인", "sns", "인스타", "배송", "주문", "통신판매"]),
+            ("privacy", ["개인정보", "전화번호", "예약자", "주소", "동의"]),
+            ("tax", ["세금", "세무", "부가세", "사업자등록"]),
+            ("lease", ["임대", "계약", "보증금", "상가"]),
+            ("labor", ["고용", "알바", "아르바이트", "직원", "최저임금"]),
+            ("intellectual_property", ["상표", "저작권", "브랜드", "로고", "음악", "사진"]),
+        ]
+        domains = [domain for domain, keywords in checks if any(keyword in text for keyword in keywords)]
+        if "street" in domains and "permit" not in domains:
+            domains.append("permit")
+        return self._unique(domains)
+
+    def _expanded_query(self, query: str, domains: list[str]) -> str:
+        additions = []
+        if "food" in domains:
+            additions.extend(["식품위생법", "영업신고", "시설기준", "위생"])
+        if "popup" in domains:
+            additions.extend(["팝업스토어", "임시 영업", "행사 판매", "오프라인 판매"])
+        if "street" in domains:
+            additions.extend(["도로 점용 허가", "길거리 판매", "노점", "지자체 허가"])
+        if "permit" in domains:
+            additions.extend(["영업신고", "영업허가", "인허가", "관할 지자체"])
+        if "labeling" in domains or "advertising" in domains:
+            additions.extend(["표시광고", "식품 표시 광고", "부당광고"])
+        if "online" in domains:
+            additions.extend(["통신판매", "전자상거래", "청약철회"])
+        if "privacy" in domains:
+            additions.extend(["개인정보 수집 이용 동의"])
+        if "labor" in domains:
+            additions.extend(["근로계약", "최저임금"])
+        if "intellectual_property" in domains:
+            additions.extend(["상표", "저작권"])
+        return " ".join([query, *self._unique(additions)])
+
     def _unique(self, values: list[str]) -> list[str]:
         seen = set()
         result = []

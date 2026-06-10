@@ -42,6 +42,12 @@ services:
         condition: service_healthy
     environment:
       USE_MOCK_LLM: ${USE_MOCK_LLM:-true}
+      RAG_CHROMA_PATH: ${RAG_CHROMA_PATH:-.chroma}
+      RAG_EMBEDDING_DIMENSIONS: ${RAG_EMBEDDING_DIMENSIONS:-3072}
+      RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-openai}
+      OPENAI_EMBEDDING_BASE_URL: ${OPENAI_EMBEDDING_BASE_URL:-https://gms.ssafy.io/gmsapi/api.openai.com}
+      OPENAI_EMBEDDING_PATH: ${OPENAI_EMBEDDING_PATH:-/v1/embeddings}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
       GMS_API_KEY: ${GMS_API_KEY:-}
       GMS_BASE_URL: ${GMS_BASE_URL:-https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com}
       GMS_CHAT_PATH: ${GMS_CHAT_PATH:-/v1beta/models/gemini-2.5-flash:generateContent}
@@ -59,6 +65,8 @@ services:
       BACKEND_INTERNAL_BASE_URL: ${BACKEND_INTERNAL_BASE_URL:-http://backend:8080}
       STARTMATE_INTERNAL_TOOL_TOKEN: ${STARTMATE_INTERNAL_TOOL_TOKEN:-startmate-local-internal-token}
       BACKEND_TOOL_TIMEOUT_SECONDS: ${BACKEND_TOOL_TIMEOUT_SECONDS:-10}
+    volumes:
+      - ./ai/.chroma:/app/.chroma
 
   ai-mock:
     profiles:
