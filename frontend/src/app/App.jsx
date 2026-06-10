@@ -9,6 +9,7 @@ import { HomePage } from '../features/pages/HomePage'
 import { Landing } from '../features/pages/Landing'
 import { Onboarding } from '../features/pages/Onboarding'
 import { SavedPage } from '../features/pages/SavedPage'
+import { SimulatorPage } from '../features/pages/SimulatorPage'
 
 export default function App() {
   const [route, setRoute] = useState(() => localStorage.getItem('sm_route') || 'landing')
@@ -20,7 +21,8 @@ export default function App() {
     if (route === 'onboarding') return <Onboarding go={setRoute} />
     if (route === 'discuss') return <DiscussPage />
     if (route === 'saved') return <SavedPage />
-    if (features[route]) return <FeaturePage key={route} id={route} go={setRoute} />
+    if (route === 'simulator') return <SimulatorPage go={setRoute} workspace={workspace} />
+    if (features[route]) return <FeaturePage key={route} id={route} go={setRoute} workspace={workspace} setWorkspace={setWorkspace} />
     return <HomePage go={setRoute} workspace={workspace} />
   }, [route, workspace])
 

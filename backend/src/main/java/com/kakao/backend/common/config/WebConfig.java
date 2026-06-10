@@ -19,7 +19,10 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(loginRequiredInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/auth/**");
+                .excludePathPatterns(
+                        "/api/auth/**",
+                        "/api/rent-references/**"
+                );
     }
 
     // 프론트 개발 서버가 세션 쿠키를 포함해 API를 호출할 수 있도록 허용합니다.

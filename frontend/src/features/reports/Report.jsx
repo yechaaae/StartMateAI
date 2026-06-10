@@ -5,8 +5,8 @@ import { SimReport } from './SimReport'
 import { SnsReport } from './SnsReport'
 import { SupportReport } from './SupportReport'
 
-export const Report = ({ id, data, go }) => {
-  if (id === 'item') return <ItemReport data={data} go={go} />
+export const Report = ({ id, data, go, workspace, setWorkspace }) => {
+  if (id === 'item') return <ItemReport data={data} go={go} workspace={workspace} setWorkspace={setWorkspace} />
   if (id === 'simulator') return <SimReport data={data} />
   if (id === 'support') return <SupportReport data={data} go={go} />
   if (id === 'plan') return <PlanReport data={data} />

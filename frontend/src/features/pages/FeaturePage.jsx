@@ -9,7 +9,7 @@ import { ChatRow } from '../chat/ChatRow'
 import { TypingRow } from '../chat/TypingRow'
 import { Report } from '../reports/Report'
 
-export const FeaturePage = ({ id, go }) => {
+export const FeaturePage = ({ id, go, workspace, setWorkspace }) => {
   const f = features[id]
   const agent = agents[f.agent]
   const [data, setData] = useState(() => cloneReport(id))
@@ -34,7 +34,7 @@ export const FeaturePage = ({ id, go }) => {
     <main className="feature-page">
       <section className="report-area">
         <div className="page-title"><div><h1>{f.title}</h1><p>{f.sub}</p></div><AgentBadge id={f.agent} /></div>
-        <Report id={id} data={data} setData={setData} go={go} />
+        <Report id={id} data={data} setData={setData} go={go} workspace={workspace} setWorkspace={setWorkspace} />
       </section>
       <aside className="feature-chat">
         <header style={{ color: agent.color }}><AgentAvatar id={f.agent} /><div><b>{agent.name}</b><small>이 리포트를 함께 수정해요</small></div></header>

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.kakao.backend.agent.domain.Agent;
 import com.kakao.backend.commercialarea.domain.CommercialAreaMetric;
+import com.kakao.backend.commercialarea.domain.CommercialRentReference;
 import com.kakao.backend.commercialarea.domain.Store;
 import com.kakao.backend.chat.domain.ChatAgentParticipant;
 import com.kakao.backend.chat.domain.ChatMessage;
@@ -21,7 +22,10 @@ import com.kakao.backend.policy.domain.SupportProgramMatch;
 import com.kakao.backend.policy.domain.SupportProgramRecommendation;
 import com.kakao.backend.policy.domain.SupportProgramRule;
 import com.kakao.backend.seed.domain.SeedKnowledgeItem;
+import com.kakao.backend.simulation.domain.SimulationAssumption;
+import com.kakao.backend.simulation.domain.SimulationDailyMetric;
 import com.kakao.backend.simulation.domain.SimulationDetail;
+import com.kakao.backend.simulation.domain.SimulationLocation;
 import com.kakao.backend.simulation.domain.SimulationResult;
 import com.kakao.backend.user.model.StartupProfile;
 import com.kakao.backend.user.model.User;
@@ -50,6 +54,9 @@ class EntityMappingTests {
                 Map.entry(BusinessIdeaResult.class, "business_idea_result"),
                 Map.entry(BusinessIdeaOption.class, "business_idea_option"),
                 Map.entry(SimulationResult.class, "simulation_result"),
+                Map.entry(SimulationLocation.class, "simulation_location"),
+                Map.entry(SimulationAssumption.class, "simulation_assumption"),
+                Map.entry(SimulationDailyMetric.class, "simulation_daily_metric"),
                 Map.entry(SimulationDetail.class, "simulation_detail"),
                 Map.entry(SupportProgramMatch.class, "support_program_match"),
                 Map.entry(SupportProgramRecommendation.class, "support_program_recommendation"),
@@ -64,6 +71,7 @@ class EntityMappingTests {
                 Map.entry(SavedResult.class, "saved_result"),
                 Map.entry(Store.class, "stores"),
                 Map.entry(CommercialAreaMetric.class, "commercial_area_metrics"),
+                Map.entry(CommercialRentReference.class, "commercial_rent_references"),
                 Map.entry(SeedKnowledgeItem.class, "seed_knowledge_items"));
 
         tables.forEach((entityClass, tableName) -> {
@@ -85,6 +93,9 @@ class EntityMappingTests {
                 BusinessIdeaResult.class,
                 BusinessIdeaOption.class,
                 SimulationResult.class,
+                SimulationLocation.class,
+                SimulationAssumption.class,
+                SimulationDailyMetric.class,
                 SimulationDetail.class,
                 SupportProgramMatch.class,
                 SupportProgramRecommendation.class,
@@ -99,6 +110,7 @@ class EntityMappingTests {
                 SavedResult.class,
                 Store.class,
                 CommercialAreaMetric.class,
+                CommercialRentReference.class,
                 SeedKnowledgeItem.class
         };
 
