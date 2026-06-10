@@ -174,7 +174,11 @@ public class AiChatReferenceContextService {
                 savedResult.getReferenceId(),
                 savedResult.getTitle(),
                 savedResult.getSummary(),
-                dataMap().with("savedResultId", savedResult.getId()).build()
+                dataMap()
+                        .with("savedResultId", savedResult.getId())
+                        .with("sourceFeature", savedResult.getSourceFeature())
+                        .with("payload", savedResult.getPayload())
+                        .build()
         );
     }
 

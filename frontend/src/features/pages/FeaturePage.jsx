@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { savedResultApi } from '../../shared/api/client'
 import { agents } from '../../shared/data/agents'
 import { features } from '../../shared/data/features'
 import { AgentAvatar } from '../../shared/components/AgentAvatar'
@@ -7,8 +8,14 @@ import { Icon } from '../../shared/components/Icon'
 import { ChatInput } from '../chat/ChatInput'
 import { ChatRow } from '../chat/ChatRow'
 import { TypingRow } from '../chat/TypingRow'
+import { runSupportProgramSearch } from '../reports/supportProgramSearch'
 import {
-  CHAT_USER_ID,
+  mergeSupportProgramHistory,
+  readSupportProgramHistory,
+  removeSupportProgramHistoryItem,
+  writeSupportProgramHistory,
+} from '../reports/supportProgramStorage'
+import {
   createChatEventSource,
   createFeatureChatRoom,
   getChatMessages,
@@ -25,6 +32,7 @@ import {
   upsertMessage,
 } from '../chat/chatMappers'
 import { Report } from '../reports/Report'
+import { buildFeatureSavedReport } from '../reports/savedReportPayload'
 import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from './featureChatContext'
 
 const FEATURE_TARGETS = {
@@ -90,7 +98,6 @@ export const FeaturePage = ({
 }) => {
   const feature = features[id]
   const agent = agents[feature.agent]
-  const userId = user?.id ?? CHAT_USER_ID
   const targetFeature = FEATURE_TARGETS[id] ?? id.toUpperCase()
   const currentResultType = RESULT_TYPES[id] ?? 'FEATURE_REPORT'
   const featureSeed = buildFeatureSeed(id, workspaceContext)
@@ -103,6 +110,12 @@ export const FeaturePage = ({
   )
   const [supportSearchMode, setSupportSearchMode] = useState(featureSeed.supportSearchMode)
   const [supportUserGoal, setSupportUserGoal] = useState(featureSeed.supportUserGoal)
+  const [supportRegionBasis, setSupportRegionBasis] = useState(featureSeed.supportRegionBasis)
+  const [supportSearchLoading, setSupportSearchLoading] = useState(false)
+  const [supportHasSearched, setSupportHasSearched] = useState(false)
+  const [savedSupportPrograms, setSavedSupportPrograms] = useState(() => (
+    id === 'support' ? readSupportProgramHistory() : []
+  ))
   const [focusedSectionTitle, setFocusedSectionTitle] = useState(featureSeed.focusedSectionTitle)
   const [planGoal, setPlanGoal] = useState(featureSeed.planGoal)
   const [messages, setMessages] = useState([])
@@ -119,6 +132,7 @@ export const FeaturePage = ({
   const [editingRoomId, setEditingRoomId] = useState(null)
   const [titleDraft, setTitleDraft] = useState('')
   const [savingTitle, setSavingTitle] = useState(false)
+  const [savingReport, setSavingReport] = useState(false)
 
   const chatRef = useRef(null)
   const sessionMenuRef = useRef(null)
@@ -149,7 +163,7 @@ export const FeaturePage = ({
         setLoading(true)
         setError('')
 
-        const roomListResponse = await getFeatureChatRooms(userId, targetFeature)
+        const roomListResponse = await getFeatureChatRooms(targetFeature)
         if (!active) {
           return
         }
@@ -161,7 +175,7 @@ export const FeaturePage = ({
           return
         }
 
-        const fallbackRoom = await getFeatureChatRoom(userId, targetFeature)
+        const fallbackRoom = await getFeatureChatRoom(targetFeature)
         if (!active) {
           return
         }
@@ -184,7 +198,7 @@ export const FeaturePage = ({
     return () => {
       active = false
     }
-  }, [targetFeature, userId])
+  }, [targetFeature])
 
   useEffect(() => {
     if (!room?.roomId) {
@@ -192,7 +206,7 @@ export const FeaturePage = ({
     }
 
     let active = true
-    const eventSource = createChatEventSource(room.roomId, userId)
+    const eventSource = createChatEventSource(room.roomId)
 
     const loadHistory = async () => {
       try {
@@ -203,7 +217,7 @@ export const FeaturePage = ({
         setAgentProgress(null)
         setConnection('connecting')
 
-        const history = await getChatMessages(room.roomId, userId)
+        const history = await getChatMessages(room.roomId)
         if (!active) {
           return
         }
@@ -278,7 +292,7 @@ export const FeaturePage = ({
       active = false
       eventSource.close()
     }
-  }, [room?.roomId, userId])
+  }, [room?.roomId])
 
   const latestStatus = useMemo(() => Object.values(statusMap).at(-1) ?? null, [statusMap])
   const typing = agentProgress?.agent?.status === 'running'
@@ -296,6 +310,7 @@ export const FeaturePage = ({
       selectedOperationSuggestionTitle,
       supportSearchMode,
       supportUserGoal,
+      supportRegionBasis,
       focusedSectionTitle,
       planGoal,
     }))
@@ -308,6 +323,7 @@ export const FeaturePage = ({
     selectedIdeaRank,
     selectedOperationSuggestionTitle,
     selectedSupportTitle,
+    supportRegionBasis,
     supportSearchMode,
     supportUserGoal,
   ])
@@ -321,6 +337,7 @@ export const FeaturePage = ({
       selectedOperationSuggestionTitle,
       supportSearchMode,
       supportUserGoal,
+      supportRegionBasis,
       focusedSectionTitle,
       planGoal,
       workspaceContext,
@@ -335,6 +352,7 @@ export const FeaturePage = ({
       selectedOperationSuggestionTitle,
       selectedSupportTitle,
       startupProfile,
+      supportRegionBasis,
       supportSearchMode,
       supportUserGoal,
       workspaceContext,
@@ -349,6 +367,34 @@ export const FeaturePage = ({
     setRoom((prev) => (prev?.roomId === updatedRoom.roomId ? updatedRoom : prev))
   }
 
+  const handleSaveReport = async () => {
+    if (savingReport || id !== 'operation') {
+      return
+    }
+
+    try {
+      setSavingReport(true)
+      setError('')
+      await savedResultApi.save(buildFeatureSavedReport({
+        featureId: id,
+        data,
+        currentResult,
+        selectedIdeaRank,
+        selectedSupportTitle,
+        selectedOperationSuggestionTitle,
+        supportSearchMode,
+        supportUserGoal,
+        focusedSectionTitle,
+        planGoal,
+      }))
+      go('saved')
+    } catch (nextError) {
+      setError(nextError.message ?? '리포트를 저장하지 못했습니다.')
+    } finally {
+      setSavingReport(false)
+    }
+  }
+
   const handleSend = async (text) => {
     if (busy || !room?.roomId) {
       return
@@ -359,7 +405,7 @@ export const FeaturePage = ({
     try {
       setAgentProgress(null)
       const response = await sendChatMessage(room.roomId, {
-        userId,
+        userId: user?.id ?? null,
         content: text,
         metadata: JSON.stringify({ source: 'feature-page', featureId: id }),
         intent: 'auto',
@@ -375,7 +421,7 @@ export const FeaturePage = ({
         id: response.messageId,
         role: 'user',
         senderType: response.senderType,
-        userId,
+        userId: user?.id ?? null,
         agentId: null,
         agent: null,
         text: response.content,
@@ -408,7 +454,7 @@ export const FeaturePage = ({
     setError('')
 
     try {
-      const createdRoom = await createFeatureChatRoom(userId, targetFeature)
+      const createdRoom = await createFeatureChatRoom(targetFeature)
       setRooms((prev) => [createdRoom, ...prev])
       setRoom(createdRoom)
       setSessionMenuOpen(false)
@@ -439,7 +485,7 @@ export const FeaturePage = ({
     try {
       setSavingTitle(true)
       setError('')
-      const updatedRoom = await updateFeatureChatRoomTitle(roomId, userId, targetFeature, titleDraft)
+      const updatedRoom = await updateFeatureChatRoomTitle(roomId, targetFeature, titleDraft)
       updateRoomState(updatedRoom)
       setEditingRoomId(null)
       setTitleDraft('')
@@ -448,6 +494,45 @@ export const FeaturePage = ({
     } finally {
       setSavingTitle(false)
     }
+  }
+
+  const handleSupportProgramSearch = async () => {
+    if (supportSearchLoading) {
+      return
+    }
+
+    setSupportSearchLoading(true)
+    setError('')
+
+    try {
+      const filters = {
+        recommendationBasis: supportSearchMode,
+        priority: supportUserGoal,
+        regionBasis: supportRegionBasis,
+      }
+      const results = await runSupportProgramSearch({
+        ...filters,
+        startupProfile,
+        selectedIdea: workspaceContext?.selectedIdea ?? null,
+      })
+
+      setData((prev) => ({ ...prev, list: results }))
+      setSelectedSupportTitle(results[0]?.title ?? null)
+      const nextSavedPrograms = mergeSupportProgramHistory(readSupportProgramHistory(), results, filters)
+      writeSupportProgramHistory(nextSavedPrograms)
+      setSavedSupportPrograms(nextSavedPrograms)
+      setSupportHasSearched(true)
+    } catch (nextError) {
+      setError(nextError.message ?? '지원사업 추천 결과를 불러오지 못했습니다.')
+    } finally {
+      setSupportSearchLoading(false)
+    }
+  }
+
+  const handleDeleteSavedSupportProgram = (programId) => {
+    const nextSavedPrograms = removeSupportProgramHistoryItem(readSupportProgramHistory(), programId)
+    writeSupportProgramHistory(nextSavedPrograms)
+    setSavedSupportPrograms(nextSavedPrograms)
   }
 
   const helperText = id === 'item'
@@ -470,7 +555,20 @@ export const FeaturePage = ({
             <h1>{feature.title}</h1>
             <p>{feature.sub}</p>
           </div>
-          <AgentBadge id={feature.agent} />
+          <div className="report-title-actions">
+            {id === 'operation' && (
+              <button
+                type="button"
+                className="secondary-chip"
+                onClick={handleSaveReport}
+                disabled={savingReport}
+              >
+                <Icon name="bookmark" size={15} />
+                <span>{savingReport ? '저장 중' : '리포트 저장'}</span>
+              </button>
+            )}
+            <AgentBadge id={feature.agent} />
+          </div>
         </div>
         <Report
           id={id}
@@ -489,6 +587,13 @@ export const FeaturePage = ({
           onChangeSupportSearchMode={setSupportSearchMode}
           supportUserGoal={supportUserGoal}
           onChangeSupportUserGoal={setSupportUserGoal}
+          supportRegionBasis={supportRegionBasis}
+          onChangeSupportRegionBasis={setSupportRegionBasis}
+          supportSearchLoading={supportSearchLoading}
+          supportHasSearched={supportHasSearched}
+          onRunSupportSearch={handleSupportProgramSearch}
+          savedSupportPrograms={savedSupportPrograms}
+          onDeleteSavedSupportProgram={handleDeleteSavedSupportProgram}
           focusedSectionTitle={focusedSectionTitle}
           onFocusSection={setFocusedSectionTitle}
           planGoal={planGoal}

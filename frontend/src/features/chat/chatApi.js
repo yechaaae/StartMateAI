@@ -1,92 +1,96 @@
 const API_BASE = import.meta.env.VITE_API_BASE?.replace(/\/$/, '') ?? ''
-export const CHAT_USER_ID = Number(import.meta.env.VITE_CHAT_USER_ID ?? 1)
 
 const buildUrl = (path) => `${API_BASE}${path}`
 
-export const getFreeChatRoom = async (userId = CHAT_USER_ID) => {
-  const response = await fetch(buildUrl(`/api/chat/free-room?userId=${userId}`))
-  if (!response.ok) throw new Error('자유 상담실 정보를 불러오지 못했습니다.')
+const fetchJson = (path, options = {}) => fetch(buildUrl(path), {
+  credentials: 'include',
+  ...options,
+})
+
+export const getFreeChatRoom = async () => {
+  const response = await fetchJson('/api/chat/free-room')
+  if (!response.ok) throw new Error('?먯쑀 ?곷떞???뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??')
   return response.json()
 }
 
-export const getFreeChatRooms = async (userId = CHAT_USER_ID) => {
-  const response = await fetch(buildUrl(`/api/chat/free-rooms?userId=${userId}`))
-  if (!response.ok) throw new Error('자유 상담실 목록을 불러오지 못했습니다.')
+export const getFreeChatRooms = async () => {
+  const response = await fetchJson('/api/chat/free-rooms')
+  if (!response.ok) throw new Error('?먯쑀 ?곷떞??紐⑸줉??遺덈윭?ㅼ? 紐삵뻽?듬땲??')
   return response.json()
 }
 
-export const getFeatureChatRoom = async (userId = CHAT_USER_ID, targetFeature) => {
-  const response = await fetch(buildUrl(`/api/chat/feature-room?userId=${userId}&targetFeature=${encodeURIComponent(targetFeature)}`))
-  if (!response.ok) throw new Error('기능 채팅 정보를 불러오지 못했습니다.')
+export const getFeatureChatRoom = async (targetFeature) => {
+  const response = await fetchJson(`/api/chat/feature-room?targetFeature=${encodeURIComponent(targetFeature)}`)
+  if (!response.ok) throw new Error('湲곕뒫 梨꾪똿 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??')
   return response.json()
 }
 
-export const getFeatureChatRooms = async (userId = CHAT_USER_ID, targetFeature) => {
-  const response = await fetch(buildUrl(`/api/chat/feature-rooms?userId=${userId}&targetFeature=${encodeURIComponent(targetFeature)}`))
-  if (!response.ok) throw new Error('기능 채팅 세션 목록을 불러오지 못했습니다.')
+export const getFeatureChatRooms = async (targetFeature) => {
+  const response = await fetchJson(`/api/chat/feature-rooms?targetFeature=${encodeURIComponent(targetFeature)}`)
+  if (!response.ok) throw new Error('湲곕뒫 梨꾪똿 ?몄뀡 紐⑸줉??遺덈윭?ㅼ? 紐삵뻽?듬땲??')
   return response.json()
 }
 
-export const createFreeChatRoom = async (userId = CHAT_USER_ID) => {
-  const response = await fetch(buildUrl('/api/chat/free-rooms'), {
+export const createFreeChatRoom = async () => {
+  const response = await fetchJson('/api/chat/free-rooms', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({}),
   })
 
-  if (!response.ok) throw new Error('새 자유 상담실을 만들지 못했습니다.')
+  if (!response.ok) throw new Error('???먯쑀 ?곷떞?ㅼ쓣 留뚮뱾吏 紐삵뻽?듬땲??')
   return response.json()
 }
 
-export const createFeatureChatRoom = async (userId = CHAT_USER_ID, targetFeature) => {
-  const response = await fetch(buildUrl('/api/chat/feature-rooms'), {
+export const createFeatureChatRoom = async (targetFeature) => {
+  const response = await fetchJson('/api/chat/feature-rooms', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ userId, targetFeature }),
+    body: JSON.stringify({ targetFeature }),
   })
 
-  if (!response.ok) throw new Error('새 기능 채팅 세션을 만들지 못했습니다.')
+  if (!response.ok) throw new Error('??湲곕뒫 梨꾪똿 ?몄뀡??留뚮뱾吏 紐삵뻽?듬땲??')
   return response.json()
 }
 
-export const updateFreeChatRoomTitle = async (roomId, userId, title) => {
-  const response = await fetch(buildUrl(`/api/chat/free-rooms/${roomId}`), {
+export const updateFreeChatRoomTitle = async (roomId, title) => {
+  const response = await fetchJson(`/api/chat/free-rooms/${roomId}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ userId, title }),
+    body: JSON.stringify({ title }),
   })
 
-  if (!response.ok) throw new Error('세션 이름을 수정하지 못했습니다.')
+  if (!response.ok) throw new Error('?몄뀡 ?대쫫???섏젙?섏? 紐삵뻽?듬땲??')
   return response.json()
 }
 
-export const updateFeatureChatRoomTitle = async (roomId, userId, targetFeature, title) => {
-  const response = await fetch(buildUrl(`/api/chat/feature-rooms/${roomId}`), {
+export const updateFeatureChatRoomTitle = async (roomId, targetFeature, title) => {
+  const response = await fetchJson(`/api/chat/feature-rooms/${roomId}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ userId, targetFeature, title }),
+    body: JSON.stringify({ targetFeature, title }),
   })
 
-  if (!response.ok) throw new Error('세션 이름을 수정하지 못했습니다.')
+  if (!response.ok) throw new Error('?몄뀡 ?대쫫???섏젙?섏? 紐삵뻽?듬땲??')
   return response.json()
 }
 
-export const getChatMessages = async (roomId, userId = CHAT_USER_ID) => {
-  const response = await fetch(buildUrl(`/api/chat/rooms/${roomId}/messages?userId=${userId}`))
-  if (!response.ok) throw new Error('이전 대화를 불러오지 못했습니다.')
+export const getChatMessages = async (roomId) => {
+  const response = await fetchJson(`/api/chat/rooms/${roomId}/messages`)
+  if (!response.ok) throw new Error('?댁쟾 ??붾? 遺덈윭?ㅼ? 紐삵뻽?듬땲??')
   return response.json()
 }
 
 export const sendChatMessage = async (roomId, body) => {
-  const response = await fetch(buildUrl(`/api/chat/rooms/${roomId}/messages`), {
+  const response = await fetchJson(`/api/chat/rooms/${roomId}/messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -94,9 +98,9 @@ export const sendChatMessage = async (roomId, body) => {
     body: JSON.stringify(body),
   })
 
-  if (!response.ok) throw new Error('메시지를 전송하지 못했습니다.')
+  if (!response.ok) throw new Error('硫붿떆吏瑜??꾩넚?섏? 紐삵뻽?듬땲??')
   return response.json()
 }
 
-export const createChatEventSource = (roomId, userId = CHAT_USER_ID) =>
-  new EventSource(buildUrl(`/api/chat/rooms/${roomId}/stream?userId=${userId}`))
+export const createChatEventSource = (roomId) =>
+  new EventSource(buildUrl(`/api/chat/rooms/${roomId}/stream`), { withCredentials: true })

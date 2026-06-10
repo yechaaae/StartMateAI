@@ -1,10 +1,11 @@
 package com.kakao.backend.chat.presentation;
 
 import com.kakao.backend.chat.application.ChatSseService;
+import com.kakao.backend.common.presentation.LoginUserSessionResolver;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -13,16 +14,21 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class ChatStreamController {
 
     private final ChatSseService chatSseService;
+    private final LoginUserSessionResolver loginUserSessionResolver;
 
-    public ChatStreamController(ChatSseService chatSseService) {
+    public ChatStreamController(
+            ChatSseService chatSseService,
+            LoginUserSessionResolver loginUserSessionResolver
+    ) {
         this.chatSseService = chatSseService;
+        this.loginUserSessionResolver = loginUserSessionResolver;
     }
 
     @GetMapping("/{roomId}/stream")
     public SseEmitter subscribe(
             @PathVariable Long roomId,
-            @RequestParam Long userId
+            HttpSession session
     ) {
-        return chatSseService.subscribe(roomId, userId);
+        return chatSseService.subscribe(roomId, loginUserSessionResolver.resolve(session));
     }
 }

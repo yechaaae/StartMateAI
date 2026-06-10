@@ -56,6 +56,15 @@ export const startupProfileApi = {
   }),
 }
 
+export const savedResultApi = {
+  list: () => request('/saved-results'),
+  get: (savedResultId) => request(`/saved-results/${savedResultId}`),
+  save: (payload) => request('/saved-results', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+}
+
 export const threadsApi = {
   account: () => request('/sns/threads/account'),
   connectUrl: () => request('/sns/threads/connect-url'),
