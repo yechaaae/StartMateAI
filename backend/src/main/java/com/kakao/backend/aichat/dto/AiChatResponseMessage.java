@@ -11,6 +11,43 @@ public record AiChatResponseMessage(
         String summary,
         Map<String, Object> data,
         List<String> nextActions,
-        List<String> warnings
+        List<String> warnings,
+        AiChatResultPayload result,
+        String version,
+        String messageType,
+        Long userId,
+        String targetFeature,
+        String status,
+        Map<String, Object> payload
 ) {
+
+    public AiChatResponseMessage(
+            String requestId,
+            Long roomId,
+            String intent,
+            String agent,
+            String summary,
+            Map<String, Object> data,
+            List<String> nextActions,
+            List<String> warnings,
+            AiChatResultPayload result
+    ) {
+        this(
+                requestId,
+                roomId,
+                intent,
+                agent,
+                summary,
+                data,
+                nextActions,
+                warnings,
+                result,
+                "v1",
+                "CHAT_RESPONSE",
+                null,
+                null,
+                null,
+                null
+        );
+    }
 }

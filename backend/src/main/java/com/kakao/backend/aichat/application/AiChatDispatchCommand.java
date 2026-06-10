@@ -2,8 +2,8 @@ package com.kakao.backend.aichat.application;
 
 import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRoom;
-import com.kakao.backend.user.model.StartupProfile;
 import com.kakao.backend.user.model.User;
+import com.kakao.backend.startupProfile.model.StartupProfile;
 import com.kakao.backend.workspace.domain.Workspace;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +22,7 @@ public record AiChatDispatchCommand(
         Long selectedIdeaId,
         List<String> candidateAgents,
         List<ChatMessage> recentMessages,
-        Map<String, Object> currentResult
+        Map<String, Object> currentResult,
+        Map<String, Object> referenceData
 ) {
 }

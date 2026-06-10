@@ -1,26 +1,72 @@
 services:
   mysql:
     image: mysql:8.4
-    environment:
-      MYSQL_DATABASE: startmate
-      MYSQL_USER: startmate
-      MYSQL_PASSWORD: startmate
-      MYSQL_ROOT_PASSWORD: root
     ports:
       - "3306:3306"
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-startmate}
+      MYSQL_USER: ${MYSQL_USER:-startmate}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-startmate}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      TZ: ${TZ:-Asia/Seoul}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     volumes:
       - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$${MYSQL_ROOT_PASSWORD} >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-startmate}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-startmate}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ai-mock:
+    build:
+      context: ./ai-mock
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SPRING_RABBITMQ_HOST: ${SPRING_RABBITMQ_HOST:-rabbitmq}
+      SPRING_RABBITMQ_PORT: ${SPRING_RABBITMQ_PORT:-5672}
+      SPRING_RABBITMQ_USERNAME: ${SPRING_RABBITMQ_USERNAME:-startmate}
+      SPRING_RABBITMQ_PASSWORD: ${SPRING_RABBITMQ_PASSWORD:-startmate}
+      STARTMATE_AI_CHAT_REQUEST_QUEUE: ${STARTMATE_AI_CHAT_REQUEST_QUEUE:-chat.request}
+      STARTMATE_AI_CHAT_RESPONSE_QUEUE: ${STARTMATE_AI_CHAT_RESPONSE_QUEUE:-chat.response}
 
   backend:
     build:
       context: ./backend
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/startmate?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=utf8
-      SPRING_DATASOURCE_USERNAME: startmate
-      SPRING_DATASOURCE_PASSWORD: startmate
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-startmate}?useSSL=false&serverTimezone=${TZ:-Asia/Seoul}&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-startmate}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-startmate}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: ${SPRING_JPA_HIBERNATE_DDL_AUTO:-update}
+      SPRING_RABBITMQ_HOST: ${SPRING_RABBITMQ_HOST:-rabbitmq}
+      SPRING_RABBITMQ_PORT: ${SPRING_RABBITMQ_PORT:-5672}
+      SPRING_RABBITMQ_USERNAME: ${SPRING_RABBITMQ_USERNAME:-startmate}
+      SPRING_RABBITMQ_PASSWORD: ${SPRING_RABBITMQ_PASSWORD:-startmate}
+      STARTMATE_AI_CHAT_REQUEST_QUEUE: ${STARTMATE_AI_CHAT_REQUEST_QUEUE:-chat.request}
+      STARTMATE_AI_CHAT_RESPONSE_QUEUE: ${STARTMATE_AI_CHAT_RESPONSE_QUEUE:-chat.response}
       DATA_GO_KR_SERVICE_KEY: ${DATA_GO_KR_SERVICE_KEY:-}
       BIZINFO_API_KEY: ${BIZINFO_API_KEY:-}
       YOUTH_CENTER_API_KEY: ${YOUTH_CENTER_API_KEY:-}

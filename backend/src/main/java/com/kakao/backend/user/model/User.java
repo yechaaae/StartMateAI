@@ -1,6 +1,7 @@
 package com.kakao.backend.user.model;
 
 import com.kakao.backend.common.domain.BaseTimeEntity;
+import com.kakao.backend.startupProfile.model.StartupProfile;
 import com.kakao.backend.workspace.domain.Workspace;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -50,6 +51,12 @@ public class User extends BaseTimeEntity {
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Workspace> workspaces = new ArrayList<>();
+
+    // 사용자와 창업 프로필의 양방향 관계를 함께 연결합니다.
+    public void updateStartupProfile(StartupProfile startupProfile) {
+        this.startupProfile = startupProfile;
+        startupProfile.setUser(this);
+    }
 
     // 외부 로그인 등 비밀번호 없이 생성되는 사용자를 위한 기본 생성 메서드입니다.
     public static User create(String email, String nickname, String role) {
