@@ -208,6 +208,39 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
             "data": response.data,
         }
 
+    def selective_agent_views(response: AgentResponse) -> list[dict]:
+        agent_by_intent = {
+            "profile": "ProfileAgent",
+            "idea": "IdeaAgent",
+            "policy": "PolicyAgent",
+            "finance": "FinanceAgent",
+            "operation": "OperationAgent",
+            "marketing": "MarketingAgent",
+            "simulation": "SimulationAgent",
+        }
+        data = response.data or {}
+        results = data.get("agent_results") or {}
+        selected = data.get("selected_intents") or list(results)
+        views = []
+        for intent in selected:
+            detail = results.get(intent)
+            if not isinstance(detail, dict):
+                continue
+            views.append(
+                {
+                    "agent": agent_by_intent.get(intent, intent),
+                    "intent": intent,
+                    "summary": detail.get("recommendation") or detail.get("position") or "",
+                    "position": detail.get("position"),
+                    "score": detail.get("score"),
+                    "risks": detail.get("risks", []),
+                    "missing_inputs": detail.get("missing_inputs", []),
+                    "recommendation": detail.get("recommendation"),
+                    "data": detail,
+                }
+            )
+        return views
+
     async def run_named(name: str, coro) -> tuple[str, AgentResponse]:
         result = await coro
         return name, result
@@ -234,21 +267,8 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
         _remember_chat_response(session_id, request, response)
         response.data["chat_session_id"] = session_id
         response.data["memory"] = _memory_view(session_id)
-        for contract in response.data.get("agent_contracts", []):
-            yield event(
-                "agent_result",
-                {
-                    "agent": contract.get("agent"),
-                    "intent": "selective",
-                    "summary": contract.get("recommendation"),
-                    "position": contract.get("position"),
-                    "score": contract.get("score"),
-                    "risks": contract.get("risks", []),
-                    "missing_inputs": contract.get("missing_inputs", []),
-                    "recommendation": contract.get("recommendation"),
-                    "data": contract,
-                },
-            )
+        for view in selective_agent_views(response):
+            yield event("agent_result", view)
         yield event("final", response.model_dump(mode="json"))
         return
 
@@ -269,21 +289,8 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
         response.data["chat_session_id"] = session_id
         response.data["memory"] = _memory_view(session_id)
         if response.intent == "selective_collaboration":
-            for contract in response.data.get("agent_contracts", []):
-                yield event(
-                    "agent_result",
-                    {
-                        "agent": contract.get("agent"),
-                        "intent": "selective",
-                        "summary": contract.get("recommendation"),
-                        "position": contract.get("position"),
-                        "score": contract.get("score"),
-                        "risks": contract.get("risks", []),
-                        "missing_inputs": contract.get("missing_inputs", []),
-                        "recommendation": contract.get("recommendation"),
-                        "data": contract,
-                    },
-                )
+            for view in selective_agent_views(response):
+                yield event("agent_result", view)
         else:
             yield event("agent_result", response_view(response))
         yield event("final", response.model_dump(mode="json"))
