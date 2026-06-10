@@ -13,7 +13,9 @@ public record StartupProfileResponse(
         String businessRegion,
         Integer initialBudget,
         String teamStatus,
+        String teamStatusLabel,
         String preferredBusinessType,
+        String preferredBusinessTypeLabel,
         String strengthTags,
         Integer suitabilityScore,
         String diagnosisSummary
@@ -30,7 +32,9 @@ public record StartupProfileResponse(
                 escape(profile.getBusinessRegion()),
                 profile.getInitialBudget(),
                 profile.getTeamStatus() == null ? null : profile.getTeamStatus().getCode(),
+                profile.getTeamStatus() == null ? null : profile.getTeamStatus().getLabel(),
                 profile.getPreferredBusinessType() == null ? null : profile.getPreferredBusinessType().getCode(),
+                profile.getPreferredBusinessType() == null ? null : profile.getPreferredBusinessType().getLabel(),
                 escape(profile.getStrengthTags()),
                 profile.getSuitabilityScore(),
                 escape(profile.getDiagnosisSummary()));
