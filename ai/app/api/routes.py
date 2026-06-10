@@ -212,18 +212,59 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
         result = await coro
         return name, result
 
-    if request.intent not in {"auto", "collaboration", "roadmap"}:
+    plan_meta = {"source": "explicit_intent"}
+    if request.intent == "auto":
+        agent_plan, plan_meta = await orchestrator.plan_agents(request)
+    else:
+        agent_plan = [request.intent]
+    stream_intent = "selective_collaboration" if len(agent_plan) > 1 else agent_plan[0]
+
+    if stream_intent == "selective_collaboration":
         yield event(
             "start",
             {
-                "message": "단일 에이전트 요청을 실행합니다.",
-                "intent": request.intent,
+                "message": "질문에 필요한 에이전트만 선택해 실행합니다.",
+                "selected_intents": agent_plan,
+                "planner": plan_meta,
                 "chat_session_id": session_id,
                 "memory": _memory_view(session_id),
             },
         )
         response = await orchestrator.run(request)
         _remember_chat_response(session_id, request, response)
+        response.data["chat_session_id"] = session_id
+        response.data["memory"] = _memory_view(session_id)
+        for contract in response.data.get("agent_contracts", []):
+            yield event(
+                "agent_result",
+                {
+                    "agent": contract.get("agent"),
+                    "intent": "selective",
+                    "summary": contract.get("recommendation"),
+                    "position": contract.get("position"),
+                    "score": contract.get("score"),
+                    "risks": contract.get("risks", []),
+                    "missing_inputs": contract.get("missing_inputs", []),
+                    "recommendation": contract.get("recommendation"),
+                    "data": contract,
+                },
+            )
+        yield event("final", response.model_dump(mode="json"))
+        return
+
+    if stream_intent not in {"auto", "collaboration", "roadmap"}:
+        single_agent_request = request.model_copy(update={"intent": stream_intent})
+        yield event(
+            "start",
+            {
+                "message": "단일 에이전트 요청을 실행합니다.",
+                "intent": stream_intent,
+                "chat_session_id": session_id,
+                "memory": _memory_view(session_id),
+            },
+        )
+        response = await orchestrator.run(single_agent_request)
+        _remember_chat_response(session_id, single_agent_request, response)
         response.data["chat_session_id"] = session_id
         response.data["memory"] = _memory_view(session_id)
         yield event("agent_result", response_view(response))
@@ -234,7 +275,7 @@ async def _multi_agent_event_stream(request: ChatRequest, *, session_id: str) ->
         "start",
         {
             "message": "협업형 멀티에이전트 토론을 시작합니다.",
-            "requested_intent": request.intent,
+            "requested_intent": stream_intent,
             "chat_session_id": session_id,
             "memory": _memory_view(session_id),
         },

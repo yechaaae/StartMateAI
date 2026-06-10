@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
+from typing import Any
 
 from app.agents.finance import FinanceAgent
 from app.agents.idea import IdeaAgent
@@ -46,7 +49,20 @@ class OrchestratorAgent:
         self.simulation_agent = simulation_agent
 
     async def run(self, request: ChatRequest) -> AgentResponse:
-        intent = request.intent if request.intent != "auto" else self._detect_intent(request.message)
+        plan_meta: dict[str, Any] | None = None
+        agent_plan: list[str] | None = None
+        if request.intent == "auto":
+            agent_plan, plan_meta = await self.plan_agents(request)
+            if len(agent_plan) > 1 and "collaboration" not in agent_plan:
+                result = await self._selective_consultation(request, agent_plan, plan_meta)
+                effective_profile = self._effective_profile_from_response(result, request.profile)
+                result.data.setdefault("effective_profile", effective_profile.model_dump())
+                result.data["routed_by"] = self.name
+                result.data["user_message"] = request.message
+                return result
+            intent = agent_plan[0]
+        else:
+            intent = request.intent
 
         if intent == "profile":
             result = await self.profile_agent.run(ProfileRequest(profile=request.profile, question=request.message))
@@ -59,7 +75,14 @@ class OrchestratorAgent:
             result = await self.policy_agent.run(PolicyRequest(profile=effective_profile, query=request.message))
         elif intent == "finance":
             effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
-            result = await self.finance_agent.run(FinanceRequest(profile=effective_profile))
+            finance_assumption, finance_extraction = await self._finance_assumption_from_request(request)
+            result = await self.finance_agent.run(
+                FinanceRequest(
+                    profile=effective_profile,
+                    assumption=finance_assumption,
+                )
+            )
+            result.data["finance_input_extraction"] = finance_extraction
         elif intent == "operation":
             effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
             result = await self.operation_agent.run(
@@ -89,6 +112,11 @@ class OrchestratorAgent:
             effective_profile = self._effective_profile_from_response(result, request.profile)
 
         result.data.setdefault("effective_profile", effective_profile.model_dump())
+        if plan_meta is not None and agent_plan is not None:
+            result.data["agent_plan"] = {
+                "selected_intents": agent_plan,
+                "planner": plan_meta,
+            }
         result.data["routed_by"] = self.name
         result.data["user_message"] = request.message
         return result
@@ -106,24 +134,521 @@ class OrchestratorAgent:
         return fallback_profile
 
     def _detect_intent(self, message: str) -> str:
+        return self._heuristic_agent_plan(message)[0]
+
+    async def plan_agents(self, request: ChatRequest) -> tuple[list[str], dict[str, Any]]:
+        heuristic_plan = self._heuristic_agent_plan(request.message)
+        if not self.finance_agent.llm.is_enabled:
+            return heuristic_plan, {
+                "source": "heuristic_fallback",
+                "reason": "llm_disabled",
+                "heuristic_plan": heuristic_plan,
+            }
+
+        prompt = (
+            "You are an agent planner for a Korean startup assistant. "
+            "Choose the minimal set of agents needed to answer the user's message. "
+            "Return JSON only. Do not include agents that are merely nice-to-have.\n\n"
+            "Available agents:\n"
+            "- profile: user constraints, strengths, readiness, missing profile info\n"
+            "- idea: business idea discovery or recommendation\n"
+            "- policy: government support programs, applications, permits, legal/regulatory/tax checklist until a LegalAgent exists\n"
+            "- finance: budget, price, revenue, cost, margin, BEP, cash flow, feasibility\n"
+            "- operation: inventory, staffing, store operations, reviews, execution process\n"
+            "- marketing: SNS, reels, captions, promotion, customer acquisition\n"
+            "- simulation: 30-day game-like simulation or choice-based scenario\n"
+            "- collaboration: broad end-to-end consultation when the user asks for an overall plan or intent is genuinely ambiguous\n\n"
+            "Rules:\n"
+            "- Pick 1 agent for a narrow question.\n"
+            "- Pick 2-3 agents when the user explicitly asks across multiple domains.\n"
+            "- Do not pick collaboration when a smaller agent set can answer.\n"
+            "- If legal, permit, report, contract, tax, or regulation is asked, include policy.\n"
+            "- If budget, price, revenue, cost, profit, BEP, or feasibility is asked, include finance.\n\n"
+            "Schema:\n"
+            "{\n"
+            '  "agents": ["finance"],\n'
+            '  "confidence": "high"|"medium"|"low",\n'
+            '  "reason": "short Korean reason"\n'
+            "}\n\n"
+            f"message: {request.message}\n"
+            f"context: {json.dumps(request.context, ensure_ascii=False)}\n"
+            f"profile: {json.dumps(request.profile.model_dump(), ensure_ascii=False)}"
+        )
+        try:
+            raw = await self.finance_agent.llm.complete(
+                system_prompt="You are a strict JSON planner. Return only valid JSON.",
+                user_prompt=prompt,
+                temperature=0.0,
+                fallback="{}",
+            )
+            parsed = self._parse_json_object(raw)
+            llm_plan = self._sanitize_agent_plan(parsed.get("agents"))
+            if llm_plan:
+                return llm_plan, {
+                    "source": "llm_planner",
+                    "confidence": parsed.get("confidence"),
+                    "reason": parsed.get("reason"),
+                    "raw_preview": raw[:500],
+                    "heuristic_plan": heuristic_plan,
+                }
+            return heuristic_plan, {
+                "source": "heuristic_fallback",
+                "reason": "llm_plan_empty_or_invalid",
+                "raw_preview": raw[:500],
+                "heuristic_plan": heuristic_plan,
+            }
+        except Exception as error:
+            return heuristic_plan, {
+                "source": "heuristic_fallback",
+                "reason": "llm_planner_error",
+                "error_type": error.__class__.__name__,
+                "error_message": str(error)[:500],
+                "heuristic_plan": heuristic_plan,
+            }
+
+    def _sanitize_agent_plan(self, value: Any) -> list[str]:
+        allowed = {
+            "profile",
+            "idea",
+            "policy",
+            "finance",
+            "operation",
+            "marketing",
+            "simulation",
+            "collaboration",
+            "roadmap",
+        }
+        if not isinstance(value, list):
+            return []
+        result = []
+        for item in value:
+            name = str(item).strip().lower()
+            if name in allowed and name not in result:
+                result.append("collaboration" if name == "roadmap" else name)
+        if "collaboration" in result and len(result) > 1:
+            result = [item for item in result if item != "collaboration"]
+        return result[:3]
+
+    def _heuristic_agent_plan(self, message: str) -> list[str]:
         text = message.lower()
-        if any(keyword in text for keyword in ["협업", "토론", "전체", "로드맵", "상담", "시작"]):
-            return "collaboration"
+        plan: list[str] = []
+        broad_collaboration = any(keyword in text for keyword in ["협업", "토론", "전체", "로드맵", "상담", "시작"])
+
         if any(keyword in text for keyword in ["지원사업", "공고", "정책", "서류", "마감"]):
-            return "policy"
+            plan.append("policy")
+        if any(keyword in text for keyword in ["법률", "법적", "법", "인허가", "허가", "신고", "계약", "세금", "세무"]):
+            plan.append("policy")
         if any(keyword in text for keyword in ["아이템", "추천", "창업 뭐", "무슨 창업"]):
-            return "idea"
+            plan.append("idea")
         if any(keyword in text for keyword in ["게임", "체험", "선택지", "30일", "이벤트"]):
-            return "simulation"
-        if any(keyword in text for keyword in ["비용", "매출", "손익", "시뮬레이션", "bep"]):
-            return "finance"
+            plan.append("simulation")
+        if any(
+            keyword in text
+            for keyword in [
+                "비용",
+                "매출",
+                "손익",
+                "시뮬레이션",
+                "bep",
+                "재정",
+                "예산",
+                "객단가",
+                "단가",
+                "원가",
+                "판매량",
+                "하루",
+                "월수익",
+                "월 수익",
+                "가능할까",
+            ]
+        ):
+            plan.append("finance")
         if any(keyword in text for keyword in ["운영", "재고", "리뷰", "피드백", "매장"]):
-            return "operation"
+            plan.append("operation")
         if any(keyword in text for keyword in ["sns", "홍보", "릴스", "게시글", "해시태그"]):
-            return "marketing"
+            plan.append("marketing")
         if any(keyword in text for keyword in ["프로필", "분석", "강점", "조건"]):
-            return "profile"
-        return "collaboration"
+            plan.append("profile")
+
+        plan = self._unique(plan)
+        if not plan:
+            return ["collaboration"]
+        if broad_collaboration and len(plan) <= 1:
+            return ["collaboration"]
+        return plan
+
+    async def _selective_consultation(
+        self,
+        request: ChatRequest,
+        intents: list[str],
+        plan_meta: dict[str, Any] | None = None,
+    ) -> AgentResponse:
+        effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
+
+        async def run_intent(intent: str) -> tuple[str, AgentResponse]:
+            if intent == "profile":
+                return intent, await self.profile_agent.run(
+                    ProfileRequest(profile=effective_profile, question=request.message, use_llm_extraction=False)
+                )
+            if intent == "idea":
+                return intent, await self.idea_agent.run(IdeaRequest(profile=effective_profile))
+            if intent == "policy":
+                return intent, await self.policy_agent.run(
+                    PolicyRequest(profile=effective_profile, query=request.message, limit=3)
+                )
+            if intent == "finance":
+                finance_assumption, finance_extraction = await self._finance_assumption_from_request(request)
+                response = await self.finance_agent.run(
+                    FinanceRequest(profile=effective_profile, assumption=finance_assumption)
+                )
+                response.data["finance_input_extraction"] = finance_extraction
+                return intent, response
+            if intent == "operation":
+                return intent, await self.operation_agent.run(
+                    OperationRequest(
+                        profile=effective_profile,
+                        business_name=request.context.get(
+                            "business_name",
+                            request.context.get("item_name", request.context.get("product_name", "테스트 매장")),
+                        ),
+                    )
+                )
+            if intent == "marketing":
+                return intent, await self.marketing_agent.run(
+                    MarketingRequest(
+                        profile=effective_profile,
+                        product_name=request.context.get("product_name", request.context.get("item_name", "창업 상품")),
+                        event_date=request.context.get("event_date"),
+                        target_customer=request.context.get("target_customer"),
+                        place=request.context.get("place"),
+                        brand_tone=request.context.get("brand_tone", "친근하고 실행력 있는"),
+                        goal=request.message,
+                    )
+                )
+            if intent == "simulation":
+                return intent, self.simulation_agent.start(self._simulation_start_request(request, effective_profile))
+            return intent, await self._collaborative_consultation(request)
+
+        pairs = await asyncio.gather(*(run_intent(intent) for intent in intents))
+        responses = {intent: response for intent, response in pairs}
+        agent_names = [response.agent for response in responses.values()]
+        contracts = [self._contract_summary(response) for response in responses.values()]
+
+        data: dict[str, Any] = {
+            "collaboration_mode": "selective_dynamic_agents",
+            "selected_intents": intents,
+            "selected_agents": agent_names,
+            "selection_reason": self._agent_plan_reason(request.message, intents, plan_meta),
+            "agent_results": {intent: response.data for intent, response in responses.items()},
+            "agent_contracts": contracts,
+            "effective_profile": effective_profile.model_dump(),
+        }
+        for intent, response in responses.items():
+            data[intent] = response.data
+
+        warnings = []
+        sources = []
+        for response in responses.values():
+            warnings.extend(response.warnings)
+            sources.extend(response.sources)
+
+        return AgentResponse(
+            intent="selective_collaboration",
+            agent=self.name,
+            summary=f"{', '.join(agent_names)}만 선택해 이 질문에 필요한 범위로 검토했습니다.",
+            data=data,
+            next_actions=self._unique(
+                [
+                    action
+                    for response in responses.values()
+                    for action in response.next_actions[:2]
+                ]
+            ),
+            sources=sources,
+            warnings=self._unique(warnings),
+        )
+
+    def _agent_plan_reason(
+        self,
+        message: str,
+        intents: list[str],
+        plan_meta: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        labels = {
+            "finance": "예산/매출/손익/객단가 등 재정 판단 표현",
+            "policy": "지원사업/정책/법률/인허가/세무 관련 표현",
+            "idea": "아이템 추천/창업 후보 탐색 표현",
+            "operation": "운영/재고/리뷰/매장 관리 표현",
+            "marketing": "SNS/홍보/콘텐츠 표현",
+            "profile": "사용자 조건/강점/프로필 분석 표현",
+            "simulation": "30일 체험/게임/선택지 표현",
+        }
+        return {
+            "message_preview": message[:160],
+            "matched": {intent: labels.get(intent, intent) for intent in intents},
+            "planner": plan_meta or {"source": "unknown"},
+        }
+
+    async def _finance_assumption_from_request(self, request: ChatRequest) -> tuple[FinanceAssumption, dict[str, Any]]:
+        context = request.context
+        rule_updates = self._finance_rule_updates(request.message)
+        llm_updates, llm_meta = await self._finance_llm_updates(request)
+
+        merged = {
+            "item_name": context.get("item_name") or context.get("product_name") or "소자본 창업 아이템",
+            "business_type": context.get("business_type", "auto"),
+            "sales_channel": context.get("sales_channel", "auto"),
+        }
+        merged.update(llm_updates)
+        merged.update(rule_updates)
+
+        for key in ("item_name", "business_type", "sales_channel"):
+            if context.get(key):
+                merged[key] = context[key]
+        if context.get("product_name") and not context.get("item_name"):
+            merged["item_name"] = context["product_name"]
+
+        valid_fields = FinanceAssumption.model_fields
+        clean_updates = {key: value for key, value in merged.items() if key in valid_fields and value not in {None, ""}}
+        assumption = FinanceAssumption(**clean_updates)
+        return assumption, {
+            "source": "llm_with_rule_fallback" if llm_updates else "rule_fallback",
+            "rule_updates": rule_updates,
+            "llm_updates": llm_updates,
+            "llm_meta": llm_meta,
+            "final_assumption": assumption.model_dump(),
+        }
+
+    async def _finance_llm_updates(self, request: ChatRequest) -> tuple[dict[str, Any], dict[str, Any]]:
+        if not self.finance_agent.llm.is_enabled:
+            return {}, {"attempted": False, "reason": "llm_disabled"}
+
+        prompt = (
+            "Extract explicit or strongly implied financial assumptions from the Korean startup consultation message. "
+            "Return JSON only. Do not explain. Use null for unknown values. Prefer exact numbers mentioned by the user. "
+            "Infer business_type and sales_channel only when the wording clearly implies them.\n\n"
+            "Allowed business_type values: auto, popup, reservation_food, sns_service, local_service, ecommerce, offline_store.\n"
+            "Allowed sales_channel values: auto, direct, online, offline, reservation, service.\n\n"
+            "Schema:\n"
+            "{\n"
+            '  "item_name": string|null,\n'
+            '  "business_type": string|null,\n'
+            '  "sales_channel": string|null,\n'
+            '  "unit_label": string|null,\n'
+            '  "price_per_unit_krw": number|null,\n'
+            '  "expected_daily_customers": number|null,\n'
+            '  "operating_days_per_month": number|null,\n'
+            '  "rent_krw_per_month": number|null,\n'
+            '  "equipment_krw": number|null,\n'
+            '  "initial_inventory_krw": number|null,\n'
+            '  "marketing_krw_per_month": number|null,\n'
+            '  "variable_cost_rate": number|null,\n'
+            '  "platform_fee_rate": number|null,\n'
+            '  "payment_fee_rate": number|null,\n'
+            '  "reason": string|null\n'
+            "}\n\n"
+            f"message: {request.message}\n"
+            f"context: {json.dumps(request.context, ensure_ascii=False)}\n"
+            f"profile: {json.dumps(request.profile.model_dump(), ensure_ascii=False)}"
+        )
+        meta: dict[str, Any] = {"attempted": True}
+        try:
+            raw = await self.finance_agent.llm.complete(
+                system_prompt="You are a strict JSON extraction engine for startup finance assumptions.",
+                user_prompt=prompt,
+                temperature=0.0,
+                fallback="{}",
+            )
+            meta["raw_preview"] = raw[:500]
+            parsed = self._parse_json_object(raw)
+            updates = self._sanitize_finance_extraction(parsed)
+            meta["parsed_keys"] = sorted(parsed) if isinstance(parsed, dict) else []
+            meta["sanitized_fields"] = sorted(updates)
+            if isinstance(parsed, dict) and parsed.get("reason"):
+                meta["reason"] = str(parsed["reason"])[:300]
+            return updates, meta
+        except Exception as error:
+            meta["error_type"] = error.__class__.__name__
+            meta["error_message"] = str(error)[:500]
+            return {}, meta
+
+    def _finance_rule_updates(self, message: str) -> dict[str, Any]:
+        updates: dict[str, Any] = {}
+        item_name = self._extract_finance_item_name(message)
+        if item_name:
+            updates["item_name"] = item_name
+
+        price = self._extract_krw_near(message, ["객단가", "가격", "단가", "판매가"])
+        if price is not None:
+            updates["price_per_unit_krw"] = price
+
+        daily_customers = self._extract_daily_customers(message)
+        if daily_customers is not None:
+            updates["expected_daily_customers"] = daily_customers
+
+        business_type = self._infer_finance_business_type(message)
+        if business_type != "auto":
+            updates["business_type"] = business_type
+
+        sales_channel = self._infer_finance_sales_channel(message)
+        if sales_channel != "auto":
+            updates["sales_channel"] = sales_channel
+
+        return updates
+
+    def _sanitize_finance_extraction(self, parsed: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(parsed, dict):
+            return {}
+
+        updates: dict[str, Any] = {}
+        text_fields = {"item_name": 80, "business_type": 40, "sales_channel": 40}
+        int_fields = {
+            "price_per_unit_krw": (100, 5_000_000),
+            "expected_daily_customers": (1, 1_000),
+            "operating_days_per_month": (1, 31),
+            "rent_krw_per_month": (0, 10_000_000),
+            "equipment_krw": (0, 20_000_000),
+            "initial_inventory_krw": (0, 20_000_000),
+            "marketing_krw_per_month": (0, 5_000_000),
+        }
+        rate_fields = {
+            "variable_cost_rate": (0.0, 1.0),
+            "platform_fee_rate": (0.0, 1.0),
+            "payment_fee_rate": (0.0, 1.0),
+        }
+
+        for field, limit in text_fields.items():
+            value = parsed.get(field)
+            if isinstance(value, str) and value.strip():
+                updates[field] = value.strip()[:limit]
+
+        if updates.get("business_type") not in {
+            None,
+            "auto",
+            "popup",
+            "reservation_food",
+            "sns_service",
+            "local_service",
+            "ecommerce",
+            "offline_store",
+        }:
+            updates.pop("business_type", None)
+        if updates.get("sales_channel") not in {None, "auto", "direct", "online", "offline", "reservation", "service"}:
+            updates.pop("sales_channel", None)
+
+        for field, value_range in int_fields.items():
+            value = self._coerce_int(parsed.get(field))
+            if value is not None and value_range[0] <= value <= value_range[1]:
+                updates[field] = value
+
+        for field, value_range in rate_fields.items():
+            value = self._coerce_rate(parsed.get(field))
+            if value is not None and value_range[0] <= value <= value_range[1]:
+                updates[field] = value
+
+        return updates
+
+    def _parse_json_object(self, raw: str) -> dict[str, Any]:
+        text = raw.strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+            text = re.sub(r"```$", "", text).strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start < 0 or end < start:
+                return {}
+            parsed = json.loads(text[start : end + 1])
+        return parsed if isinstance(parsed, dict) else {}
+
+    def _extract_finance_item_name(self, message: str) -> str:
+        patterns = [
+            r"예산\s*[0-9,억천백만원\s]+으로\s*(.+?)(?:을|를)\s*(?:해보고|하고|팔고|판매)",
+            r"(.+?)(?:을|를)\s*(?:해보고|하고|팔고|판매)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, message)
+            if match:
+                return match.group(1).strip(" .,!?\n\t")
+        return ""
+
+    def _infer_finance_business_type(self, message: str) -> str:
+        text = message.lower()
+        if "팝업" in text:
+            return "popup"
+        if any(keyword in text for keyword in ["쿠키", "디저트", "음식", "도시락", "예약"]):
+            return "reservation_food"
+        if any(keyword in text for keyword in ["온라인", "쇼핑몰", "커머스"]):
+            return "ecommerce"
+        if any(keyword in text for keyword in ["카페", "매장", "오프라인"]):
+            return "offline_store"
+        return "auto"
+
+    def _infer_finance_sales_channel(self, message: str) -> str:
+        text = message.lower()
+        if "팝업" in text or "오프라인" in text or "매장" in text:
+            return "offline"
+        if "온라인" in text or "쇼핑몰" in text:
+            return "online"
+        if "예약" in text:
+            return "reservation"
+        return "auto"
+
+    def _extract_krw_near(self, message: str, labels: list[str]) -> int | None:
+        label_pattern = "|".join(re.escape(label) for label in labels)
+        patterns = [
+            rf"(?:{label_pattern})[^\d]*(\d[\d,]*)\s*원?",
+            rf"(\d[\d,]*)\s*원?\s*(?:정도)?(?:의)?\s*(?:{label_pattern})",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, message)
+            if match:
+                return int(match.group(1).replace(",", ""))
+        return None
+
+    def _extract_daily_customers(self, message: str) -> int | None:
+        patterns = [
+            r"하루\s*(\d[\d,]*)\s*(?:명|개|건|팀|주문)",
+            r"일\s*(\d[\d,]*)\s*(?:명|개|건|팀|주문)",
+            r"(\d[\d,]*)\s*(?:명|개|건|팀|주문)\s*정도\s*(?:팔|판매|올)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, message)
+            if match:
+                return int(match.group(1).replace(",", ""))
+        return None
+
+    def _coerce_int(self, value: Any) -> int | None:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        text = str(value).replace(",", "").strip()
+        match = re.search(r"\d+(?:\.\d+)?", text)
+        if not match:
+            return None
+        return int(float(match.group(0)))
+
+    def _coerce_rate(self, value: Any) -> float | None:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            number = float(value)
+        else:
+            text = str(value).strip()
+            match = re.search(r"\d+(?:\.\d+)?", text)
+            if not match:
+                return None
+            number = float(match.group(0))
+            if "%" in text:
+                number /= 100
+        if number > 1:
+            number /= 100
+        return number
 
     def _simulation_start_request(self, request: ChatRequest, profile=None) -> SimulationStartRequest:
         business_type = request.context.get("business_type", "content")
