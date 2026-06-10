@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Card } from '../../shared/components/Card'
 import { Icon } from '../../shared/components/Icon'
 
@@ -75,6 +75,55 @@ export const RoadviewPicker = ({ onSelect }) => {
   const [searchResults, setSearchResults] = useState([])
   const [searchMessage, setSearchMessage] = useState('')
 
+  const updateLocation = useCallback((pos, nextAddress = '') => {
+    const next = { lat: pos.getLat(), lng: pos.getLng() }
+    setPosition(next)
+    markerRef.current?.setPosition(pos)
+    mapObjectRef.current?.setCenter(pos)
+
+    roadviewClientRef.current?.getNearestPanoId(pos, 80, (id) => {
+      setPanoId(id || null)
+      if (id) roadviewRef.current?.setPanoId(id, pos)
+    })
+
+    geocoderRef.current?.coord2Address(pos.getLng(), pos.getLat(), (result, status) => {
+      if (status === window.kakao.maps.services.Status.OK) {
+        const primary = result[0].address
+        const road = result[0].road_address?.address_name
+        const jibun = primary?.address_name
+        setAddress(nextAddress || road || jibun || '')
+        setAddressParts({
+          sido: primary?.region_1depth_name || '',
+          sigungu: primary?.region_2depth_name || '',
+          dong: primary?.region_3depth_name || '',
+        })
+      } else if (nextAddress) {
+        setAddress(nextAddress)
+      }
+    })
+  }, [])
+
+  const initMap = useCallback(() => {
+    const defaultPos = new window.kakao.maps.LatLng(35.1631, 129.1635)
+    const map = new window.kakao.maps.Map(mapRef.current, { center: defaultPos, level: 3 })
+    const roadview = new window.kakao.maps.Roadview(rvRef.current)
+    const roadviewClient = new window.kakao.maps.RoadviewClient()
+    const geocoder = new window.kakao.maps.services.Geocoder()
+    const places = new window.kakao.maps.services.Places()
+    const marker = new window.kakao.maps.Marker({ position: defaultPos, map })
+
+    mapObjectRef.current = map
+    markerRef.current = marker
+    roadviewRef.current = roadview
+    roadviewClientRef.current = roadviewClient
+    geocoderRef.current = geocoder
+    placesRef.current = places
+
+    window.kakao.maps.event.addListener(roadview, 'init', () => roadview.relayout())
+    updateLocation(defaultPos)
+    window.kakao.maps.event.addListener(map, 'click', (event) => updateLocation(event.latLng))
+  }, [updateLocation])
+
   useEffect(() => {
     let cancelled = false
 
@@ -89,7 +138,7 @@ export const RoadviewPicker = ({ onSelect }) => {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [initMap])
 
   useEffect(() => {
     if (!address || !addressParts.sido) return
@@ -121,55 +170,6 @@ export const RoadviewPicker = ({ onSelect }) => {
     estimateRent()
     return () => controller.abort()
   }, [address, addressParts, areaM2])
-
-  const updateLocation = (pos, nextAddress = '') => {
-    const next = { lat: pos.getLat(), lng: pos.getLng() }
-    setPosition(next)
-    markerRef.current?.setPosition(pos)
-    mapObjectRef.current?.setCenter(pos)
-
-    roadviewClientRef.current?.getNearestPanoId(pos, 80, (id) => {
-      setPanoId(id || null)
-      if (id) roadviewRef.current?.setPanoId(id, pos)
-    })
-
-    geocoderRef.current?.coord2Address(pos.getLng(), pos.getLat(), (result, status) => {
-      if (status === window.kakao.maps.services.Status.OK) {
-        const primary = result[0].address
-        const road = result[0].road_address?.address_name
-        const jibun = primary?.address_name
-        setAddress(nextAddress || road || jibun || '')
-        setAddressParts({
-          sido: primary?.region_1depth_name || '',
-          sigungu: primary?.region_2depth_name || '',
-          dong: primary?.region_3depth_name || '',
-        })
-      } else if (nextAddress) {
-        setAddress(nextAddress)
-      }
-    })
-  }
-
-  const initMap = () => {
-    const defaultPos = new window.kakao.maps.LatLng(35.1631, 129.1635)
-    const map = new window.kakao.maps.Map(mapRef.current, { center: defaultPos, level: 3 })
-    const roadview = new window.kakao.maps.Roadview(rvRef.current)
-    const roadviewClient = new window.kakao.maps.RoadviewClient()
-    const geocoder = new window.kakao.maps.services.Geocoder()
-    const places = new window.kakao.maps.services.Places()
-    const marker = new window.kakao.maps.Marker({ position: defaultPos, map })
-
-    mapObjectRef.current = map
-    markerRef.current = marker
-    roadviewRef.current = roadview
-    roadviewClientRef.current = roadviewClient
-    geocoderRef.current = geocoder
-    placesRef.current = places
-
-    window.kakao.maps.event.addListener(roadview, 'init', () => roadview.relayout())
-    updateLocation(defaultPos)
-    window.kakao.maps.event.addListener(map, 'click', (event) => updateLocation(event.latLng))
-  }
 
   const moveToSearchResult = (item) => {
     const lat = Number(item.y)
