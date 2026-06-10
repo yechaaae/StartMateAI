@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import '../App.css'
 import { features } from '../shared/data/features'
 import { workspaces } from '../shared/data/workspaces'
@@ -12,32 +12,70 @@ import { LoginPage } from '../features/pages/LoginPage'
 import { Onboarding } from '../features/pages/Onboarding'
 import { SavedPage } from '../features/pages/SavedPage'
 import { SignupPage } from '../features/pages/SignupPage'
+import { SimulatorPage } from '../features/pages/SimulatorPage'
+import { pathToRoute, routeToPath } from './routePaths'
 
 const publicRoutes = new Set(['landing', 'login', 'signup'])
 const LOGIN_HINT_KEY = 'sm_logged_in'
+const featureIds = Object.keys(features)
 
 export default function App() {
-  const [route, setRoute] = useState(() => localStorage.getItem('sm_route') || 'landing')
+  const [route, setRoute] = useState(() => (
+    pathToRoute(window.location.pathname, featureIds)
+    || localStorage.getItem('sm_route')
+    || 'landing'
+  ))
   const [workspace, setWorkspace] = useState(workspaces[0])
   const [user, setUser] = useState(null)
   const [profileStatus, setProfileStatus] = useState(null)
+  const [startupProfile, setStartupProfile] = useState(null)
+  const [featureWorkspace, setFeatureWorkspace] = useState({})
   const [checkingSession, setCheckingSession] = useState(
     () => !publicRoutes.has(route) || localStorage.getItem(LOGIN_HINT_KEY) === 'true',
   )
   const sessionRestored = useRef(false)
 
+  const refreshStartupProfile = useCallback(async () => {
+    try {
+      const profile = await startupProfileApi.get()
+      setStartupProfile(profile)
+      return profile
+    } catch {
+      setStartupProfile(null)
+      return null
+    }
+  }, [])
+
   useEffect(() => {
     localStorage.setItem('sm_route', route)
+    const nextPath = routeToPath(route, featureIds)
+
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({ route }, '', nextPath)
+    }
   }, [route])
+
+  useEffect(() => {
+    const syncRouteFromUrl = () => {
+      const nextRoute = pathToRoute(window.location.pathname, featureIds)
+      setRoute(nextRoute || 'landing')
+    }
+
+    window.addEventListener('popstate', syncRouteFromUrl)
+    return () => window.removeEventListener('popstate', syncRouteFromUrl)
+  }, [])
 
   const moveByProfileStatus = async (nextRoute = route) => {
     const status = await startupProfileApi.status()
     setProfileStatus(status)
 
     if (status.requiresOnboarding) {
+      setStartupProfile(null)
       setRoute('onboarding')
       return status
     }
+
+    await refreshStartupProfile()
 
     if (publicRoutes.has(nextRoute) || nextRoute === 'onboarding') {
       setRoute('home')
@@ -49,12 +87,14 @@ export default function App() {
   const handleAuthSuccess = async (nextUser) => {
     localStorage.setItem(LOGIN_HINT_KEY, 'true')
     setUser(nextUser)
+    setFeatureWorkspace({})
     await moveByProfileStatus('home')
   }
 
-  const handleOnboardingComplete = async () => {
+  const handleOnboardingComplete = async (nextProfile) => {
     const status = await startupProfileApi.status()
     setProfileStatus(status)
+    setStartupProfile(nextProfile ?? await refreshStartupProfile())
     setRoute('home')
   }
 
@@ -64,10 +104,19 @@ export default function App() {
     } finally {
       setUser(null)
       setProfileStatus(null)
+      setStartupProfile(null)
+      setFeatureWorkspace({})
       localStorage.removeItem(LOGIN_HINT_KEY)
       setRoute('landing')
     }
   }
+
+  const handleFeatureWorkspaceChange = useCallback((patch) => {
+    setFeatureWorkspace((prev) => {
+      const next = { ...prev, ...patch }
+      return JSON.stringify(prev) === JSON.stringify(next) ? prev : next
+    })
+  }, [])
 
   useEffect(() => {
     if (sessionRestored.current) {
@@ -97,7 +146,7 @@ export default function App() {
     }
 
     restoreSession()
-    // 최초 진입 때만 서버 세션을 확인합니다.
+    // Only check the server session once on initial app entry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -119,8 +168,22 @@ export default function App() {
     page = <DiscussPage />
   } else if (guardedRoute === 'saved') {
     page = <SavedPage />
+  } else if (guardedRoute === 'simulator') {
+    page = <SimulatorPage go={setRoute} workspace={workspace} />
   } else if (features[guardedRoute]) {
-    page = <FeaturePage key={guardedRoute} id={guardedRoute} go={setRoute} />
+    page = (
+      <FeaturePage
+        key={guardedRoute}
+        id={guardedRoute}
+        go={setRoute}
+        user={user}
+        startupProfile={startupProfile}
+        workspaceContext={featureWorkspace}
+        onWorkspaceContextChange={handleFeatureWorkspaceChange}
+        workspace={workspace}
+        setWorkspace={setWorkspace}
+      />
+    )
   } else {
     page = <HomePage go={setRoute} workspace={workspace} />
   }

@@ -30,6 +30,7 @@ public class ChatMessageCommandService {
     private final AiChatReferenceContextService aiChatReferenceContextService;
     private final ChatSseService chatSseService;
     private final ChatRequestStatusService chatRequestStatusService;
+    private final ChatCandidateAgentResolver chatCandidateAgentResolver;
 
     public ChatMessageCommandService(
             ChatRoomRepository chatRoomRepository,
@@ -39,7 +40,8 @@ public class ChatMessageCommandService {
             AiChatDispatchService aiChatDispatchService,
             AiChatReferenceContextService aiChatReferenceContextService,
             ChatSseService chatSseService,
-            ChatRequestStatusService chatRequestStatusService
+            ChatRequestStatusService chatRequestStatusService,
+            ChatCandidateAgentResolver chatCandidateAgentResolver
     ) {
         this.chatRoomRepository = chatRoomRepository;
         this.chatMessageRepository = chatMessageRepository;
@@ -49,6 +51,7 @@ public class ChatMessageCommandService {
         this.aiChatReferenceContextService = aiChatReferenceContextService;
         this.chatSseService = chatSseService;
         this.chatRequestStatusService = chatRequestStatusService;
+        this.chatCandidateAgentResolver = chatCandidateAgentResolver;
     }
 
     public ChatMessageSendResult send(SendChatMessageCommand command) {
@@ -72,6 +75,13 @@ public class ChatMessageCommandService {
         String requestId = UUID.randomUUID().toString();
         chatRequestStatusService.createQueued(requestId, room.getId(), savedMessage.getId());
 
+        String sessionType = defaultSessionType(command.sessionType(), room);
+        List<String> candidateAgents = chatCandidateAgentResolver.resolve(
+                sessionType,
+                room,
+                command.candidateAgents()
+        );
+
         AiChatDispatchCommand dispatchCommand = new AiChatDispatchCommand(
                 requestId,
                 room.getWorkspace(),
@@ -80,11 +90,11 @@ public class ChatMessageCommandService {
                 startupProfile,
                 savedMessage,
                 defaultIfBlank(command.intent(), "auto"),
-                defaultSessionType(command.sessionType(), room),
+                sessionType,
                 command.currentResultType(),
                 command.currentResultId(),
                 command.selectedIdeaId(),
-                command.candidateAgents() == null ? List.of() : List.copyOf(command.candidateAgents()),
+                candidateAgents,
                 recentMessages,
                 command.currentResult() == null ? Map.of() : command.currentResult(),
                 Map.of()

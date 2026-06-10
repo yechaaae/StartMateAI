@@ -14,4 +14,16 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
     Optional<ChatRoom> findFirstByWorkspaceUserIdAndRoomTypeOrderByIdDesc(Long userId, String roomType);
 
     List<ChatRoom> findByWorkspaceUserIdAndRoomTypeOrderByIdDesc(Long userId, String roomType);
+
+    Optional<ChatRoom> findFirstByWorkspaceUserIdAndRoomTypeAndTargetFeatureOrderByIdDesc(
+            Long userId,
+            String roomType,
+            String targetFeature
+    );
+
+    List<ChatRoom> findByWorkspaceUserIdAndRoomTypeAndTargetFeatureOrderByIdDesc(
+            Long userId,
+            String roomType,
+            String targetFeature
+    );
 }

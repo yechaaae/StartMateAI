@@ -6,8 +6,11 @@ import static org.mockito.Mockito.when;
 import com.kakao.backend.chat.application.ChatMessageHistoryItemResult;
 import com.kakao.backend.chat.application.ChatMessageHistoryResult;
 import com.kakao.backend.chat.application.ChatRoomQueryService;
+import com.kakao.backend.chat.application.FeatureChatRoomResult;
 import com.kakao.backend.chat.application.FreeChatRoomResult;
 import com.kakao.backend.chat.dto.ChatMessageHistoryResponse;
+import com.kakao.backend.chat.dto.FeatureChatRoomListResponse;
+import com.kakao.backend.chat.dto.FeatureChatRoomResponse;
 import com.kakao.backend.chat.dto.FreeChatRoomListResponse;
 import com.kakao.backend.chat.dto.FreeChatRoomResponse;
 import java.util.List;
@@ -40,6 +43,19 @@ class ChatQueryControllerTest {
     }
 
     @Test
+    void getsOrCreatesFeatureRoom() {
+        when(chatRoomQueryService.getOrCreateFeatureRoom(2L, "ITEM"))
+                .thenReturn(new FeatureChatRoomResult(20L, 1L, "Item recommendation", "FEATURE_DISCUSSION", "ITEM", true));
+
+        FeatureChatRoomResponse response = chatQueryController.getFeatureRoom(2L, "ITEM").getBody();
+
+        assertThat(response).isNotNull();
+        assertThat(response.roomId()).isEqualTo(20L);
+        assertThat(response.targetFeature()).isEqualTo("ITEM");
+        assertThat(response.created()).isTrue();
+    }
+
+    @Test
     void getsFreeRoomList() {
         when(chatRoomQueryService.getFreeRooms(2L))
                 .thenReturn(List.of(
@@ -52,6 +68,22 @@ class ChatQueryControllerTest {
         assertThat(response).isNotNull();
         assertThat(response.rooms()).hasSize(2);
         assertThat(response.rooms().get(0).roomId()).isEqualTo(11L);
+    }
+
+    @Test
+    void getsFeatureRoomList() {
+        when(chatRoomQueryService.getFeatureRooms(2L, "ITEM"))
+                .thenReturn(List.of(
+                        new FeatureChatRoomResult(21L, 1L, "Item recommendation 2", "FEATURE_DISCUSSION", "ITEM", false),
+                        new FeatureChatRoomResult(20L, 1L, "Item recommendation", "FEATURE_DISCUSSION", "ITEM", false)
+                ));
+
+        FeatureChatRoomListResponse response = chatQueryController.getFeatureRooms(2L, "ITEM").getBody();
+
+        assertThat(response).isNotNull();
+        assertThat(response.rooms()).hasSize(2);
+        assertThat(response.rooms().get(0).roomId()).isEqualTo(21L);
+        assertThat(response.rooms().get(0).targetFeature()).isEqualTo("ITEM");
     }
 
     @Test
