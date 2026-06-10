@@ -24,6 +24,7 @@ from app.schemas import (
     IdeaRequest,
     LegalRequest,
     MarketingRequest,
+    OperationMetric,
     OperationRequest,
     PolicyRequest,
     ProfileRequest,
@@ -295,6 +296,10 @@ class OrchestratorAgent:
             return intent, response
         if intent == "operation":
             return intent, await self.operation_agent.run(
+                self._operation_request_from_context(request, effective_profile)
+            )
+        if intent == "operation":
+            return intent, await self.operation_agent.run(
                 OperationRequest(
                     profile=effective_profile,
                     business_name=request.context.get(
@@ -361,7 +366,7 @@ class OrchestratorAgent:
         return AgentResponse(
             intent="selective_collaboration",
             agent=self.name,
-            summary=f"{', '.join(agent_names)}만 선택해 이 질문에 필요한 범위로 검토했습니다.",
+            summary=self._selective_summary(results),
             data=data,
             next_actions=self._unique(
                 [
@@ -373,6 +378,72 @@ class OrchestratorAgent:
             sources=[source for response in results.values() for source in response.sources],
             warnings=self._unique([warning for response in results.values() for warning in response.warnings]),
         )
+
+    def _selective_summary(self, results: dict[str, AgentResponse]) -> str:
+        parts: list[str] = []
+
+        operation = results.get("operation")
+        if operation:
+            op_data = operation.data or {}
+            risks = op_data.get("risk_items") or []
+            top_risk = risks[0] if risks else {}
+            op_evidence = []
+            sales = op_data.get("sales_analysis") or {}
+            orders = op_data.get("order_analysis") or {}
+            marketing = op_data.get("marketing_efficiency") or {}
+            inventory = op_data.get("inventory_analysis") or {}
+            customer = op_data.get("customer_feedback_analysis") or {}
+            if sales.get("latest_sales_krw"):
+                op_evidence.append(f"매출 {int(sales['latest_sales_krw']):,}원")
+            if orders.get("orders"):
+                op_evidence.append(f"주문 {orders['orders']}건")
+            if marketing.get("ad_cost_per_order_krw"):
+                op_evidence.append(f"주문당 광고비 {marketing['ad_cost_per_order_krw']:,}원")
+            if inventory.get("stockout_items"):
+                op_evidence.append("품절 신호")
+            if inventory.get("slow_moving_items"):
+                op_evidence.append("재고 누적 신호")
+            feedback_categories = customer.get("categories") or {}
+            if feedback_categories.get("price") or feedback_categories.get("waiting"):
+                op_evidence.append("가격/대기 피드백")
+            if top_risk:
+                parts.append(
+                    f"운영은 {', '.join(op_evidence) or '입력 데이터'}를 근거로 "
+                    f"{top_risk.get('risk')}을 우선 리스크로 봤고, {top_risk.get('action')}가 필요합니다."
+                )
+            elif op_data.get("needs_more_data"):
+                parts.append("운영은 현재 데이터가 부족해 매출, 주문 수, 재고, 고객 피드백을 먼저 확인해야 합니다.")
+
+        finance = results.get("finance")
+        if finance:
+            data = finance.data or {}
+            monthly_profit = data.get("monthly_profit_krw")
+            initial_cash = data.get("initial_cash_needed_krw")
+            budget = data.get("budget_analysis") or {}
+            finance_bits = []
+            if monthly_profit is not None:
+                finance_bits.append(f"월 손익 {int(monthly_profit):,}원")
+            if initial_cash is not None:
+                finance_bits.append(f"초기 필요 현금 {int(initial_cash):,}원")
+            if budget.get("funding_gap_krw"):
+                finance_bits.append(f"부족액 {int(budget['funding_gap_krw']):,}원")
+            if finance_bits:
+                parts.append(f"재무는 {', '.join(finance_bits)}을 근거로 실행 여력을 판단했습니다.")
+
+        policy = results.get("policy")
+        if policy:
+            matches = (policy.data or {}).get("matches") or []
+            if matches:
+                top = matches[0]
+                title = top.get("title") or top.get("name") or "상위 지원사업"
+                score = top.get("eligibility_score") or top.get("score")
+                score_text = f" 점수 {score}" if score is not None else ""
+                parts.append(f"지원사업은 {title}{score_text}를 우선 후보로 봤습니다.")
+
+        if not parts:
+            agent_names = [response.agent for response in results.values()]
+            return f"{', '.join(agent_names)}가 이 질문에 필요한 범위로 검토했습니다."
+        return " ".join(parts[:3])
 
     def _annotate_response(self, response: AgentResponse, state: dict[str, Any]) -> AgentResponse:
         request: ChatRequest = state["request"]
@@ -941,6 +1012,273 @@ class OrchestratorAgent:
         if number > 1:
             number /= 100
         return number
+
+    def _operation_request_from_context(self, request: ChatRequest, profile=None) -> OperationRequest:
+        context = request.context or {}
+        feature_payload = self._dict_at(context, "featurePayload") or self._dict_at(context, "feature_payload")
+        current_result = (
+            self._dict_at(context, "currentResult")
+            or self._dict_at(feature_payload, "currentResult")
+            or self._dict_at(context, "current_result")
+        )
+        operation_context = self._dict_at(feature_payload, "operationContext") or self._dict_at(context, "operationContext")
+        operation_input = (
+            self._dict_at(context, "operationInput")
+            or self._dict_at(current_result, "operationInput")
+            or self._dict_at(operation_context, "input")
+            or operation_context
+        )
+        business_context = (
+            self._dict_at(context, "businessContext")
+            or self._dict_at(current_result, "businessContext")
+            or self._dict_at(feature_payload, "businessContext")
+        )
+
+        business_name = (
+            context.get("business_name")
+            or context.get("item_name")
+            or context.get("product_name")
+            or self._title_at(self._dict_at(business_context, "selectedIdea"))
+            or "테스트 매장"
+        )
+        kpis = self._operation_metrics_from_kpis(operation_input.get("kpis"))
+        products = self._operation_products(operation_input.get("products"))
+        channels = self._operation_channels(operation_input.get("channels"))
+        notes = str(operation_input.get("notes") or context.get("notes") or "").strip() or None
+
+        monthly_sales = self._metric_number(kpis, "매출", "sales", "revenue")
+        orders = self._metric_number(kpis, "주문", "order")
+        ad_spend = self._metric_number(kpis, "광고비", "ad spend", "ad_spend")
+        conversion_rate = self._metric_ratio(kpis, "전환", "conversion")
+        if monthly_sales is None:
+            monthly_sales = self._metric_value_at(kpis, 0)
+        if orders is None:
+            orders = self._metric_value_at(kpis, 1)
+        if conversion_rate is None:
+            conversion_candidate = self._metric_value_at(kpis, 2)
+            conversion_rate = conversion_candidate / 100 if conversion_candidate and conversion_candidate > 1 else conversion_candidate
+        message_inputs = self._operation_inputs_from_message(request.message)
+        if monthly_sales is None:
+            monthly_sales = message_inputs.get("monthly_sales_krw")
+        if orders is None:
+            orders = message_inputs.get("orders")
+        if ad_spend is None:
+            ad_spend = message_inputs.get("ad_spend_krw")
+        inventory_notes = self._unique([
+            *self._list_str(context.get("inventory_notes")),
+            *message_inputs.get("inventory_notes", []),
+        ])
+        customer_feedback = self._unique([
+            *self._list_str(context.get("customer_feedback")),
+            *message_inputs.get("customer_feedback", []),
+        ])
+        notes = notes or message_inputs.get("notes")
+
+        return OperationRequest(
+            profile=profile or request.profile,
+            business_name=str(business_name),
+            period=str(operation_input.get("period") or context.get("period") or "") or None,
+            notes=notes,
+            daily_sales_krw=self._list_int(context.get("daily_sales_krw")),
+            weekly_sales_krw=self._list_int(context.get("weekly_sales_krw")),
+            monthly_sales_krw=int(monthly_sales) if monthly_sales is not None else self._optional_int(context.get("monthly_sales_krw")),
+            orders=int(orders) if orders is not None else self._optional_int(context.get("orders")),
+            ad_spend_krw=int(ad_spend) if ad_spend is not None else self._optional_int(context.get("ad_spend_krw")),
+            material_cost_krw=self._optional_int(context.get("material_cost_krw")),
+            labor_cost_krw=self._optional_int(context.get("labor_cost_krw")),
+            fixed_cost_krw=self._optional_int(context.get("fixed_cost_krw")),
+            impressions=self._optional_int(context.get("impressions")),
+            clicks=self._optional_int(context.get("clicks")),
+            conversion_rate=conversion_rate if conversion_rate is not None else self._coerce_rate(context.get("conversion_rate")),
+            inventory_notes=inventory_notes,
+            stockout_items=self._list_str(context.get("stockout_items")),
+            slow_moving_items=self._list_str(context.get("slow_moving_items")),
+            customer_feedback=customer_feedback,
+            review_keywords=self._list_str(context.get("review_keywords")),
+            complaints=self._list_str(context.get("complaints")),
+            channel_notes=channels,
+            product_sales=products,
+            metrics=kpis,
+        )
+
+    def _dict_at(self, value: Any, key: str) -> dict[str, Any]:
+        if isinstance(value, dict) and isinstance(value.get(key), dict):
+            return value[key]
+        return {}
+
+    def _title_at(self, value: dict[str, Any]) -> str | None:
+        if not value:
+            return None
+        title = value.get("title") or value.get("name")
+        return str(title).strip() if title else None
+
+    def _operation_metrics_from_kpis(self, raw_kpis: Any) -> list[OperationMetric]:
+        metrics: list[OperationMetric] = []
+        if not isinstance(raw_kpis, list):
+            return metrics
+        for raw in raw_kpis:
+            if isinstance(raw, dict):
+                name = str(raw.get("name") or raw.get("label") or "").strip()
+                value = self._number_from_text(raw.get("value"))
+                memo = str(raw.get("delta") or raw.get("memo") or "").strip() or None
+            elif isinstance(raw, (list, tuple)) and len(raw) >= 2:
+                name = str(raw[0]).strip()
+                value = self._number_from_text(raw[1])
+                memo = str(raw[2]).strip() if len(raw) >= 3 and raw[2] is not None else None
+            else:
+                continue
+            if name and value is not None:
+                unit = "%" if "%" in str(raw) else None
+                metrics.append(OperationMetric(name=name, value=value, unit=unit, memo=memo))
+        return metrics
+
+    def _operation_products(self, raw_products: Any) -> list[dict[str, Any]]:
+        products = []
+        if not isinstance(raw_products, list):
+            return products
+        for raw in raw_products:
+            if isinstance(raw, dict):
+                products.append(raw)
+            elif isinstance(raw, (list, tuple)) and len(raw) >= 2:
+                products.append({"name": str(raw[0]), "sales": self._number_from_text(raw[1]) or 0})
+        return products
+
+    def _operation_channels(self, raw_channels: Any) -> list[str]:
+        notes = []
+        if not isinstance(raw_channels, list):
+            return notes
+        for raw in raw_channels:
+            if isinstance(raw, dict):
+                name = raw.get("name") or raw.get("label") or "채널"
+                summary = raw.get("summary") or raw.get("value") or raw.get("memo") or ""
+                notes.append(f"{name}: {summary}")
+            elif isinstance(raw, (list, tuple)) and len(raw) >= 2:
+                notes.append(f"{raw[0]}: {raw[1]}")
+            elif raw:
+                notes.append(str(raw))
+        return notes
+
+    def _metric_number(self, metrics: list[OperationMetric], *keywords: str) -> float | None:
+        lowered = [keyword.lower() for keyword in keywords]
+        for metric in metrics:
+            name = metric.name.lower()
+            if any(keyword in name for keyword in lowered):
+                return metric.value
+        return None
+
+    def _metric_ratio(self, metrics: list[OperationMetric], *keywords: str) -> float | None:
+        value = self._metric_number(metrics, *keywords)
+        if value is None:
+            return None
+        return value / 100 if value > 1 else value
+
+    def _metric_value_at(self, metrics: list[OperationMetric], index: int) -> float | None:
+        if 0 <= index < len(metrics):
+            return metrics[index].value
+        return None
+
+    def _operation_inputs_from_message(self, message: str) -> dict[str, Any]:
+        text = message or ""
+        inventory_notes = self._sentences_with_keywords(
+            text,
+            ["품절", "재고", "남았", "남음", "부족", "완판", "과다"],
+        )
+        customer_feedback = self._feedback_from_message(text)
+        return {
+            "monthly_sales_krw": self._money_after_labels(text, ["매출", "월매출", "이번 달 매출"]),
+            "orders": self._count_after_labels(text, ["주문 수", "주문수", "주문", "판매량"]),
+            "ad_spend_krw": self._money_after_labels(text, ["광고비", "광고 비용", "마케팅비", "홍보비"]),
+            "inventory_notes": inventory_notes,
+            "customer_feedback": customer_feedback,
+            "notes": text if any(keyword in text for keyword in ["운영", "매출", "주문", "재고", "피드백", "리뷰"]) else None,
+        }
+
+    def _money_after_labels(self, text: str, labels: list[str]) -> int | None:
+        label_pattern = "|".join(re.escape(label) for label in labels)
+        pattern = rf"(?:{label_pattern})[^\d-]*(\d[\d,]*(?:\.\d+)?)\s*(만원|천원|원)?"
+        match = re.search(pattern, text)
+        if not match:
+            return None
+        return self._korean_money_to_krw(match.group(1), match.group(2))
+
+    def _count_after_labels(self, text: str, labels: list[str]) -> int | None:
+        label_pattern = "|".join(re.escape(label) for label in labels)
+        pattern = rf"(?:{label_pattern})[^\d-]*(\d[\d,]*)\s*(?:건|개|명|회)?"
+        match = re.search(pattern, text)
+        if not match:
+            return None
+        return int(match.group(1).replace(",", ""))
+
+    def _korean_money_to_krw(self, raw_number: str, unit: str | None) -> int:
+        number = float(raw_number.replace(",", ""))
+        if unit == "만원":
+            number *= 10_000
+        elif unit == "천원":
+            number *= 1_000
+        return int(number)
+
+    def _sentences_with_keywords(self, text: str, keywords: list[str]) -> list[str]:
+        chunks = re.split(r"[.!?\n]|[。！？]", text)
+        matches = []
+        for chunk in chunks:
+            item = chunk.strip(" ,，")
+            if item and any(keyword in item for keyword in keywords):
+                matches.append(item)
+        return self._unique(matches)
+
+    def _feedback_from_message(self, text: str) -> list[str]:
+        feedback = []
+        feedback_match = re.search(r"고객\s*피드백[^\w가-힣]*(.+)", text)
+        if feedback_match:
+            feedback_text = feedback_match.group(1)
+            feedback_text = re.split(r"[.!?\n]|[。！？]", feedback_text)[0]
+            feedback.extend(
+                item.strip(" ,，'\"")
+                for item in re.split(r",|、|그리고|및", feedback_text)
+                if item.strip(" ,，'\"")
+            )
+        feedback.extend(
+            self._sentences_with_keywords(
+                text,
+                ["비싸", "대기", "불만", "리뷰", "느리", "맛", "품질", "친절", "환불"],
+            )
+        )
+        return self._unique(feedback)
+
+    def _number_from_text(self, value: Any) -> float | None:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value).replace(",", "").strip()
+        multiplier = 1
+        if "만원" in text:
+            multiplier = 10_000
+        elif "천원" in text:
+            multiplier = 1_000
+        match = re.search(r"-?\d+(?:\.\d+)?", text)
+        if not match:
+            return None
+        return float(match.group(0)) * multiplier
+
+    def _optional_int(self, value: Any) -> int | None:
+        number = self._number_from_text(value)
+        return int(number) if number is not None else None
+
+    def _list_int(self, value: Any) -> list[int]:
+        if not isinstance(value, list):
+            return []
+        numbers = []
+        for item in value:
+            number = self._number_from_text(item)
+            if number is not None:
+                numbers.append(int(number))
+        return numbers
+
+    def _list_str(self, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
 
     def _simulation_start_request(self, request: ChatRequest, profile=None) -> SimulationStartRequest:
         business_type = request.context.get("business_type", "content")

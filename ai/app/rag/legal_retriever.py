@@ -47,6 +47,9 @@ class LegalRetriever:
         domains: list[str] | None = None,
         source_type: str | None = None,
     ) -> list[LegalSearchResult]:
+        if self.count() == 0:
+            return []
+
         query_embedding = self.embedding_provider.embed(query)
         raw = self.collection.query(
             query_embeddings=[query_embedding],
