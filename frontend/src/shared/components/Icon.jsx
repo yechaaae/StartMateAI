@@ -1,4 +1,4 @@
-export const Icon = ({ name, size = 20, stroke = 1.8 }) => {
+export const Icon = ({ name, size = 20, stroke = 1.8, className, style }) => {
   const paths = {
     discuss: <><path d="M21 11.5a8.5 8.5 0 0 1-12.2 7.7L3 21l1.8-5.3A8.5 8.5 0 1 1 21 11.5Z" /><path d="M8.5 11h.01M12 11h.01M15.5 11h.01" /></>,
     home: <><path d="M3 10.2 12 3l9 7.2" /><path d="M5 9.5V21h14V9.5" /><path d="M9.5 21v-6h5v6" /></>,
@@ -23,5 +23,5 @@ export const Icon = ({ name, size = 20, stroke = 1.8 }) => {
     play: <path d="M7 4v16l13-8z" />,
     more: <><circle cx="5" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="19" cy="12" r="1.2" /></>,
   }
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
+  return <svg className={className} style={style} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
 }

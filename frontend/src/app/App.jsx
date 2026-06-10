@@ -12,6 +12,7 @@ import { LoginPage } from '../features/pages/LoginPage'
 import { Onboarding } from '../features/pages/Onboarding'
 import { SavedPage } from '../features/pages/SavedPage'
 import { SignupPage } from '../features/pages/SignupPage'
+import { SimulatorPage } from '../features/pages/SimulatorPage'
 import { pathToRoute, routeToPath } from './routePaths'
 
 const publicRoutes = new Set(['landing', 'login', 'signup'])
@@ -118,7 +119,7 @@ export default function App() {
     }
 
     restoreSession()
-    // 최초 진입 때만 서버 세션을 확인합니다.
+    // Only check the server session once on initial app entry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -140,8 +141,18 @@ export default function App() {
     page = <DiscussPage />
   } else if (guardedRoute === 'saved') {
     page = <SavedPage />
+  } else if (guardedRoute === 'simulator') {
+    page = <SimulatorPage go={setRoute} workspace={workspace} />
   } else if (features[guardedRoute]) {
-    page = <FeaturePage key={guardedRoute} id={guardedRoute} go={setRoute} />
+    page = (
+      <FeaturePage
+        key={guardedRoute}
+        id={guardedRoute}
+        go={setRoute}
+        workspace={workspace}
+        setWorkspace={setWorkspace}
+      />
+    )
   } else {
     page = <HomePage go={setRoute} workspace={workspace} />
   }
