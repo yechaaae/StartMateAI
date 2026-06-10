@@ -1683,6 +1683,10 @@
   overflow: hidden;
 }
 
+.simulator-feature-page.no-chat .report-area {
+  width: 100%;
+}
+
 .report-area {
   flex: 1;
   overflow-y: auto;
@@ -1746,6 +1750,107 @@
   color: var(--brand);
 }
 
+.item-region-card {
+  overflow: hidden;
+}
+
+.item-region-map {
+  position: relative;
+  height: 240px;
+  margin: -20px -20px 18px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: #eef1f5;
+}
+
+.item-kakao-map {
+  width: 100%;
+  height: 100%;
+}
+
+.item-map-overlay {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  max-width: calc(100% - 28px);
+  padding: 10px 13px;
+  border: 1px solid rgba(227, 228, 234, .9);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: var(--shadow);
+}
+
+.item-map-overlay span,
+.item-map-overlay b {
+  display: flex;
+  align-items: center;
+}
+
+.item-map-overlay span {
+  gap: 5px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.item-map-overlay b {
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.item-map-metrics {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.item-map-metrics div {
+  min-width: 118px;
+  padding: 9px 11px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: var(--shadow);
+}
+
+.item-map-metrics small,
+.item-map-metrics b {
+  display: block;
+}
+
+.item-map-metrics small {
+  color: var(--ink-3);
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.item-map-metrics b {
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.item-map-error {
+  position: absolute;
+  inset: auto 14px 14px;
+  z-index: 3;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .95);
+  color: var(--warn);
+  font-size: 12.5px;
+  font-weight: 900;
+  box-shadow: var(--shadow);
+}
+
 .idea-option,
 .support-row,
 .suggest-card {
@@ -1756,6 +1861,12 @@
   margin-top: 8px;
   border: 1px solid var(--line);
   border-radius: 12px;
+}
+
+.idea-option.selectable {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto auto;
+  align-items: center;
 }
 
 .idea-option span {
@@ -2035,6 +2146,1174 @@ button:disabled {
     min-height: 480px;
     border-left: 0;
     border-top: 1px solid var(--line);
+  }
+}
+
+.roadview-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.picker-split {
+  display: flex;
+  height: 400px;
+  gap: 10px;
+}
+.picker-split > div {
+  flex: 1;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+}
+.picker-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8f9fc;
+  padding: 20px;
+  border-radius: 12px;
+}
+.picker-form {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+.picker-form label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: bold;
+}
+.picker-form input {
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+}
+.picker-form button {
+  padding: 10px 20px;
+  border-radius: 8px;
+  background: var(--brand);
+  color: white;
+  font-weight: bold;
+  border: none;
+  cursor: pointer;
+}
+.picker-form button:disabled {
+  background: gray;
+  cursor: not-allowed;
+}
+
+.assumption-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.form-layout {
+  display: flex;
+  gap: 30px;
+}
+.form-inputs {
+  flex: 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.form-inputs label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-weight: bold;
+  font-size: 14px;
+}
+.form-inputs input {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+}
+.form-preview {
+  flex: 1;
+  background: #f8f9fc;
+  padding: 20px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.preview-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 15px;
+}
+.preview-row.total {
+  font-size: 18px;
+}
+.run-btn {
+  margin-top: 20px;
+  padding: 15px;
+  border-radius: 8px;
+  background: var(--brand);
+  color: white;
+  font-weight: bold;
+  border: none;
+  cursor: pointer;
+}
+
+.daily-report .summary-cards {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 30px;
+}
+.daily-report .summary-cards > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.daily-report .summary-cards b {
+  font-size: 24px;
+}
+.chart-card h3 {
+  margin-bottom: 20px;
+}
+.daily-report .actions {
+  margin-top: 30px;
+  text-align: right;
+}
+.save-btn {
+  padding: 12px 24px;
+  border-radius: 8px;
+  background: var(--brand);
+  color: white;
+  font-weight: bold;
+  border: none;
+  cursor: pointer;
+}
+
+.sim-chart {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  height: 200px;
+  padding-top: 20px;
+}
+.sim-chart .tooltip {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.8);
+  color: white;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  margin-bottom: 5px;
+}
+
+.sim-chart > div {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 15px;
+}
+.sim-chart > div i {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+}
+
+.sim-chart > div:hover .tooltip {
+  display: block;
+}
+
+.simulator-page {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 34px 38px 44px;
+  overflow-y: auto;
+}
+
+.report-area .simulator-page {
+  padding: 0;
+  overflow: visible;
+}
+
+.simulator-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.simulator-header h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.simulator-header p {
+  margin: 8px 0 0;
+  color: var(--ink-3);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.simulator-header > span {
+  flex-shrink: 0;
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: var(--a-finance-t);
+  color: var(--a-finance);
+  font-size: 12.5px;
+  font-weight: 900;
+}
+
+.sim-stepper,
+.sim-step-wrap,
+.sim-stepper button {
+  display: flex;
+  align-items: center;
+}
+
+.sim-selected-idea {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.sim-selected-idea span,
+.sim-selected-idea b,
+.sim-selected-idea p {
+  display: block;
+}
+
+.sim-selected-idea span {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sim-selected-idea b {
+  margin-top: 5px;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.sim-selected-idea p {
+  margin: 4px 0 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.sim-selected-idea em {
+  flex-shrink: 0;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: var(--a-idea-t);
+  color: var(--a-idea);
+  font-size: 12.5px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.sim-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 58px 28px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.sim-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  background: var(--a-idea-t);
+  color: var(--a-idea);
+}
+
+.sim-empty-state h2 {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.sim-empty-state p {
+  max-width: 520px;
+  margin: 0 0 8px;
+  color: var(--ink-3);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.65;
+}
+
+.sim-stepper {
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.sim-step-wrap {
+  gap: 6px;
+}
+
+.sim-stepper button {
+  gap: 8px;
+  padding: 7px 13px 7px 8px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-4);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.sim-stepper button.current {
+  background: var(--a-finance-t);
+  color: var(--a-finance);
+}
+
+.sim-stepper button.done {
+  color: var(--ink-2);
+}
+
+.sim-stepper button:disabled {
+  cursor: default;
+}
+
+.sim-stepper button span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #e6e8ef;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sim-stepper button.current span,
+.sim-stepper button.done span {
+  background: var(--a-finance);
+  color: #fff;
+}
+
+.sim-step-arrow {
+  color: var(--ink-4);
+}
+
+.sim-step-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.step-in {
+  animation: simStepIn .34s cubic-bezier(.22, .7, .3, 1) both;
+}
+
+@keyframes simStepIn {
+  from {
+    opacity: .88;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sim-section-copy h2 {
+  margin: 2px 0 4px;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.sim-section-copy p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.sim-section-copy.compact {
+  margin-bottom: 16px;
+}
+
+.sim-alert {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--a-policy-t);
+  color: var(--warn);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.sim-map-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 10px;
+  align-items: center;
+}
+
+.sim-map-search input {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  outline: none;
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.sim-map-search input:focus {
+  border-color: var(--a-finance);
+  box-shadow: 0 0 0 4px rgba(84, 158, 111, .12);
+}
+
+.sim-map-search button {
+  height: 48px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--a-finance);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.sim-map-search span {
+  grid-column: 1 / -1;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.sim-search-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sim-search-results button {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sim-search-results b,
+.sim-search-results span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sim-search-results b {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.sim-search-results span {
+  margin-top: 3px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sim-map-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  height: 340px;
+}
+
+.sim-map-card {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.sim-map-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border: 1px solid rgba(227, 228, 234, .9);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: var(--shadow);
+}
+
+.sim-map-toolbar b {
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 900;
+}
+
+.sim-map-toolbar span {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sim-kakao-map,
+.sim-kakao-roadview {
+  width: 100%;
+  height: 100%;
+  min-height: 340px;
+}
+
+.sim-roadview-card {
+  background: #dfe3ea;
+}
+
+.sim-roadview-empty {
+  position: absolute;
+  inset: auto 14px 14px;
+  z-index: 2;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .94);
+  color: var(--warn);
+  font-size: 12.5px;
+  font-weight: 800;
+  box-shadow: var(--shadow);
+}
+
+.sim-location-bar,
+.sim-location-summary {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 14px 16px;
+}
+
+.sim-location-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  align-self: center;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--a-finance-t);
+  color: var(--a-finance);
+}
+
+.sim-location-text,
+.sim-location-summary > div:nth-child(2) {
+  flex: 1;
+  min-width: 180px;
+  align-self: center;
+}
+
+.sim-location-text b,
+.sim-location-text span,
+.sim-location-text small,
+.sim-location-summary b,
+.sim-location-summary span {
+  display: block;
+}
+
+.sim-location-text b,
+.sim-location-summary b {
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 900;
+}
+
+.sim-location-text span,
+.sim-location-summary span {
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.sim-location-text small {
+  margin-top: 5px;
+  color: var(--ink-4);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sim-rent-input {
+  position: relative;
+  width: 170px;
+  flex-shrink: 0;
+}
+
+.sim-rent-input.compact {
+  width: 96px;
+}
+
+.sim-rent-input span,
+.sim-field > span {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sim-rent-input input,
+.sim-field input {
+  width: 100%;
+  height: 46px;
+  padding: 10px 34px 10px 13px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  outline: none;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sim-rent-input em {
+  position: absolute;
+  right: 12px;
+  bottom: 13px;
+  color: var(--ink-4);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.sim-rent-input input:focus,
+.sim-field input:focus {
+  border-color: var(--a-finance);
+}
+
+.sim-primary-btn,
+.sim-secondary-btn,
+.sim-location-summary button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.sim-location-submit {
+  min-width: 230px;
+  height: 56px;
+  margin-left: auto;
+  align-self: flex-end;
+}
+
+.idea-option button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: var(--a-finance-t);
+  color: var(--a-finance);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.sim-primary-btn {
+  padding: 12px 20px;
+  background: var(--a-finance);
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 8px 18px rgba(31, 157, 107, .28);
+}
+
+.sim-primary-btn.wide {
+  width: 100%;
+}
+
+.sim-primary-btn:disabled {
+  background: #c8ccd6;
+  box-shadow: none;
+  cursor: default;
+}
+
+.sim-secondary-btn,
+.sim-location-summary button {
+  padding: 8px 14px;
+  background: var(--a-finance-t);
+  color: var(--a-finance);
+  font-size: 12.5px;
+}
+
+.sim-secondary-btn svg {
+  transform: rotate(180deg);
+}
+
+.sim-form-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, .8fr);
+  gap: 14px;
+}
+
+.sim-form-layout.light {
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, .75fr);
+}
+
+.sim-assumption-card,
+.sim-preview-card,
+.sim-result-card {
+  padding: 18px;
+  border-radius: 16px;
+}
+
+.sim-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sim-field-grid.compact {
+  gap: 12px;
+}
+
+.sim-preset-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.sim-preset-row button {
+  min-height: 86px;
+  padding: 13px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sim-preset-row button.active {
+  border-color: rgba(84, 158, 111, .45);
+  background: var(--a-finance-t);
+  box-shadow: inset 0 0 0 1px rgba(84, 158, 111, .16);
+}
+
+.sim-preset-row b,
+.sim-preset-row span {
+  display: block;
+}
+
+.sim-preset-row b {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.sim-preset-row span {
+  margin-top: 6px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.sim-field > div {
+  position: relative;
+}
+
+.sim-field em {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.sim-range-field {
+  display: block;
+  margin-top: 18px;
+}
+
+.sim-range-field div {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-weight: 900;
+}
+
+.sim-range-field b {
+  color: var(--a-finance);
+}
+
+.sim-range-field input {
+  width: 100%;
+  accent-color: var(--a-finance);
+}
+
+.sim-advanced-box {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fbfcfd;
+}
+
+.sim-advanced-box summary {
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.sim-advanced-box .sim-field-grid {
+  margin-top: 14px;
+}
+
+.sim-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sim-preview-card h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15.5px;
+  font-weight: 900;
+}
+
+.sim-preview-card.light h3 {
+  font-size: 20px;
+}
+
+.sim-preview-kicker {
+  width: fit-content;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: var(--a-finance-t);
+  color: var(--a-finance);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sim-preview-list {
+  display: grid;
+  gap: 12px;
+}
+
+.sim-preview-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.sim-preview-list .total {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.sim-preview-list b,
+.sim-kpi-grid b {
+  color: var(--ink);
+}
+
+.sim-preview-list .good,
+.sim-kpi-grid .good {
+  color: var(--ok);
+}
+
+.sim-preview-list .warn {
+  color: var(--warn);
+}
+
+.sim-preview-list .bad,
+.sim-kpi-grid .bad {
+  color: var(--bad);
+}
+
+.sim-break-even {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--a-finance-t);
+}
+
+.sim-break-even span,
+.sim-break-even strong {
+  color: var(--a-finance);
+}
+
+.sim-break-even span {
+  font-size: 12.5px;
+  font-weight: 900;
+}
+
+.sim-break-even strong {
+  font-size: 22px;
+}
+
+.sim-light-note {
+  margin: 0;
+  color: var(--ink-4);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.sim-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sim-kpi-grid .card {
+  padding: 16px;
+}
+
+.sim-kpi-grid small,
+.sim-kpi-grid b {
+  display: block;
+}
+
+.sim-kpi-grid small {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sim-kpi-grid b {
+  margin-top: 7px;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.sim-result-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.sim-result-head h2 {
+  margin: 0 0 5px;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.sim-result-head p {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sim-result-head > span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 900;
+}
+
+.sim-result-head > span.good {
+  background: var(--a-finance-t);
+  color: var(--a-finance);
+}
+
+.sim-result-head > span.warn {
+  background: var(--a-policy-t);
+  color: var(--warn);
+}
+
+.sim-line-chart {
+  display: block;
+  width: 100%;
+  height: 190px;
+  margin-top: 4px;
+}
+
+.sim-snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.sim-snapshot-grid div {
+  padding: 14px;
+  border-radius: 12px;
+  background: #f7f8fb;
+  text-align: center;
+}
+
+.sim-snapshot-grid div.highlight {
+  background: var(--a-finance-t);
+}
+
+.sim-snapshot-grid span,
+.sim-snapshot-grid b,
+.sim-snapshot-grid small {
+  display: block;
+}
+
+.sim-snapshot-grid span {
+  margin-bottom: 6px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 900;
+}
+
+.sim-snapshot-grid .highlight span {
+  color: var(--a-finance);
+}
+
+.sim-snapshot-grid b {
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.sim-snapshot-grid small {
+  margin-top: 4px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.sim-risk-row,
+.sim-risk-row div,
+.sim-actions {
+  display: flex;
+  align-items: center;
+}
+
+.sim-risk-row {
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.sim-risk-row div {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sim-risk-row span,
+.sim-risk-row small {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.sim-risk-row b {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--a-policy-t);
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sim-actions {
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 980px) {
+  .simulator-page {
+    padding: 24px 20px 34px;
+  }
+
+  .simulator-header,
+  .sim-location-bar,
+  .sim-location-summary,
+  .sim-result-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sim-map-grid,
+  .sim-form-layout,
+  .sim-kpi-grid,
+  .sim-snapshot-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sim-map-grid {
+    height: auto;
+  }
+
+  .sim-kakao-map,
+  .sim-kakao-roadview {
+    min-height: 300px;
+  }
+
+  .sim-rent-input {
+    width: 100%;
+  }
+
+  .sim-location-submit {
+    width: 100%;
+    min-width: 0;
   }
 }
 

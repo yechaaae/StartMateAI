@@ -14,6 +14,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +41,10 @@ public class SimulationResult extends BaseTimeEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "business_idea_option_id")
     private BusinessIdeaOption businessIdeaOption;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "simulation_location_id")
+    private SimulationLocation simulationLocation;
 
     @Column(name = "chat_room_id")
     private Long chatRoomId;
@@ -70,6 +75,16 @@ public class SimulationResult extends BaseTimeEntity {
     @Column(name = "recommendation", columnDefinition = "text")
     private String recommendation;
 
+    @OneToOne(mappedBy = "simulationResult", cascade = CascadeType.ALL, orphanRemoval = true)
+    private SimulationAssumption assumption;
+
+    @OneToMany(mappedBy = "simulationResult", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<SimulationDailyMetric> dailyMetrics = new ArrayList<>();
+
     @OneToMany(mappedBy = "simulationResult", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<SimulationDetail> details = new ArrayList<>();
+
+    public static SimulationResult create() {
+        return new SimulationResult();
+    }
 }
