@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.kakao.backend.aichat.application.AiChatDispatchCommand;
 import com.kakao.backend.aichat.application.AiChatDispatchService;
+import com.kakao.backend.aichat.application.AiChatExternalReferenceDataService;
 import com.kakao.backend.aichat.application.AiChatReferenceContextService;
 import com.kakao.backend.chat.domain.ChatMessage;
 import com.kakao.backend.chat.domain.ChatRoom;
@@ -48,6 +49,9 @@ class ChatMessageCommandServiceTest {
 
     @Mock
     private AiChatReferenceContextService aiChatReferenceContextService;
+
+    @Mock
+    private AiChatExternalReferenceDataService aiChatExternalReferenceDataService;
 
     @Mock
     private ChatSseService chatSseService;
@@ -93,6 +97,8 @@ class ChatMessageCommandServiceTest {
                 .thenReturn(List.of("IdeaAgent", "FinanceAgent"));
         when(aiChatReferenceContextService.resolve(any(AiChatDispatchCommand.class)))
                 .thenReturn(Map.of("referenceType", "BUSINESS_IDEA_RESULT", "referenceId", 44L));
+        when(aiChatExternalReferenceDataService.resolve(any(AiChatDispatchCommand.class)))
+                .thenReturn(Map.of("supportPrograms", Map.of("source", "backend.support_programs")));
         when(chatRequestStatusService.createQueued(any(), any(), any()))
                 .thenReturn(com.kakao.backend.chat.domain.ChatRequestStatus.create("req-123", 10L, 100L, "QUEUED"));
 
@@ -135,6 +141,7 @@ class ChatMessageCommandServiceTest {
         assertThat(dispatched.recentMessages()).containsExactly(previous);
         assertThat(dispatched.currentResult()).containsEntry("selectedOption", "A");
         assertThat(dispatched.referenceData()).containsEntry("referenceId", 44L);
+        assertThat(dispatched.referenceData()).containsKey("externalData");
         verify(chatSseService).publish(persisted);
         verify(chatRequestStatusService).createQueued(any(), org.mockito.Mockito.eq(10L), org.mockito.Mockito.eq(100L));
     }
@@ -163,6 +170,7 @@ class ChatMessageCommandServiceTest {
                 .thenReturn(List.of("ProfileAgent", "IdeaAgent", "FinanceAgent"));
         when(aiChatDispatchService.dispatch(any(AiChatDispatchCommand.class))).thenReturn("req-free");
         when(aiChatReferenceContextService.resolve(any(AiChatDispatchCommand.class))).thenReturn(Map.of());
+        when(aiChatExternalReferenceDataService.resolve(any(AiChatDispatchCommand.class))).thenReturn(Map.of());
         when(chatRequestStatusService.createQueued(any(), any(), any()))
                 .thenReturn(com.kakao.backend.chat.domain.ChatRequestStatus.create("req-free", 10L, 100L, "QUEUED"));
 

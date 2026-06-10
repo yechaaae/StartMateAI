@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.kakao.backend.aichat.application.AiChatDispatchCommand;
 import com.kakao.backend.aichat.application.AiChatDispatchService;
+import com.kakao.backend.aichat.application.AiChatExternalReferenceDataService;
 import com.kakao.backend.aichat.application.AiChatReferenceContextService;
 import com.kakao.backend.aichat.application.AiChatResponsePayloadReader;
 import com.kakao.backend.aichat.dto.AiChatResponseMessage;
@@ -44,9 +45,13 @@ class ChatRequestStatusLifecycleTest {
     @Mock
     private AiChatReferenceContextService aiChatReferenceContextService;
     @Mock
+    private AiChatExternalReferenceDataService aiChatExternalReferenceDataService;
+    @Mock
     private ChatSseService chatSseService;
     @Mock
     private ChatRequestStatusService chatRequestStatusService;
+    @Mock
+    private ChatCandidateAgentResolver chatCandidateAgentResolver;
     @InjectMocks
     private ChatMessageCommandService chatMessageCommandService;
 
@@ -74,10 +79,13 @@ class ChatRequestStatusLifecycleTest {
         when(chatMessageRepository.findTop20ByChatRoomIdOrderByIdDesc(10L)).thenReturn(List.of());
         when(chatMessageRepository.save(any(ChatMessage.class))).thenReturn(savedMessage);
         when(aiChatReferenceContextService.resolve(any(AiChatDispatchCommand.class))).thenReturn(Map.of());
+        when(aiChatExternalReferenceDataService.resolve(any(AiChatDispatchCommand.class))).thenReturn(Map.of());
         when(aiChatDispatchService.dispatch(any(AiChatDispatchCommand.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0, AiChatDispatchCommand.class).requestId());
         when(chatRequestStatusService.createQueued(any(), any(), any()))
                 .thenReturn(ChatRequestStatus.create("req-123", 10L, 100L, "QUEUED"));
+        when(chatCandidateAgentResolver.resolve("FREE_CHAT", room, List.of()))
+                .thenReturn(List.of("ProfileAgent", "IdeaAgent", "FinanceAgent"));
 
         chatMessageCommandService.send(new SendChatMessageCommand(
                 10L, 2L, "question", null, "auto", null, null, null, null, List.of(), Map.of()
