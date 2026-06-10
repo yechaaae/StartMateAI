@@ -71,7 +71,7 @@ const RegionMap = ({ location, analysis }) => {
           }
         })
       })
-      .catch(() => setError('카카오맵을 불러오지 못했습니다. 키와 도메인 설정을 확인해주세요.'))
+      .catch(() => setError('카카오맵을 불러오지 못했습니다. 앱 키 설정을 확인해주세요.'))
 
     return () => {
       cancelled = true
@@ -82,13 +82,13 @@ const RegionMap = ({ location, analysis }) => {
     <div className="item-region-map">
       <div ref={mapRef} className="item-kakao-map" />
       <div className="item-map-overlay">
-        <span><Icon name="pin" size={14} /> 창업 희망 지역</span>
+        <span><Icon name="pin" size={14} /> 창업 후보 지역</span>
         <b>{location}</b>
       </div>
       <div className="item-map-metrics">
-        {analysis.slice(0, 2).map(([key, value]) => (
-          <div key={key}>
-            <small>{key}</small>
+        {analysis.slice(0, 2).map(([label, value]) => (
+          <div key={label}>
+            <small>{label}</small>
             <b>{value}</b>
           </div>
         ))}
@@ -98,12 +98,21 @@ const RegionMap = ({ location, analysis }) => {
   )
 }
 
-export const ItemReport = ({ data, go, workspace, setWorkspace }) => {
+export const ItemReport = ({
+  data,
+  go,
+  workspace,
+  setWorkspace,
+  selectedIdeaRank,
+  onSelectIdea,
+}) => {
   const selectIdea = (item) => {
+    onSelectIdea?.(item.rank)
     setWorkspace?.({
       ...workspace,
       selectedIdea: {
         id: item.rank,
+        rank: item.rank,
         title: item.title,
         score: item.score,
         reason: item.reason,
@@ -120,27 +129,36 @@ export const ItemReport = ({ data, go, workspace, setWorkspace }) => {
         <RegionMap location={data.location} analysis={data.analysis} />
         <h3>{data.location} 상권 분석</h3>
         <div className="metric-grid">
-          {data.analysis.map(([key, value]) => (
-            <div key={key}><small>{key}</small><b>{value}</b></div>
+          {data.analysis.map(([label, value]) => (
+            <div key={label}>
+              <small>{label}</small>
+              <b>{value}</b>
+            </div>
           ))}
         </div>
       </Card>
 
       <Card>
         <h3>상권 + 내 프로필 기반 추천</h3>
-        {data.items.map((item) => (
-          <div className="idea-option selectable" key={item.rank}>
-            <span>{item.rank}</span>
-            <div>
-              <b>{item.title}</b>
-              <p>{item.reason}</p>
+        {data.items.map((item) => {
+          const selected = selectedIdeaRank === item.rank
+          return (
+            <div className={selected ? 'idea-option selectable selected' : 'idea-option selectable'} key={item.rank}>
+              <span>{item.rank}</span>
+              <div>
+                <b>{item.title}</b>
+                <p>{item.reason}</p>
+              </div>
+              <em>적합도 {item.score}</em>
+              <button
+                type="button"
+                onClick={() => selectIdea(item)}
+              >
+                시뮬레이터 <Icon name="arrow" size={15} />
+              </button>
             </div>
-            <em>적합도 {item.score}</em>
-            <button onClick={() => selectIdea(item)}>
-              시뮬레이션 <Icon name="arrow" size={15} />
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </Card>
     </div>
   )

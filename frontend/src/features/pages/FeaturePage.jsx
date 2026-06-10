@@ -1,48 +1,622 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { agents } from '../../shared/data/agents'
 import { features } from '../../shared/data/features'
-import { cloneReport } from '../../shared/data/reports'
 import { AgentAvatar } from '../../shared/components/AgentAvatar'
 import { AgentBadge } from '../../shared/components/AgentBadge'
+import { Icon } from '../../shared/components/Icon'
 import { ChatInput } from '../chat/ChatInput'
 import { ChatRow } from '../chat/ChatRow'
 import { TypingRow } from '../chat/TypingRow'
+import {
+  CHAT_USER_ID,
+  createChatEventSource,
+  createFeatureChatRoom,
+  getChatMessages,
+  getFeatureChatRoom,
+  getFeatureChatRooms,
+  sendChatMessage,
+  updateFeatureChatRoomTitle,
+} from '../chat/chatApi'
+import {
+  normalizeAgentProgressEvent,
+  normalizeAgentProgressMessage,
+  normalizeChatMessage,
+  normalizeStatusEvent,
+  upsertMessage,
+} from '../chat/chatMappers'
 import { Report } from '../reports/Report'
+import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from './featureChatContext'
 
-export const FeaturePage = ({ id, go, workspace, setWorkspace }) => {
-  const f = features[id]
-  const agent = agents[f.agent]
-  const [data, setData] = useState(() => cloneReport(id))
-  const [messages, setMessages] = useState([{ agent: f.agent, text: `${f.title} 결과를 만들었어요. 오른쪽에서 원하는 방향을 말하면 이 리포트를 수정할 수 있어요.` }])
+const FEATURE_TARGETS = {
+  item: 'ITEM',
+  simulator: 'SIMULATOR',
+  support: 'SUPPORT',
+  plan: 'PLAN',
+  operation: 'OPERATION',
+  sns: 'SNS',
+}
+
+const RESULT_TYPES = {
+  item: 'IDEA_REPORT',
+  simulator: 'SIMULATION_REPORT',
+  support: 'SUPPORT_REPORT',
+  plan: 'PLAN_REPORT',
+  operation: 'OPERATION_REPORT',
+  sns: 'SNS_REPORT',
+}
+
+const FEATURE_SUGGESTIONS = {
+  item: [
+    '초기 자본에 맞게 더 현실적인 방향으로 바꿔줘',
+    '20대 여성 고객층 기준으로 다시 정리해줘',
+    '지원사업과 연결하기 좋은 아이템으로 좁혀줘',
+  ],
+  simulator: [
+    '손익분기점을 더 빨리 만들려면 어떻게 해야 해?',
+    '가격을 올리면 어떤 리스크가 생길까?',
+    '초기 비용을 줄일 수 있는 방안을 알려줘',
+  ],
+  support: [
+    '선정 가능성이 높은 순서로 정리해줘',
+    '서류 준비 우선순위를 알려줘',
+    '주의할 조건만 따로 뽑아줘',
+  ],
+  plan: [
+    '시장 분석 문단을 더 설득력 있게 써줘',
+    '지원사업 제출용 톤으로 다듬어줘',
+    '수익 모델 부분을 더 구체화해줘',
+  ],
+  operation: [
+    '매출 개선 우선순위를 정리해줘',
+    '광고 전환율이 낮은 원인을 짚어줘',
+    '바로 실행할 액션 아이템 3개만 줘',
+  ],
+  sns: [
+    '인스타 릴스용 카피로 바꿔줘',
+    '좀 더 친근한 말투로 다듬어줘',
+    '해시태그를 지역 중심으로 다시 짜줘',
+  ],
+}
+
+export const FeaturePage = ({
+  id,
+  go,
+  user,
+  startupProfile,
+  workspaceContext,
+  onWorkspaceContextChange,
+  workspace,
+  setWorkspace,
+}) => {
+  const feature = features[id]
+  const agent = agents[feature.agent]
+  const userId = user?.id ?? CHAT_USER_ID
+  const targetFeature = FEATURE_TARGETS[id] ?? id.toUpperCase()
+  const currentResultType = RESULT_TYPES[id] ?? 'FEATURE_REPORT'
+  const featureSeed = buildFeatureSeed(id, workspaceContext)
+
+  const [data, setData] = useState(featureSeed.data)
+  const [selectedIdeaRank, setSelectedIdeaRank] = useState(featureSeed.selectedIdeaRank)
+  const [selectedSupportTitle, setSelectedSupportTitle] = useState(featureSeed.selectedSupportTitle)
+  const [selectedOperationSuggestionTitle, setSelectedOperationSuggestionTitle] = useState(
+    featureSeed.selectedOperationSuggestionTitle,
+  )
+  const [supportSearchMode, setSupportSearchMode] = useState(featureSeed.supportSearchMode)
+  const [supportUserGoal, setSupportUserGoal] = useState(featureSeed.supportUserGoal)
+  const [focusedSectionTitle, setFocusedSectionTitle] = useState(featureSeed.focusedSectionTitle)
+  const [planGoal, setPlanGoal] = useState(featureSeed.planGoal)
+  const [messages, setMessages] = useState([])
+  const [rooms, setRooms] = useState([])
+  const [room, setRoom] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [typing, setTyping] = useState(null)
-  const chatRef = useRef(null)
-  useEffect(() => { if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight }, [messages, typing])
+  const [loading, setLoading] = useState(true)
+  const [creatingRoom, setCreatingRoom] = useState(false)
+  const [connection, setConnection] = useState('idle')
+  const [statusMap, setStatusMap] = useState({})
+  const [agentProgress, setAgentProgress] = useState(null)
+  const [error, setError] = useState('')
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false)
+  const [editingRoomId, setEditingRoomId] = useState(null)
+  const [titleDraft, setTitleDraft] = useState('')
+  const [savingTitle, setSavingTitle] = useState(false)
 
-  const send = (text) => {
-    setMessages((prev) => [...prev, { role: 'user', text }])
-    setBusy(true)
-    setTyping(f.agent)
-    window.setTimeout(() => {
-      setTyping(null)
-      setMessages((prev) => [...prev, { agent: f.agent, text: `${agent.name}가 요청을 반영했어요. 실제 서비스에서는 이 지점에서 백엔드 AI API가 결과 JSON을 갱신합니다.` }])
-      setBusy(false)
-    }, 900)
+  const chatRef = useRef(null)
+  const sessionMenuRef = useRef(null)
+
+  useEffect(() => {
+    if (chatRef.current) {
+      chatRef.current.scrollTop = chatRef.current.scrollHeight
+    }
+  }, [messages, agentProgress, statusMap])
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!sessionMenuRef.current?.contains(event.target)) {
+        setSessionMenuOpen(false)
+        setEditingRoomId(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    const bootstrap = async () => {
+      try {
+        setLoading(true)
+        setError('')
+
+        const roomListResponse = await getFeatureChatRooms(userId, targetFeature)
+        if (!active) {
+          return
+        }
+
+        const nextRooms = roomListResponse.rooms ?? []
+        if (nextRooms.length) {
+          setRooms(nextRooms)
+          setRoom(nextRooms[0])
+          return
+        }
+
+        const fallbackRoom = await getFeatureChatRoom(userId, targetFeature)
+        if (!active) {
+          return
+        }
+        setRooms([fallbackRoom])
+        setRoom(fallbackRoom)
+      } catch (nextError) {
+        if (!active) {
+          return
+        }
+        setError(nextError.message ?? '기능 채팅을 준비하지 못했습니다.')
+      } finally {
+        if (active) {
+          setLoading(false)
+        }
+      }
+    }
+
+    bootstrap()
+
+    return () => {
+      active = false
+    }
+  }, [targetFeature, userId])
+
+  useEffect(() => {
+    if (!room?.roomId) {
+      return undefined
+    }
+
+    let active = true
+    const eventSource = createChatEventSource(room.roomId, userId)
+
+    const loadHistory = async () => {
+      try {
+        setLoading(true)
+        setError('')
+        setMessages([])
+        setStatusMap({})
+        setAgentProgress(null)
+        setConnection('connecting')
+
+        const history = await getChatMessages(room.roomId, userId)
+        if (!active) {
+          return
+        }
+        setMessages(history.messages.map(normalizeChatMessage))
+      } catch (nextError) {
+        if (!active) {
+          return
+        }
+        setError(nextError.message ?? '이전 대화를 불러오지 못했습니다.')
+      } finally {
+        if (active) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadHistory()
+
+    eventSource.addEventListener('chat-connected', () => {
+      if (!active) {
+        return
+      }
+      setConnection('connected')
+    })
+
+    eventSource.addEventListener('chat-message', (event) => {
+      if (!active) {
+        return
+      }
+      const payload = JSON.parse(event.data)
+      if (!payload.message) {
+        return
+      }
+      setMessages((prev) => upsertMessage(prev, normalizeChatMessage(payload.message)))
+    })
+
+    eventSource.addEventListener('chat-status', (event) => {
+      if (!active) {
+        return
+      }
+      const payload = JSON.parse(event.data)
+      if (!payload.status) {
+        return
+      }
+      const nextStatus = normalizeStatusEvent(payload.status)
+      setStatusMap((prev) => ({ ...prev, [nextStatus.requestId]: nextStatus }))
+    })
+
+    eventSource.addEventListener('agent-progress', (event) => {
+      if (!active) {
+        return
+      }
+      const payload = JSON.parse(event.data)
+      if (!payload.agentProgress) {
+        return
+      }
+      const nextProgress = normalizeAgentProgressEvent(payload.agentProgress)
+      setAgentProgress(nextProgress)
+      if (nextProgress.agent && nextProgress.message) {
+        setMessages((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
+      }
+    })
+
+    eventSource.onerror = () => {
+      if (!active) {
+        return
+      }
+      setConnection('error')
+    }
+
+    return () => {
+      active = false
+      eventSource.close()
+    }
+  }, [room?.roomId, userId])
+
+  const latestStatus = useMemo(() => Object.values(statusMap).at(-1) ?? null, [statusMap])
+  const typing = agentProgress?.agent?.status === 'running'
+    ? agentProgress.agent.key
+    : latestStatus && ['QUEUED', 'PROCESSING'].includes(latestStatus.status)
+      ? feature.agent
+      : null
+
+  useEffect(() => {
+    onWorkspaceContextChange?.(buildWorkspacePatch({
+      featureId: id,
+      data,
+      selectedIdeaRank,
+      selectedSupportTitle,
+      selectedOperationSuggestionTitle,
+      supportSearchMode,
+      supportUserGoal,
+      focusedSectionTitle,
+      planGoal,
+    }))
+  }, [
+    data,
+    focusedSectionTitle,
+    id,
+    onWorkspaceContextChange,
+    planGoal,
+    selectedIdeaRank,
+    selectedOperationSuggestionTitle,
+    selectedSupportTitle,
+    supportSearchMode,
+    supportUserGoal,
+  ])
+
+  const currentResult = useMemo(
+    () => buildCurrentResult({
+      featureId: id,
+      data,
+      selectedIdeaRank,
+      selectedSupportTitle,
+      selectedOperationSuggestionTitle,
+      supportSearchMode,
+      supportUserGoal,
+      focusedSectionTitle,
+      planGoal,
+      workspaceContext,
+      startupProfile,
+    }),
+    [
+      data,
+      focusedSectionTitle,
+      id,
+      planGoal,
+      selectedIdeaRank,
+      selectedOperationSuggestionTitle,
+      selectedSupportTitle,
+      startupProfile,
+      supportSearchMode,
+      supportUserGoal,
+      workspaceContext,
+    ],
+  )
+  const resolvedIdeaId = workspaceContext?.selectedIdea?.rank ?? selectedIdeaRank ?? null
+
+  const updateRoomState = (updatedRoom) => {
+    setRooms((prev) => prev.map((candidate) => (
+      candidate.roomId === updatedRoom.roomId ? updatedRoom : candidate
+    )))
+    setRoom((prev) => (prev?.roomId === updatedRoom.roomId ? updatedRoom : prev))
   }
+
+  const handleSend = async (text) => {
+    if (busy || !room?.roomId) {
+      return
+    }
+    setBusy(true)
+    setError('')
+
+    try {
+      setAgentProgress(null)
+      const response = await sendChatMessage(room.roomId, {
+        userId,
+        content: text,
+        metadata: JSON.stringify({ source: 'feature-page', featureId: id }),
+        intent: 'auto',
+        sessionType: 'FEATURE_CHAT',
+        currentResultType,
+        currentResultId: null,
+        selectedIdeaId: resolvedIdeaId,
+        candidateAgents: [],
+        currentResult,
+      })
+
+      setMessages((prev) => upsertMessage(prev, {
+        id: response.messageId,
+        role: 'user',
+        senderType: response.senderType,
+        userId,
+        agentId: null,
+        agent: null,
+        text: response.content,
+        metadata: { source: 'feature-page', featureId: id },
+        createdAt: null,
+      }))
+
+      setStatusMap((prev) => ({
+        ...prev,
+        [response.requestId]: {
+          requestId: response.requestId,
+          messageId: response.messageId,
+          status: 'QUEUED',
+          errorMessage: '',
+          updatedAt: null,
+        },
+      }))
+    } catch (nextError) {
+      setError(nextError.message ?? '메시지를 보내지 못했습니다.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const createSession = async () => {
+    if (creatingRoom) {
+      return
+    }
+    setCreatingRoom(true)
+    setError('')
+
+    try {
+      const createdRoom = await createFeatureChatRoom(userId, targetFeature)
+      setRooms((prev) => [createdRoom, ...prev])
+      setRoom(createdRoom)
+      setSessionMenuOpen(false)
+      setEditingRoomId(null)
+    } catch (nextError) {
+      setError(nextError.message ?? '새 기능 채팅 세션을 만들지 못했습니다.')
+    } finally {
+      setCreatingRoom(false)
+    }
+  }
+
+  const startEditingTitle = (candidateRoom) => {
+    setEditingRoomId(candidateRoom.roomId)
+    setTitleDraft(candidateRoom.title ?? '')
+    setSessionMenuOpen(true)
+  }
+
+  const cancelEditingTitle = () => {
+    setEditingRoomId(null)
+    setTitleDraft('')
+  }
+
+  const submitTitleUpdate = async (roomId) => {
+    if (savingTitle) {
+      return
+    }
+
+    try {
+      setSavingTitle(true)
+      setError('')
+      const updatedRoom = await updateFeatureChatRoomTitle(roomId, userId, targetFeature, titleDraft)
+      updateRoomState(updatedRoom)
+      setEditingRoomId(null)
+      setTitleDraft('')
+    } catch (nextError) {
+      setError(nextError.message ?? '세션 이름을 수정하지 못했습니다.')
+    } finally {
+      setSavingTitle(false)
+    }
+  }
+
+  const helperText = id === 'item'
+    ? '오른쪽 리포트에서 고른 아이템을 기준으로 바로 대화할 수 있어요.'
+    : id === 'support'
+      ? '프로필, 아이템, 현재 보고 있는 지원사업을 함께 보고 대화해요.'
+      : id === 'plan'
+        ? '초안, 연결된 지원사업, 선택한 문단을 같이 넘겨서 보완할 수 있어요.'
+        : id === 'simulator'
+          ? '아이템과 시뮬레이션 수치를 함께 보고 수익성을 같이 점검해요.'
+          : id === 'operation'
+            ? '운영 지표와 개선 제안을 바탕으로 다음 액션을 정리할 수 있어요.'
+            : '홍보 초안과 운영 맥락을 함께 보고 카피를 다듬을 수 있어요.'
 
   return (
     <main className="feature-page">
       <section className="report-area">
-        <div className="page-title"><div><h1>{f.title}</h1><p>{f.sub}</p></div><AgentBadge id={f.agent} /></div>
-        <Report id={id} data={data} setData={setData} go={go} workspace={workspace} setWorkspace={setWorkspace} />
+        <div className="page-title">
+          <div>
+            <h1>{feature.title}</h1>
+            <p>{feature.sub}</p>
+          </div>
+          <AgentBadge id={feature.agent} />
+        </div>
+        <Report
+          id={id}
+          data={data}
+          setData={setData}
+          go={go}
+          workspace={workspace}
+          setWorkspace={setWorkspace}
+          selectedIdeaRank={selectedIdeaRank}
+          onSelectIdea={setSelectedIdeaRank}
+          selectedSupportTitle={selectedSupportTitle}
+          onSelectSupport={setSelectedSupportTitle}
+          selectedOperationSuggestionTitle={selectedOperationSuggestionTitle}
+          onSelectOperationSuggestion={setSelectedOperationSuggestionTitle}
+          supportSearchMode={supportSearchMode}
+          onChangeSupportSearchMode={setSupportSearchMode}
+          supportUserGoal={supportUserGoal}
+          onChangeSupportUserGoal={setSupportUserGoal}
+          focusedSectionTitle={focusedSectionTitle}
+          onFocusSection={setFocusedSectionTitle}
+          planGoal={planGoal}
+          onChangePlanGoal={setPlanGoal}
+        />
       </section>
+
       <aside className="feature-chat">
-        <header style={{ color: agent.color }}><AgentAvatar id={f.agent} /><div><b>{agent.name}</b><small>이 리포트를 함께 수정해요</small></div></header>
+        <header style={{ color: agent.color }}>
+          <AgentAvatar id={feature.agent} />
+          <div>
+            <b>{agent.name}</b>
+            <small>{helperText}</small>
+          </div>
+        </header>
+
+        <div className="feature-session-toolbar">
+          <button className="chat-session-new" onClick={createSession} disabled={creatingRoom || busy}>
+            <Icon name="plus" size={16} />
+            <span>{creatingRoom ? '만드는 중' : '새 세션'}</span>
+          </button>
+
+          <div className="chat-session-picker" ref={sessionMenuRef}>
+            <button
+              className={sessionMenuOpen ? 'chat-session-trigger on' : 'chat-session-trigger'}
+              onClick={() => setSessionMenuOpen((prev) => !prev)}
+              disabled={!rooms.length}
+            >
+              <div className="chat-session-trigger-copy">
+                <small>{targetFeature} 세션</small>
+                <b>{room?.title ?? '세션 선택'}</b>
+              </div>
+              <Icon name="chevron" size={16} />
+            </button>
+
+            {sessionMenuOpen && (
+              <div className="chat-session-menu">
+                {rooms.map((candidateRoom) => {
+                  const isEditing = editingRoomId === candidateRoom.roomId
+                  const isSelected = candidateRoom.roomId === room?.roomId
+
+                  return (
+                    <div
+                      key={candidateRoom.roomId}
+                      className={isSelected ? 'chat-session-option on' : 'chat-session-option'}
+                    >
+                      {isEditing ? (
+                        <form
+                          className="chat-session-edit"
+                          onSubmit={(event) => {
+                            event.preventDefault()
+                            submitTitleUpdate(candidateRoom.roomId)
+                          }}
+                        >
+                          <input
+                            value={titleDraft}
+                            onChange={(event) => setTitleDraft(event.target.value)}
+                            placeholder="세션 이름"
+                            autoFocus
+                            maxLength={60}
+                          />
+                          <button type="submit" disabled={savingTitle}>
+                            <Icon name="check" size={14} />
+                          </button>
+                          <button type="button" className="ghost" onClick={cancelEditingTitle} disabled={savingTitle}>
+                            취소
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <button
+                            className="chat-session-select"
+                            onClick={() => {
+                              setRoom(candidateRoom)
+                              setSessionMenuOpen(false)
+                              setEditingRoomId(null)
+                            }}
+                          >
+                            <div>
+                              <b>{candidateRoom.title}</b>
+                              <small>{isSelected ? '현재 보고 있는 세션' : '이 세션으로 전환'}</small>
+                            </div>
+                          </button>
+                          <button
+                            className="chat-session-rename"
+                            onClick={() => startEditingTitle(candidateRoom)}
+                            aria-label={`${candidateRoom.title} 이름 수정`}
+                          >
+                            <Icon name="edit" size={14} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="feature-chat-body" ref={chatRef}>
-          {messages.map((m, i) => <ChatRow key={i} message={m} />)}
+          {loading && <div className="chat-loading">대화를 불러오는 중...</div>}
+          {!loading && !messages.length && (
+            <div className="feature-chat-empty">
+              <AgentAvatar id={feature.agent} size={52} active />
+              <strong>{agent.name}가 리포트를 보고 있어요.</strong>
+              <p>지금 보고 있는 결과를 기준으로 방향 수정, 비교, 다음 단계 질문을 이어갈 수 있어요.</p>
+            </div>
+          )}
+          {messages.map((message) => <ChatRow key={message.id} message={message} />)}
           {typing && <TypingRow agent={typing} />}
         </div>
-        <ChatInput onSend={send} disabled={busy} placeholder="리포트를 어떻게 바꿀까요?" accent={agent.color} suggestions={['더 현실적인 방향으로 바꿔줘', '지원사업 신청 가능성이 높은 쪽으로', '20대 타깃 느낌으로 바꿔줘']} />
+
+        {!!latestStatus && (
+          <div className={`chat-status-banner ${latestStatus.status?.toLowerCase()}`}>
+            <b>{latestStatus.status}</b>
+            {latestStatus.errorMessage ? <span>{latestStatus.errorMessage}</span> : <span>요청 ID {latestStatus.requestId}</span>}
+          </div>
+        )}
+        {!!error && <div className="chat-error-banner">{error}</div>}
+
+        <ChatInput
+          onSend={handleSend}
+          disabled={busy || loading || connection === 'error' || !room?.roomId}
+          placeholder="이 리포트를 바탕으로 더 물어보세요."
+          accent={agent.color}
+          suggestions={FEATURE_SUGGESTIONS[id] ?? []}
+        />
       </aside>
     </main>
   )

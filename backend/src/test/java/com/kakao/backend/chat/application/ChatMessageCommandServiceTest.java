@@ -55,6 +55,9 @@ class ChatMessageCommandServiceTest {
     @Mock
     private ChatRequestStatusService chatRequestStatusService;
 
+    @Mock
+    private ChatCandidateAgentResolver chatCandidateAgentResolver;
+
     @InjectMocks
     private ChatMessageCommandService chatMessageCommandService;
 
@@ -86,6 +89,8 @@ class ChatMessageCommandServiceTest {
         when(chatMessageRepository.findTop20ByChatRoomIdOrderByIdDesc(10L)).thenReturn(List.of(previous));
         when(chatMessageRepository.save(any(ChatMessage.class))).thenReturn(persisted);
         when(aiChatDispatchService.dispatch(any(AiChatDispatchCommand.class))).thenReturn("req-123");
+        when(chatCandidateAgentResolver.resolve("FEATURE_CHAT", room, List.of("IdeaAgent", "FinanceAgent")))
+                .thenReturn(List.of("IdeaAgent", "FinanceAgent"));
         when(aiChatReferenceContextService.resolve(any(AiChatDispatchCommand.class)))
                 .thenReturn(Map.of("referenceType", "BUSINESS_IDEA_RESULT", "referenceId", 44L));
         when(chatRequestStatusService.createQueued(any(), any(), any()))
@@ -132,6 +137,56 @@ class ChatMessageCommandServiceTest {
         assertThat(dispatched.referenceData()).containsEntry("referenceId", 44L);
         verify(chatSseService).publish(persisted);
         verify(chatRequestStatusService).createQueued(any(), org.mockito.Mockito.eq(10L), org.mockito.Mockito.eq(100L));
+    }
+
+    @Test
+    void resolvesDefaultAgentsForFreeChatWhenClientDidNotProvideAny() {
+        User user = User.create("test@example.com", "tester", "USER");
+        user.setId(2L);
+
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
+        workspace.setId(1L);
+        workspace.setUser(user);
+
+        ChatRoom room = ChatRoom.create(workspace, "free room", "FREE_DISCUSSION", null);
+        room.setId(10L);
+
+        ChatMessage persisted = ChatMessage.userMessage(room, user, "help", null);
+        persisted.setId(100L);
+
+        when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user));
+        when(startupProfileRepository.findByUserId(2L)).thenReturn(Optional.empty());
+        when(chatMessageRepository.findTop20ByChatRoomIdOrderByIdDesc(10L)).thenReturn(List.of());
+        when(chatMessageRepository.save(any(ChatMessage.class))).thenReturn(persisted);
+        when(chatCandidateAgentResolver.resolve("FREE_CHAT", room, List.of()))
+                .thenReturn(List.of("ProfileAgent", "IdeaAgent", "FinanceAgent"));
+        when(aiChatDispatchService.dispatch(any(AiChatDispatchCommand.class))).thenReturn("req-free");
+        when(aiChatReferenceContextService.resolve(any(AiChatDispatchCommand.class))).thenReturn(Map.of());
+        when(chatRequestStatusService.createQueued(any(), any(), any()))
+                .thenReturn(com.kakao.backend.chat.domain.ChatRequestStatus.create("req-free", 10L, 100L, "QUEUED"));
+
+        SendChatMessageCommand command = new SendChatMessageCommand(
+                10L,
+                2L,
+                "help",
+                null,
+                "auto",
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                Map.of()
+        );
+
+        chatMessageCommandService.send(command);
+
+        ArgumentCaptor<AiChatDispatchCommand> captor = ArgumentCaptor.forClass(AiChatDispatchCommand.class);
+        verify(aiChatDispatchService).dispatch(captor.capture());
+        assertThat(captor.getValue().sessionType()).isEqualTo("FREE_CHAT");
+        assertThat(captor.getValue().candidateAgents())
+                .containsExactly("ProfileAgent", "IdeaAgent", "FinanceAgent");
     }
 
     @Test

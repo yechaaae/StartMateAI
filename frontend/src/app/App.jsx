@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import '../App.css'
 import { features } from '../shared/data/features'
 import { workspaces } from '../shared/data/workspaces'
@@ -28,10 +28,23 @@ export default function App() {
   const [workspace, setWorkspace] = useState(workspaces[0])
   const [user, setUser] = useState(null)
   const [profileStatus, setProfileStatus] = useState(null)
+  const [startupProfile, setStartupProfile] = useState(null)
+  const [featureWorkspace, setFeatureWorkspace] = useState({})
   const [checkingSession, setCheckingSession] = useState(
     () => !publicRoutes.has(route) || localStorage.getItem(LOGIN_HINT_KEY) === 'true',
   )
   const sessionRestored = useRef(false)
+
+  const refreshStartupProfile = useCallback(async () => {
+    try {
+      const profile = await startupProfileApi.get()
+      setStartupProfile(profile)
+      return profile
+    } catch {
+      setStartupProfile(null)
+      return null
+    }
+  }, [])
 
   useEffect(() => {
     localStorage.setItem('sm_route', route)
@@ -57,9 +70,12 @@ export default function App() {
     setProfileStatus(status)
 
     if (status.requiresOnboarding) {
+      setStartupProfile(null)
       setRoute('onboarding')
       return status
     }
+
+    await refreshStartupProfile()
 
     if (publicRoutes.has(nextRoute) || nextRoute === 'onboarding') {
       setRoute('home')
@@ -71,12 +87,14 @@ export default function App() {
   const handleAuthSuccess = async (nextUser) => {
     localStorage.setItem(LOGIN_HINT_KEY, 'true')
     setUser(nextUser)
+    setFeatureWorkspace({})
     await moveByProfileStatus('home')
   }
 
-  const handleOnboardingComplete = async () => {
+  const handleOnboardingComplete = async (nextProfile) => {
     const status = await startupProfileApi.status()
     setProfileStatus(status)
+    setStartupProfile(nextProfile ?? await refreshStartupProfile())
     setRoute('home')
   }
 
@@ -86,10 +104,19 @@ export default function App() {
     } finally {
       setUser(null)
       setProfileStatus(null)
+      setStartupProfile(null)
+      setFeatureWorkspace({})
       localStorage.removeItem(LOGIN_HINT_KEY)
       setRoute('landing')
     }
   }
+
+  const handleFeatureWorkspaceChange = useCallback((patch) => {
+    setFeatureWorkspace((prev) => {
+      const next = { ...prev, ...patch }
+      return JSON.stringify(prev) === JSON.stringify(next) ? prev : next
+    })
+  }, [])
 
   useEffect(() => {
     if (sessionRestored.current) {
@@ -149,6 +176,10 @@ export default function App() {
         key={guardedRoute}
         id={guardedRoute}
         go={setRoute}
+        user={user}
+        startupProfile={startupProfile}
+        workspaceContext={featureWorkspace}
+        onWorkspaceContextChange={handleFeatureWorkspaceChange}
         workspace={workspace}
         setWorkspace={setWorkspace}
       />

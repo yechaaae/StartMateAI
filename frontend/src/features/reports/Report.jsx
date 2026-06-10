@@ -5,11 +5,76 @@ import { SimReport } from './SimReport'
 import { SnsReport } from './SnsReport'
 import { SupportReport } from './SupportReport'
 
-export const Report = ({ id, data, go, workspace, setWorkspace }) => {
-  if (id === 'item') return <ItemReport data={data} go={go} workspace={workspace} setWorkspace={setWorkspace} />
+export const Report = ({
+  id,
+  data,
+  setData,
+  go,
+  workspace,
+  setWorkspace,
+  selectedIdeaRank,
+  onSelectIdea,
+  selectedSupportTitle,
+  onSelectSupport,
+  selectedOperationSuggestionTitle,
+  onSelectOperationSuggestion,
+  supportSearchMode,
+  onChangeSupportSearchMode,
+  supportUserGoal,
+  onChangeSupportUserGoal,
+  focusedSectionTitle,
+  onFocusSection,
+  planGoal,
+  onChangePlanGoal,
+}) => {
+  if (id === 'item') {
+    return (
+      <ItemReport
+        data={data}
+        go={go}
+        workspace={workspace}
+        setWorkspace={setWorkspace}
+        selectedIdeaRank={selectedIdeaRank}
+        onSelectIdea={onSelectIdea}
+      />
+    )
+  }
   if (id === 'simulator') return <SimReport data={data} />
-  if (id === 'support') return <SupportReport data={data} go={go} />
-  if (id === 'plan') return <PlanReport data={data} />
-  if (id === 'operation') return <OperationReport data={data} go={go} />
-  return <SnsReport data={data} />
+  if (id === 'support') {
+    return (
+      <SupportReport
+        data={data}
+        go={go}
+        selectedSupportTitle={selectedSupportTitle}
+        onSelectSupport={onSelectSupport}
+        supportSearchMode={supportSearchMode}
+        onChangeSupportSearchMode={onChangeSupportSearchMode}
+        supportUserGoal={supportUserGoal}
+        onChangeSupportUserGoal={onChangeSupportUserGoal}
+      />
+    )
+  }
+  if (id === 'plan') {
+    return (
+      <PlanReport
+        data={data}
+        focusedSectionTitle={focusedSectionTitle}
+        onFocusSection={onFocusSection}
+        planGoal={planGoal}
+        onChangePlanGoal={onChangePlanGoal}
+      />
+    )
+  }
+  if (id === 'operation') {
+    return (
+      <OperationReport
+        data={data}
+        setData={setData}
+        go={go}
+        selectedOperationSuggestionTitle={selectedOperationSuggestionTitle}
+        onSelectOperationSuggestion={onSelectOperationSuggestion}
+      />
+    )
+  }
+  return <SnsReport data={data} setData={setData} />
 }

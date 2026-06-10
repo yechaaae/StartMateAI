@@ -15,7 +15,10 @@ import org.junit.jupiter.api.Test;
 
 class AiChatRequestFactoryTest {
 
-    private final AiChatRequestFactory factory = new AiChatRequestFactory(new com.fasterxml.jackson.databind.ObjectMapper());
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+    private final AiChatRequestFactory factory = new AiChatRequestFactory(
+            new AiChatPromptContextAssembler(objectMapper, new AiChatFeaturePayloadResolver())
+    );
 
     @Test
     void buildsFlexibleAiChatRequestEnvelope() {
