@@ -4,3 +4,4 @@ httpx==0.28.1
 pydantic==2.10.5
 python-dotenv==1.2.2
 chromadb==1.5.9
+aio-pika==9.5.5

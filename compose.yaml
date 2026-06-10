@@ -34,7 +34,32 @@ services:
       timeout: 5s
       retries: 10
 
+  ai-worker:
+    build:
+      context: ./ai
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      USE_MOCK_LLM: ${USE_MOCK_LLM:-true}
+      GMS_API_KEY: ${GMS_API_KEY:-}
+      GMS_BASE_URL: ${GMS_BASE_URL:-https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com}
+      GMS_CHAT_PATH: ${GMS_CHAT_PATH:-/v1beta/models/gemini-2.5-flash:generateContent}
+      GMS_MODEL: ${GMS_MODEL:-gemini-2.5-flash}
+      GMS_API_KEY_HEADER: ${GMS_API_KEY_HEADER:-x-goog-api-key}
+      GMS_API_KEY_QUERY_PARAM: ${GMS_API_KEY_QUERY_PARAM:-}
+      GMS_AUTH_SCHEME: ${GMS_AUTH_SCHEME:-}
+      GMS_TIMEOUT_SECONDS: ${GMS_TIMEOUT_SECONDS:-30}
+      SPRING_RABBITMQ_HOST: ${SPRING_RABBITMQ_HOST:-rabbitmq}
+      SPRING_RABBITMQ_PORT: ${SPRING_RABBITMQ_PORT:-5672}
+      SPRING_RABBITMQ_USERNAME: ${SPRING_RABBITMQ_USERNAME:-startmate}
+      SPRING_RABBITMQ_PASSWORD: ${SPRING_RABBITMQ_PASSWORD:-startmate}
+      STARTMATE_AI_CHAT_REQUEST_QUEUE: ${STARTMATE_AI_CHAT_REQUEST_QUEUE:-chat.request}
+      STARTMATE_AI_CHAT_RESPONSE_QUEUE: ${STARTMATE_AI_CHAT_RESPONSE_QUEUE:-chat.response}
+
   ai-mock:
+    profiles:
+      - mock-ai
     build:
       context: ./ai-mock
     depends_on:

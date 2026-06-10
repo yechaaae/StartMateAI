@@ -38,6 +38,12 @@ class Settings:
     gms_api_key_query_param: str
     gms_auth_scheme: str
     gms_timeout_seconds: float
+    rabbitmq_host: str
+    rabbitmq_port: int
+    rabbitmq_username: str
+    rabbitmq_password: str
+    ai_chat_request_queue: str
+    ai_chat_response_queue: str
 
 
 @lru_cache
@@ -67,4 +73,10 @@ def get_settings() -> Settings:
         gms_api_key_query_param=os.getenv("GMS_API_KEY_QUERY_PARAM", ""),
         gms_auth_scheme=os.getenv("GMS_AUTH_SCHEME", ""),
         gms_timeout_seconds=float(os.getenv("GMS_TIMEOUT_SECONDS", "30")),
+        rabbitmq_host=os.getenv("SPRING_RABBITMQ_HOST", os.getenv("RABBITMQ_HOST", "rabbitmq")),
+        rabbitmq_port=int(os.getenv("SPRING_RABBITMQ_PORT", os.getenv("RABBITMQ_PORT", "5672"))),
+        rabbitmq_username=os.getenv("SPRING_RABBITMQ_USERNAME", os.getenv("RABBITMQ_USERNAME", "startmate")),
+        rabbitmq_password=os.getenv("SPRING_RABBITMQ_PASSWORD", os.getenv("RABBITMQ_PASSWORD", "startmate")),
+        ai_chat_request_queue=os.getenv("STARTMATE_AI_CHAT_REQUEST_QUEUE", "chat.request"),
+        ai_chat_response_queue=os.getenv("STARTMATE_AI_CHAT_RESPONSE_QUEUE", "chat.response"),
     )
