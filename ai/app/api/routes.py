@@ -17,6 +17,7 @@ from app.agents.policy import PolicyAgent
 from app.agents.profile import ProfileAgent
 from app.agents.simulation import SimulationAgent
 from app.core.config import get_settings
+from app.core.backend_tools import BackendToolClient
 from app.core.gms_client import GMSClient
 from app.rag.retriever import SupportProgramRetriever
 from app.rag.legal_retriever import LegalRetriever
@@ -42,6 +43,7 @@ router = APIRouter()
 
 settings = get_settings()
 llm = GMSClient(settings)
+backend_tools = BackendToolClient(settings)
 retriever = SupportProgramRetriever.from_default(
     retrieval_mode=settings.rag_retrieval_mode,
     vector_store_path=settings.rag_vector_store_path or None,
@@ -55,12 +57,12 @@ legal_retriever = LegalRetriever(
 
 profile_agent = ProfileAgent(llm)
 idea_agent = IdeaAgent(llm)
-policy_agent = PolicyAgent(llm, retriever)
+policy_agent = PolicyAgent(llm, retriever, backend_tools)
 legal_agent = LegalAgent(llm, legal_retriever)
 finance_agent = FinanceAgent(llm)
 operation_agent = OperationAgent(llm)
 marketing_agent = MarketingAgent(llm)
-commercial_area_agent = CommercialAreaAgent(llm)
+commercial_area_agent = CommercialAreaAgent(llm, backend_tools)
 simulation_agent = SimulationAgent(llm)
 simulation_sessions: dict[str, dict] = {}
 chat_sessions: dict[str, dict] = {}
