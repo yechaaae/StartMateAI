@@ -26,9 +26,14 @@ class PolicyAgent(BaseAgent):
         if self.backend_tools and (should_refresh or not reference_matches):
             tool_matches, tool_calls, tool_warnings = await self._fetch_backend_tool_matches(request)
 
-        matches = tool_matches or reference_matches or self.retriever.search(
+        retrieval_matches = self.retriever.search(
             profile=request.profile,
             query=request.query or "",
+            limit=request.limit,
+        )
+        matches = self._merge_matches(
+            primary=tool_matches or reference_matches,
+            secondary=retrieval_matches,
             limit=request.limit,
         )
         using_reference_data = bool(tool_matches or reference_matches)
@@ -37,6 +42,8 @@ class PolicyAgent(BaseAgent):
             reference_sources.append("backend.tool.support_programs")
         elif reference_matches:
             reference_sources.append("backend.support_programs")
+        if retrieval_matches:
+            reference_sources.append(getattr(self.retriever, "retrieval_mode", "rag"))
 
         top = matches[0] if matches else None
         documents = self._documents_to_prepare(matches)
@@ -162,6 +169,49 @@ class PolicyAgent(BaseAgent):
             "source_chunks": [item.get("summary")] if item.get("summary") else [],
         }
 
+    def _merge_matches(self, *, primary: list[dict], secondary: list[dict], limit: int) -> list[dict]:
+        merged: dict[str, dict] = {}
+        for item in [*secondary, *primary]:
+            key = str(item.get("id") or item.get("title") or len(merged))
+            existing = merged.get(key)
+            if existing is None:
+                merged[key] = dict(item)
+                continue
+            merged[key] = self._merge_match(existing, item)
+        results = list(merged.values())
+        results.sort(key=lambda item: int(item.get("eligibility_score") or 0), reverse=True)
+        return results[:limit]
+
+    def _merge_match(self, left: dict, right: dict) -> dict:
+        merged = dict(left)
+        left_score = int(left.get("eligibility_score") or 0)
+        right_score = int(right.get("eligibility_score") or 0)
+        if right_score >= left_score:
+            merged.update({key: value for key, value in right.items() if value not in (None, "", [])})
+        merged["eligibility_score"] = max(left_score, right_score)
+        merged["fit_level"] = self._fit_level(int(merged["eligibility_score"]))
+        merged["score_breakdown"] = {
+            **(left.get("score_breakdown") or {}),
+            **(right.get("score_breakdown") or {}),
+        }
+        merged["why_matched"] = self._unique([*(left.get("why_matched") or []), *(right.get("why_matched") or [])])
+        merged["eligibility_gaps"] = self._unique([
+            *(left.get("eligibility_gaps") or []),
+            *(right.get("eligibility_gaps") or []),
+        ])
+        merged["source_chunks"] = self._unique([*(left.get("source_chunks") or []), *(right.get("source_chunks") or [])])
+        merged["retrieval"] = {
+            "sources": self._unique([
+                str((left.get("retrieval") or {}).get("source") or ""),
+                str((right.get("retrieval") or {}).get("source") or ""),
+            ]),
+            "semantic_similarity": max(
+                float((left.get("retrieval") or {}).get("semantic_similarity") or 0),
+                float((right.get("retrieval") or {}).get("semantic_similarity") or 0),
+            ),
+        }
+        return merged
+
     async def _fetch_backend_tool_matches(
         self,
         request: PolicyRequest,
@@ -261,6 +311,19 @@ class PolicyAgent(BaseAgent):
 
     def _contains_any(self, raw: str, keywords: list[str]) -> bool:
         return any(keyword in raw for keyword in keywords)
+
+    def _unique(self, values: list) -> list:
+        seen = set()
+        result = []
+        for value in values:
+            if value in (None, ""):
+                continue
+            key = str(value)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(value)
+        return result
 
     def _fit_level(self, score: int) -> str:
         if score >= 80:
