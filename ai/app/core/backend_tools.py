@@ -36,6 +36,10 @@ class BackendToolClient:
         response = await self._post("/api/internal/ai-tools/commercial-areas/analyze", json_body=payload)
         return response if isinstance(response, dict) else {}
 
+    async def estimate_commercial_rent(self, payload: dict[str, Any]) -> dict[str, Any]:
+        response = await self._post("/api/internal/ai-tools/commercial-areas/rent-estimate", json_body=payload)
+        return response if isinstance(response, dict) else {}
+
     async def _get(self, path: str, *, params: dict[str, Any] | None = None):
         if not self.is_configured:
             raise RuntimeError("Backend tool client is not configured.")

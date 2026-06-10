@@ -583,7 +583,7 @@ class OrchestratorAgent:
             plan.append("finance")
         if any(keyword in text for keyword in ["운영", "재고", "리뷰", "피드백", "매장"]):
             plan.append("operation")
-        if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "경쟁", "주변 점포", "연남동", "마포구"]):
+        if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "경쟁", "주변 점포", "주변 가게", "연남동", "마포구", "구미", "인동동"]):
             plan.append("commercial_area")
         if any(keyword in text for keyword in ["sns", "홍보", "릴스", "게시글", "해시태그"]):
             plan.append("marketing")
