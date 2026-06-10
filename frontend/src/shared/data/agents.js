@@ -6,4 +6,6 @@ export const agents = {
   plan: { name: 'Plan Agent', label: '사업계획', icon: 'edit', color: 'var(--a-plan)', tint: 'var(--a-plan-t)' },
   operation: { name: 'Operation Agent', label: '운영', icon: 'pulse', color: 'var(--a-operation)', tint: 'var(--a-operation-t)' },
   marketing: { name: 'Marketing Agent', label: '마케팅', icon: 'megaphone', color: 'var(--a-marketing)', tint: 'var(--a-marketing-t)' },
+  commercial_area: { name: 'Commercial Area Agent', label: '상권', icon: 'pin', color: 'var(--a-commercial)', tint: 'var(--a-commercial-t)' },
+  legal: { name: 'Legal Agent', label: '법률', icon: 'doc', color: 'var(--a-legal)', tint: 'var(--a-legal-t)' },
 }

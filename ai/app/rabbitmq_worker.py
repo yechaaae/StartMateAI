@@ -82,6 +82,43 @@ def response_to_envelope(request_envelope: dict[str, Any], response) -> dict[str
     }
 
 
+def progress_event_to_envelope(
+    request_envelope: dict[str, Any],
+    event: dict[str, Any],
+    sequence: int,
+) -> dict[str, Any]:
+    payload = {
+        "eventType": event.get("eventType"),
+        "orchestrator": event.get("orchestrator") or "OrchestratorAgent",
+        "sequence": sequence,
+        "message": event.get("message"),
+        "agent": event.get("agent"),
+        "selectedAgents": event.get("selectedAgents", []),
+    }
+    status = str(event.get("status") or "PROCESSING")
+    agent_payload = payload.get("agent") if isinstance(payload.get("agent"), dict) else {}
+    agent_name = str(agent_payload.get("agentKey") or "OrchestratorAgent")
+    message = str(payload.get("message") or "")
+
+    return {
+        "requestId": request_envelope.get("requestId"),
+        "roomId": request_envelope.get("roomId"),
+        "intent": request_envelope.get("intent") or "auto",
+        "agent": agent_name,
+        "summary": message,
+        "data": {},
+        "nextActions": [],
+        "warnings": [],
+        "result": None,
+        "version": "v1",
+        "messageType": "AGENT_EVENT",
+        "userId": request_envelope.get("userId"),
+        "targetFeature": request_envelope.get("targetFeature"),
+        "status": status,
+        "payload": payload,
+    }
+
+
 def failed_response_envelope(request_envelope: dict[str, Any], error: Exception) -> dict[str, Any]:
     message = f"AI worker failed: {error.__class__.__name__}"
     return {
@@ -114,7 +151,40 @@ async def handle_message(message, response_exchange, response_queue_name: str) -
             chat_request = request_from_envelope(request_envelope)
             from app.api.routes import orchestrator
 
-            response = await orchestrator.run(chat_request)
+            sequence_lock = asyncio.Lock()
+            sequence = 0
+
+            async def publish_progress(event: dict[str, Any]) -> None:
+                nonlocal sequence
+                async with sequence_lock:
+                    sequence += 1
+                    current_sequence = sequence
+                outgoing_progress = progress_event_to_envelope(request_envelope, event, current_sequence)
+                await response_exchange.publish(
+                    aio_pika.Message(
+                        body=json.dumps(outgoing_progress, ensure_ascii=False).encode("utf-8"),
+                        content_type="application/json",
+                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                    ),
+                    routing_key=response_queue_name,
+                )
+
+            await publish_progress(
+                {
+                    "eventType": "orchestrator.started",
+                    "orchestrator": "OrchestratorAgent",
+                    "status": "PROCESSING",
+                    "message": "질문을 분석해서 필요한 Agent를 고르는 중입니다.",
+                    "agent": {
+                        "agentKey": "OrchestratorAgent",
+                        "label": "Orchestrator",
+                        "role": "Agent 의견 조율",
+                        "status": "running",
+                    },
+                    "selectedAgents": [],
+                }
+            )
+            response = await orchestrator.run(chat_request, progress_callback=publish_progress)
             outgoing = response_to_envelope(request_envelope, response)
         except Exception as error:  # noqa: BLE001
             logging.exception("Failed to process AI request")

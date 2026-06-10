@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from app.agents.finance import FinanceAgent
 from app.agents.idea import IdeaAgent
@@ -28,6 +29,9 @@ from app.schemas import (
     ProfileRequest,
     SimulationStartRequest,
 )
+
+AgentProgressCallback = Callable[[dict[str, Any]], Awaitable[None]]
+LOGGER = logging.getLogger(__name__)
 
 
 class OrchestratorAgent:
@@ -56,23 +60,139 @@ class OrchestratorAgent:
         self.commercial_area_agent = commercial_area_agent
         self.simulation_agent = simulation_agent
 
-    async def run(self, request: ChatRequest) -> AgentResponse:
+    async def run(
+        self,
+        request: ChatRequest,
+        progress_callback: AgentProgressCallback | None = None,
+    ) -> AgentResponse:
         state = await self._build_orchestration_state(request)
+        state["progress_callback"] = progress_callback
+        await self._emit_progress(
+            state,
+            "agents.selected",
+            self._selected_agents_message(state),
+            selected_intents=self._selected_intents_for_progress(state),
+        )
+
         if state["mode"] == "collaboration":
-            result = await self._collaborative_consultation(request)
-            return self._annotate_response(result, state)
+            result = await self._collaborative_consultation(request, state)
+            result = self._annotate_response(result, state)
+            await self._emit_progress(
+                state,
+                "orchestrator.completed",
+                "최종 답변을 준비했습니다. 아래 답변에서 합의 내용을 확인하세요.",
+                agent_status="completed",
+                status="COMPLETED",
+            )
+            return result
 
         await self._run_agents(state, state["plan"])
         followups = await self._plan_followups(state)
         if followups:
             state["followups"] = followups
+            await self._emit_progress(
+                state,
+                "agents.selected",
+                self._selected_agents_message(state),
+                selected_intents=self._selected_intents_for_progress(state),
+            )
             await self._run_agents(state, followups)
 
         if len(state["results"]) == 1 and not followups:
             result = next(iter(state["results"].values()))
         else:
+            await self._emit_progress(
+                state,
+                "orchestrator.synthesizing",
+                "각 Agent 의견을 합쳐 최종 답변을 정리합니다.",
+            )
             result = self._synthesize_selective_response(state)
-        return self._annotate_response(result, state)
+        result = self._annotate_response(result, state)
+        await self._emit_progress(
+            state,
+            "orchestrator.completed",
+            "최종 답변을 준비했습니다. 아래 답변에서 합의 내용을 확인하세요.",
+            agent_status="completed",
+            status="COMPLETED",
+        )
+        return result
+
+    async def _emit_progress(
+        self,
+        state: dict[str, Any],
+        event_type: str,
+        message: str,
+        *,
+        agent_intent: str = "orchestrator",
+        agent_status: str = "running",
+        selected_intents: list[str] | None = None,
+        status: str = "PROCESSING",
+    ) -> None:
+        callback = state.get("progress_callback")
+        if callback is None:
+            return
+
+        event = {
+            "eventType": event_type,
+            "orchestrator": self.name,
+            "status": status,
+            "message": message,
+            "agent": self._agent_descriptor(agent_intent, agent_status),
+        }
+        if selected_intents is not None:
+            event["selectedAgents"] = [
+                self._agent_descriptor(intent, "queued")
+                for intent in selected_intents
+            ]
+
+        try:
+            await callback(event)
+        except Exception as error:  # noqa: BLE001 - progress events should not fail the final chat answer.
+            LOGGER.warning("Failed to publish agent progress event: %s", error)
+
+    def _agent_descriptor(self, intent: str, status: str) -> dict[str, str]:
+        descriptors = {
+            "orchestrator": ("OrchestratorAgent", "Orchestrator", "Agent 의견 조율"),
+            "profile": ("ProfileAgent", "프로필 Agent", "사용자 조건 분석"),
+            "idea": ("IdeaAgent", "아이디어 Agent", "아이템 후보 탐색"),
+            "policy": ("PolicyAgent", "지원사업 Agent", "지원사업 추천"),
+            "legal": ("LegalAgent", "법률 Agent", "체크리스트 검토"),
+            "finance": ("FinanceAgent", "재무 Agent", "비용/손익 검토"),
+            "operation": ("OperationAgent", "운영 Agent", "운영 리스크 검토"),
+            "marketing": ("MarketingAgent", "마케팅 Agent", "홍보 실행 검토"),
+            "commercial_area": ("CommercialAreaAgent", "상권 Agent", "입지/경쟁점 분석"),
+            "simulation": ("SimulationAgent", "시뮬레이션 Agent", "창업 시뮬레이션"),
+        }
+        agent_key, label, role = descriptors.get(intent, (f"{intent.title()}Agent", intent, "Agent 검토"))
+        return {
+            "agentKey": agent_key,
+            "label": label,
+            "role": role,
+            "status": status,
+        }
+
+    def _selected_intents_for_progress(self, state: dict[str, Any]) -> list[str]:
+        if state.get("mode") == "collaboration":
+            return ["profile", "idea", "policy", "finance", "marketing", "operation"]
+        return self._unique([*state.get("plan", []), *state.get("followups", [])])
+
+    def _selected_agents_message(self, state: dict[str, Any]) -> str:
+        labels = [self._agent_descriptor(intent, "queued")["label"] for intent in self._selected_intents_for_progress(state)]
+        if not labels:
+            return "질문을 분석해 필요한 Agent를 고르는 중입니다."
+        return f"{', '.join(labels)}가 이 질문을 함께 검토합니다."
+
+    def _agent_started_message(self, intent: str) -> str:
+        descriptor = self._agent_descriptor(intent, "running")
+        return f"{descriptor['label']}가 {descriptor['role']}를 시작했습니다."
+
+    def _agent_completed_message(self, response: AgentResponse) -> str:
+        summary = (response.summary or "").strip()
+        if not summary:
+            return f"{response.agent} 검토가 끝났습니다."
+        if len(summary) > 180:
+            summary = summary[:177].rstrip() + "..."
+        return summary
 
     def _effective_profile_from_response(
         self,
@@ -113,9 +233,38 @@ class OrchestratorAgent:
         pending = [intent for intent in intents if intent not in state["results"]]
         if not pending:
             return
-        pairs = await asyncio.gather(*(self._run_agent(state, intent) for intent in pending))
+        pairs = await asyncio.gather(*(self._run_agent_with_progress(state, intent) for intent in pending))
         for intent, response in pairs:
             state["results"][intent] = response
+
+    async def _run_agent_with_progress(self, state: dict[str, Any], intent: str) -> tuple[str, AgentResponse]:
+        await self._emit_progress(
+            state,
+            "agent.started",
+            self._agent_started_message(intent),
+            agent_intent=intent,
+            agent_status="running",
+        )
+        try:
+            intent, response = await self._run_agent(state, intent)
+        except Exception:
+            await self._emit_progress(
+                state,
+                "agent.failed",
+                f"{self._agent_descriptor(intent, 'failed')['label']} 검토 중 오류가 발생했습니다.",
+                agent_intent=intent,
+                agent_status="failed",
+                status="FAILED",
+            )
+            raise
+        await self._emit_progress(
+            state,
+            "agent.completed",
+            self._agent_completed_message(response),
+            agent_intent=intent,
+            agent_status="completed",
+        )
+        return intent, response
 
     async def _run_agent(self, state: dict[str, Any], intent: str) -> tuple[str, AgentResponse]:
         request: ChatRequest = state["request"]
@@ -808,39 +957,110 @@ class OrchestratorAgent:
             seed=request.context.get("seed"),
         )
 
-    async def _collaborative_consultation(self, request: ChatRequest) -> AgentResponse:
-        effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
-        profile_task = self.profile_agent.run(
-            ProfileRequest(profile=effective_profile, question=request.message, use_llm_extraction=False)
+    async def _run_direct_agent_with_progress(
+        self,
+        state: dict[str, Any],
+        intent: str,
+        task,
+    ) -> AgentResponse:
+        await self._emit_progress(
+            state,
+            "agent.started",
+            self._agent_started_message(intent),
+            agent_intent=intent,
+            agent_status="running",
         )
-        ideas_task = self.idea_agent.run(IdeaRequest(profile=effective_profile, count=3))
-        policies_task = self.policy_agent.run(PolicyRequest(profile=effective_profile, query=request.message, limit=3, context=request.context))
+        try:
+            response = await task
+        except Exception:
+            await self._emit_progress(
+                state,
+                "agent.failed",
+                f"{self._agent_descriptor(intent, 'failed')['label']} 검토 중 오류가 발생했습니다.",
+                agent_intent=intent,
+                agent_status="failed",
+                status="FAILED",
+            )
+            raise
+        await self._emit_progress(
+            state,
+            "agent.completed",
+            self._agent_completed_message(response),
+            agent_intent=intent,
+            agent_status="completed",
+        )
+        return response
+
+    async def _collaborative_consultation(
+        self,
+        request: ChatRequest,
+        state: dict[str, Any] | None = None,
+    ) -> AgentResponse:
+        state = state or {}
+        effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
+        profile_task = self._run_direct_agent_with_progress(
+            state,
+            "profile",
+            self.profile_agent.run(
+                ProfileRequest(profile=effective_profile, question=request.message, use_llm_extraction=False)
+            ),
+        )
+        ideas_task = self._run_direct_agent_with_progress(
+            state,
+            "idea",
+            self.idea_agent.run(IdeaRequest(profile=effective_profile, count=3)),
+        )
+        policies_task = self._run_direct_agent_with_progress(
+            state,
+            "policy",
+            self.policy_agent.run(PolicyRequest(profile=effective_profile, query=request.message, limit=3, context=request.context)),
+        )
         profile, ideas, policies = await asyncio.gather(profile_task, ideas_task, policies_task)
 
         top_idea = self._pick_top_idea(ideas)
         top_idea_name = str(top_idea.get("title", "창업 아이템"))
         round1_synthesis = self._build_round1_synthesis(profile, ideas, policies)
+        await self._emit_progress(
+            state,
+            "orchestrator.synthesizing",
+            f"1차 의견을 합쳐 {top_idea_name}을 기준 후보로 검토합니다.",
+        )
 
-        finance_task = self.finance_agent.run(
-            FinanceRequest(
-                profile=effective_profile,
-                assumption=FinanceAssumption(item_name=top_idea_name),
-            )
+        finance_task = self._run_direct_agent_with_progress(
+            state,
+            "finance",
+            self.finance_agent.run(
+                FinanceRequest(
+                    profile=effective_profile,
+                    assumption=FinanceAssumption(item_name=top_idea_name),
+                )
+            ),
         )
-        marketing_task = self.marketing_agent.run(
-            MarketingRequest(
-                profile=effective_profile,
-                product_name=top_idea_name,
-                target_customer=request.context.get("target_customer"),
-                place=request.context.get("place"),
-                brand_tone=request.context.get("brand_tone", "친근하고 실행력 있는"),
-                goal=request.message,
-            )
+        marketing_task = self._run_direct_agent_with_progress(
+            state,
+            "marketing",
+            self.marketing_agent.run(
+                MarketingRequest(
+                    profile=effective_profile,
+                    product_name=top_idea_name,
+                    target_customer=request.context.get("target_customer"),
+                    place=request.context.get("place"),
+                    brand_tone=request.context.get("brand_tone", "친근하고 실행력 있는"),
+                    goal=request.message,
+                )
+            ),
         )
-        operation_task = self.operation_agent.run(
-            OperationRequest(profile=effective_profile, business_name=top_idea_name)
+        operation_task = self._run_direct_agent_with_progress(
+            state,
+            "operation",
+            self.operation_agent.run(OperationRequest(profile=effective_profile, business_name=top_idea_name)),
         )
         finance, marketing, operation = await asyncio.gather(finance_task, marketing_task, operation_task)
+        await self._emit_progress(
+            state,
+            "orchestrator.synthesizing",
+            "각 Agent 의견의 충돌 지점을 정리하고 최종 실행안을 합의합니다.",
+        )
 
         data = {
             "collaboration_mode": "parallel_multi_agent",

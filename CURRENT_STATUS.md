@@ -38,6 +38,8 @@ AI coding assistant 또는 작업자가 코드 작업을 마치면 이 문서를
 
 - 백엔드는 RabbitMQ `chat.request`로 AI 요청을 발행합니다.
 - AI worker는 요청을 consume하고 `chat.response`로 결과를 publish합니다.
+- AI worker는 Orchestrator/Agent 진행 상황을 `AGENT_EVENT`로 함께 publish합니다.
+- 백엔드는 `AGENT_EVENT`를 SSE `agent-progress`로 변환하고, 프론트는 진행 말풍선/typing 상태로 표시합니다.
 - `PolicyAgent`는 지원사업 reference data 또는 backend support tool 결과를 사용합니다.
 - `CommercialAreaAgent`는 상권 reference data 또는 backend commercial area tool 결과를 사용합니다.
 - AI 응답 data에는 데이터 사용 근거가 남습니다.
@@ -77,6 +79,7 @@ Frontend
   -> Backend chat API
   -> RabbitMQ chat.request
   -> AI worker
+     -> publish AGENT_EVENT progress logs
      -> use reference.externalData if present
      -> call backend internal tool API if needed
   -> RabbitMQ chat.response
@@ -198,6 +201,8 @@ feature/ai/backend-tool-calls
 - AI `BackendToolClient` 추가
 - `PolicyAgent`가 최신/모집중 지원사업 요청에서 백엔드 support tool을 호출
 - `CommercialAreaAgent`가 reference data가 없을 때 백엔드 상권 tool을 호출
+- AI worker가 Orchestrator/Agent 진행 로그를 `AGENT_EVENT`로 publish
+- 프론트가 상권/법률 Agent progress 이벤트를 올바른 Agent로 매핑
 - AI 응답에 `tool_calls`, `reference_data_used`, `reference_sources`, `evidence` 근거를 남김
 - compose 기본 AI 연결을 `ai-worker` 중심으로 구성하고 `ai-mock`은 mock profile로 분리
 
@@ -225,6 +230,7 @@ docker compose config
 
 - `backend/DATA_MVP_HANDOFF.md`에는 AI 직접 연결 전 설명이 남아 있습니다. 최신 전체 구조는 루트의 `PROJECT_STRUCTURE_HANDOFF.md`와 이 문서를 기준으로 봅니다.
 - LLM provider native function calling은 붙이지 않았습니다. 현재는 Agent 코드가 조건을 보고 백엔드 tool client를 호출하는 deterministic tool-call 방식입니다.
+- Agent 간 완전한 다중 턴 토론은 아닙니다. 현재는 Orchestrator가 선택한 Agent들의 시작/완료/요약 진행 로그를 실시간으로 보여주는 구조입니다.
 - 지원사업 자격 판단은 단순 룰 기반입니다. 법적/행정적 자격 확정으로 표현하면 안 됩니다.
 - 상권 경쟁 강도는 업종별 benchmark가 아니라 단순 점포 수 기준입니다.
 - 대용량 CSV import는 해커톤 데모 기준입니다. 운영 환경에서는 batch 처리, 진행률, 실패 row 리포트가 필요합니다.
@@ -233,7 +239,8 @@ docker compose config
 ## 10. 다음 작업 추천
 
 - 데모 안정성을 위해 `seed import + support sync + demo store import`를 묶는 bootstrap endpoint 또는 스크립트를 추가합니다.
-- 프론트 채팅 응답에 `reference_data_used`, `tool_calls`, `evidence` 일부를 보여줍니다.
+- 프론트 채팅 응답에 `reference_data_used`, `tool_calls`, `evidence` 일부를 별도 근거 패널로 보여줍니다.
+- 필요하면 Agent progress 이벤트를 히스토리에 저장하는 `chat_message` 타입을 추가합니다.
 - `ai/README.md`에 RabbitMQ worker와 backend tool-call 설명을 보강합니다.
 - `backend/DATA_MVP_HANDOFF.md` 상단에 "구 데이터 MVP 문서이며 최신 구조는 루트 문서 참고" 안내를 추가합니다.
 - 프로필 입력값을 지원사업 matcher와 상권 analyzer가 더 잘 쓰도록 필드 정규화를 보강합니다.
@@ -264,14 +271,14 @@ AI coding assistant 또는 작업자는 작업 종료 전에 아래 항목을 �
 ```text
 작업일: 2026-06-10
 작업자: Codex
-이번 작업 요약: 프로젝트 구조 핸드오프 문서와 현재 상태 요약본 작성
-수정한 주요 영역: 루트 문서
+이번 작업 요약: RabbitMQ 채팅에서 Agent 진행 로그를 프론트에 노출할 수 있도록 AI progress event publish 구조 추가
+수정한 주요 영역: ai Orchestrator/RabbitMQ worker, frontend Agent 매핑, 루트 문서
 추가/변경된 API: 없음
 추가/변경된 환경변수: 없음
-실행한 테스트: 문서 변경만 수행하여 애플리케이션 테스트는 실행하지 않음
-실패한 테스트와 이유: 없음
-데모 영향: 팀원이 AI-백엔드 데이터 흐름과 데모 실행 순서를 빠르게 파악 가능
-깨질 수 있는 부분: 없음
-다음 사람이 보면 좋은 파일: PROJECT_STRUCTURE_HANDOFF.md, backend/DATA_MVP_HANDOFF.md, ai/README.md
-아직 안 한 일: 기존 세부 문서의 최신 구조 반영은 후속 작업으로 남김
+실행한 테스트: `cd ai && .venv/bin/python -m unittest discover -s tests`; `cd backend && GRADLE_USER_HOME=/private/tmp/gradle ./gradlew test --tests com.kakao.backend.aichat.infrastructure.AiChatResponseListenerTest --tests com.kakao.backend.chat.application.ChatAiAgentEventServiceTest --tests com.kakao.backend.chat.application.ChatStreamEventFactoryTest`; `PATH=/Users/yechan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build` in `frontend`; `docker compose config`
+실패한 테스트와 이유: 최초 백엔드 Gradle 테스트는 샌드박스 파일락 소켓 제한으로 실패했으나 권한 승인 후 통과; 최초 프론트 build는 로컬 Node v18.15와 rolldown optional binding 누락으로 실패했으나, 번들 Node v24와 누락 binding 설치 후 통과
+데모 영향: 채팅 중 선택된 Agent와 각 Agent 검토 시작/완료 메시지를 실시간으로 보여줄 수 있음
+깨질 수 있는 부분: Agent progress 이벤트는 실시간 표시용이며 새로고침 후 히스토리에는 남지 않음
+다음 사람이 보면 좋은 파일: ai/app/agents/orchestrator.py, ai/app/rabbitmq_worker.py, frontend/src/features/chat/chatMappers.js
+아직 안 한 일: Agent progress 이벤트 히스토리 저장과 근거 패널 UI는 후속 작업으로 남김
 ```

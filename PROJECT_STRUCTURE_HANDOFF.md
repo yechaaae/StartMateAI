@@ -39,7 +39,8 @@ frontend
 
 - 사용자의 채팅 메시지와 기능별 화면 진입을 담당합니다.
 - 백엔드의 채팅 API를 호출하고, 백엔드가 받은 AI 응답을 사용자에게 보여줍니다.
-- 현재 AI가 어떤 데이터 근거를 썼는지 보여주려면 백엔드 응답의 `tool_calls`, `reference_data_used`, `evidence` 계열 데이터를 UI에 노출하는 작업이 필요합니다.
+- SSE `agent-progress` 이벤트를 받아 Agent별 진행 로그를 임시 말풍선처럼 보여줍니다.
+- 현재 AI가 어떤 데이터 근거를 썼는지 더 자세히 보여주려면 백엔드 응답의 `tool_calls`, `reference_data_used`, `evidence` 계열 데이터를 UI에 추가 노출하면 됩니다.
 
 ### Backend
 
@@ -59,6 +60,7 @@ frontend
 ### AI
 
 - RabbitMQ worker가 `chat.request`를 consume하고, Orchestrator/개별 Agent를 실행한 뒤 `chat.response`로 publish합니다.
+- Orchestrator/Agent 실행 중간 상태는 RabbitMQ `AGENT_EVENT`로 publish되고, 백엔드는 이를 SSE `agent-progress`로 프론트에 전달합니다.
 - `PolicyAgent`는 지원사업 판단을 담당합니다.
 - `CommercialAreaAgent`는 상권/입지/경쟁점 판단을 담당합니다.
 - reference data가 없거나 사용자가 "최신", "지금 모집", "새 공고", "상권", "입지", "경쟁점"처럼 실시간성이 필요한 질문을 하면 deterministic tool-call 방식으로 백엔드 internal API를 호출합니다.
@@ -94,6 +96,16 @@ frontend
 5. Agent는 응답의 `data.tool_calls`, `data.reference_data_used`, `data.reference_sources`, `data.evidence`에 어떤 근거를 썼는지 남깁니다.
 
 이 방식은 AI가 질문 맥락에 따라 능동적으로 필요한 데이터를 가져올 수 있게 합니다. 단, 공공 API key는 여전히 백엔드에만 있습니다.
+
+### 4.3 Agent 진행 로그 흐름
+
+1. AI worker가 `chat.request` 처리를 시작하면서 `orchestrator.started` 이벤트를 보냅니다.
+2. Orchestrator가 선택된 Agent 목록을 `agents.selected` 이벤트로 보냅니다.
+3. 각 Agent는 시작/완료 시 `agent.started`, `agent.completed` 이벤트를 보냅니다.
+4. Orchestrator가 최종 합성 단계에서 `orchestrator.synthesizing`, `orchestrator.completed` 이벤트를 보냅니다.
+5. 백엔드는 `AGENT_EVENT`를 `agent-progress` SSE로 변환하고, 프론트는 이를 실시간 진행 말풍선으로 표시합니다.
+
+중간 이벤트는 해커톤 MVP 기준으로 히스토리에 저장하지 않고 실시간 표시용으로 사용합니다.
 
 ## 5. 주요 API
 
