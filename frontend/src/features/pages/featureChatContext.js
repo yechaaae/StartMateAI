@@ -48,6 +48,7 @@ export const buildFeatureSeed = (featureId, workspaceContext = {}) => {
       ?? null,
     supportSearchMode: workspaceContext.supportSearchMode ?? 'PROFILE_IDEA',
     supportUserGoal: workspaceContext.supportUserGoal ?? 'HIGH_MATCH',
+    supportRegionBasis: workspaceContext.supportRegionBasis ?? 'BUSINESS_REGISTRATION',
     focusedSectionTitle: workspaceContext.focusedSection?.title ?? data.sections?.[0]?.[0] ?? null,
     planGoal: workspaceContext.planGoal ?? 'ALIGN_SUPPORT',
   }
@@ -61,6 +62,7 @@ export const buildWorkspacePatch = ({
   selectedOperationSuggestionTitle,
   supportSearchMode,
   supportUserGoal,
+  supportRegionBasis,
   focusedSectionTitle,
   planGoal,
 }) => {
@@ -89,6 +91,7 @@ export const buildWorkspacePatch = ({
       supportReport: clone(data),
       supportSearchMode,
       supportUserGoal,
+      supportRegionBasis,
       selectedSupportProgram: findSelectedSupportProgram(data, selectedSupportTitle),
     }
   }
@@ -150,6 +153,7 @@ export const buildCurrentResult = ({
   selectedOperationSuggestionTitle,
   supportSearchMode,
   supportUserGoal,
+  supportRegionBasis,
   focusedSectionTitle,
   planGoal,
   workspaceContext = {},
@@ -190,6 +194,7 @@ export const buildCurrentResult = ({
       startupProfile,
       supportSearchMode,
       userGoal: supportUserGoal,
+      regionBasis: supportRegionBasis,
       selectedSupportProgram,
       recommendations: clone(data.list ?? []),
       profileContext: {

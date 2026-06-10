@@ -8,6 +8,13 @@ import { Icon } from '../../shared/components/Icon'
 import { ChatInput } from '../chat/ChatInput'
 import { ChatRow } from '../chat/ChatRow'
 import { TypingRow } from '../chat/TypingRow'
+import { runSupportProgramSearch } from '../reports/supportProgramSearch'
+import {
+  mergeSupportProgramHistory,
+  readSupportProgramHistory,
+  removeSupportProgramHistoryItem,
+  writeSupportProgramHistory,
+} from '../reports/supportProgramStorage'
 import {
   createChatEventSource,
   createFeatureChatRoom,
@@ -103,6 +110,12 @@ export const FeaturePage = ({
   )
   const [supportSearchMode, setSupportSearchMode] = useState(featureSeed.supportSearchMode)
   const [supportUserGoal, setSupportUserGoal] = useState(featureSeed.supportUserGoal)
+  const [supportRegionBasis, setSupportRegionBasis] = useState(featureSeed.supportRegionBasis)
+  const [supportSearchLoading, setSupportSearchLoading] = useState(false)
+  const [supportHasSearched, setSupportHasSearched] = useState(false)
+  const [savedSupportPrograms, setSavedSupportPrograms] = useState(() => (
+    id === 'support' ? readSupportProgramHistory() : []
+  ))
   const [focusedSectionTitle, setFocusedSectionTitle] = useState(featureSeed.focusedSectionTitle)
   const [planGoal, setPlanGoal] = useState(featureSeed.planGoal)
   const [messages, setMessages] = useState([])
@@ -297,6 +310,7 @@ export const FeaturePage = ({
       selectedOperationSuggestionTitle,
       supportSearchMode,
       supportUserGoal,
+      supportRegionBasis,
       focusedSectionTitle,
       planGoal,
     }))
@@ -309,6 +323,7 @@ export const FeaturePage = ({
     selectedIdeaRank,
     selectedOperationSuggestionTitle,
     selectedSupportTitle,
+    supportRegionBasis,
     supportSearchMode,
     supportUserGoal,
   ])
@@ -322,6 +337,7 @@ export const FeaturePage = ({
       selectedOperationSuggestionTitle,
       supportSearchMode,
       supportUserGoal,
+      supportRegionBasis,
       focusedSectionTitle,
       planGoal,
       workspaceContext,
@@ -336,6 +352,7 @@ export const FeaturePage = ({
       selectedOperationSuggestionTitle,
       selectedSupportTitle,
       startupProfile,
+      supportRegionBasis,
       supportSearchMode,
       supportUserGoal,
       workspaceContext,
@@ -479,6 +496,45 @@ export const FeaturePage = ({
     }
   }
 
+  const handleSupportProgramSearch = async () => {
+    if (supportSearchLoading) {
+      return
+    }
+
+    setSupportSearchLoading(true)
+    setError('')
+
+    try {
+      const filters = {
+        recommendationBasis: supportSearchMode,
+        priority: supportUserGoal,
+        regionBasis: supportRegionBasis,
+      }
+      const results = await runSupportProgramSearch({
+        ...filters,
+        startupProfile,
+        selectedIdea: workspaceContext?.selectedIdea ?? null,
+      })
+
+      setData((prev) => ({ ...prev, list: results }))
+      setSelectedSupportTitle(results[0]?.title ?? null)
+      const nextSavedPrograms = mergeSupportProgramHistory(readSupportProgramHistory(), results, filters)
+      writeSupportProgramHistory(nextSavedPrograms)
+      setSavedSupportPrograms(nextSavedPrograms)
+      setSupportHasSearched(true)
+    } catch (nextError) {
+      setError(nextError.message ?? '지원사업 추천 결과를 불러오지 못했습니다.')
+    } finally {
+      setSupportSearchLoading(false)
+    }
+  }
+
+  const handleDeleteSavedSupportProgram = (programId) => {
+    const nextSavedPrograms = removeSupportProgramHistoryItem(readSupportProgramHistory(), programId)
+    writeSupportProgramHistory(nextSavedPrograms)
+    setSavedSupportPrograms(nextSavedPrograms)
+  }
+
   const helperText = id === 'item'
     ? '오른쪽 리포트에서 고른 아이템을 기준으로 바로 대화할 수 있어요.'
     : id === 'support'
@@ -531,6 +587,13 @@ export const FeaturePage = ({
           onChangeSupportSearchMode={setSupportSearchMode}
           supportUserGoal={supportUserGoal}
           onChangeSupportUserGoal={setSupportUserGoal}
+          supportRegionBasis={supportRegionBasis}
+          onChangeSupportRegionBasis={setSupportRegionBasis}
+          supportSearchLoading={supportSearchLoading}
+          supportHasSearched={supportHasSearched}
+          onRunSupportSearch={handleSupportProgramSearch}
+          savedSupportPrograms={savedSupportPrograms}
+          onDeleteSavedSupportProgram={handleDeleteSavedSupportProgram}
           focusedSectionTitle={focusedSectionTitle}
           onFocusSection={setFocusedSectionTitle}
           planGoal={planGoal}
