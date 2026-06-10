@@ -12,12 +12,18 @@ import { LoginPage } from '../features/pages/LoginPage'
 import { Onboarding } from '../features/pages/Onboarding'
 import { SavedPage } from '../features/pages/SavedPage'
 import { SignupPage } from '../features/pages/SignupPage'
+import { pathToRoute, routeToPath } from './routePaths'
 
 const publicRoutes = new Set(['landing', 'login', 'signup'])
 const LOGIN_HINT_KEY = 'sm_logged_in'
+const featureIds = Object.keys(features)
 
 export default function App() {
-  const [route, setRoute] = useState(() => localStorage.getItem('sm_route') || 'landing')
+  const [route, setRoute] = useState(() => (
+    pathToRoute(window.location.pathname, featureIds)
+    || localStorage.getItem('sm_route')
+    || 'landing'
+  ))
   const [workspace, setWorkspace] = useState(workspaces[0])
   const [user, setUser] = useState(null)
   const [profileStatus, setProfileStatus] = useState(null)
@@ -28,7 +34,22 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('sm_route', route)
+    const nextPath = routeToPath(route, featureIds)
+
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({ route }, '', nextPath)
+    }
   }, [route])
+
+  useEffect(() => {
+    const syncRouteFromUrl = () => {
+      const nextRoute = pathToRoute(window.location.pathname, featureIds)
+      setRoute(nextRoute || 'landing')
+    }
+
+    window.addEventListener('popstate', syncRouteFromUrl)
+    return () => window.removeEventListener('popstate', syncRouteFromUrl)
+  }, [])
 
   const moveByProfileStatus = async (nextRoute = route) => {
     const status = await startupProfileApi.status()
