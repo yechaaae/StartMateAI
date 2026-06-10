@@ -1,5 +1,6 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.agents.base import BaseAgent
@@ -26,17 +27,26 @@ class PolicyAgent(BaseAgent):
         if self.backend_tools and (should_refresh or not reference_matches):
             tool_matches, tool_calls, tool_warnings = await self._fetch_backend_tool_matches(request)
 
-        matches = tool_matches or reference_matches or self.retriever.search(
+        retrieval_matches = self.retriever.search(
             profile=request.profile,
             query=request.query or "",
             limit=request.limit,
         )
+        matches = self._merge_matches(
+            primary=tool_matches or reference_matches,
+            secondary=retrieval_matches,
+            limit=request.limit,
+        )
+        matches = self._rerank_for_query(matches, request)
+        matches = matches[: request.limit]
         using_reference_data = bool(tool_matches or reference_matches)
         reference_sources = []
         if tool_matches:
             reference_sources.append("backend.tool.support_programs")
         elif reference_matches:
             reference_sources.append("backend.support_programs")
+        if retrieval_matches:
+            reference_sources.append(getattr(self.retriever, "retrieval_mode", "rag"))
 
         top = matches[0] if matches else None
         documents = self._documents_to_prepare(matches)
@@ -101,10 +111,10 @@ class PolicyAgent(BaseAgent):
             },
         )
         fallback = f"사용자 조건에 맞는 지원사업 후보 {len(matches)}개를 찾았습니다."
-        summary = await self.polish_summary(task="support program matching", data=data, fallback=fallback)
+        summary = self._detailed_summary(matches, request)
 
         sources = [
-            Source(title=item["title"], url=item.get("url"), note=item.get("source_note"))
+            Source(title=item.get("title") or "지원사업 후보", url=item.get("url"), note=item.get("source_note"))
             for item in matches
         ]
         warnings = risks
@@ -115,9 +125,9 @@ class PolicyAgent(BaseAgent):
             summary=summary,
             data=data,
             next_actions=[
-                "상위 1개 공고의 실제 모집요강 확인",
+                "상위 공고의 모집 기간, 신청 대상, 지역 조건을 실제 공고에서 확인",
                 "사업계획서에 30일 검증 계획과 예산 사용처 작성",
-                "필수 서류와 마감일 체크리스트 등록",
+                "필수 서류와 마감일을 체크리스트로 정리",
             ],
             sources=sources,
             warnings=warnings,
@@ -161,6 +171,250 @@ class PolicyAgent(BaseAgent):
             "retrieval": {"source": "backend_reference"},
             "source_chunks": [item.get("summary")] if item.get("summary") else [],
         }
+
+    def _merge_matches(self, *, primary: list[dict], secondary: list[dict], limit: int) -> list[dict]:
+        merged: dict[str, dict] = {}
+        for item in [*secondary, *primary]:
+            key = str(item.get("id") or item.get("title") or len(merged))
+            existing = merged.get(key)
+            if existing is None:
+                merged[key] = dict(item)
+                continue
+            merged[key] = self._merge_match(existing, item)
+        results = list(merged.values())
+        results.sort(key=lambda item: int(item.get("eligibility_score") or 0), reverse=True)
+        return results
+
+    def _rerank_for_query(self, matches: list[dict], request: PolicyRequest) -> list[dict]:
+        region_terms = self._region_terms(request)
+        if not region_terms:
+            return matches
+
+        reranked = []
+        for item in matches:
+            adjusted = dict(item)
+            base_score = int(adjusted.get("eligibility_score") or 0)
+            haystack = self._match_text(adjusted)
+            location_score = self._location_score(haystack, region_terms)
+            final_score = base_score + location_score
+
+            if location_score <= 0 and self._has_other_specific_region(haystack, region_terms):
+                final_score = min(final_score, 45)
+            elif location_score <= 0:
+                final_score = min(final_score, 65)
+            elif location_score == 25:
+                final_score = min(final_score, 90)
+            elif location_score < 20:
+                final_score = min(final_score, 75)
+
+            adjusted["eligibility_score"] = max(0, min(100, final_score))
+            adjusted["fit_level"] = self._fit_level(int(adjusted["eligibility_score"]))
+            adjusted["score_breakdown"] = {
+                **(adjusted.get("score_breakdown") or {}),
+                "location_fit": location_score,
+            }
+            adjusted["why_matched"] = self._unique([
+                *(adjusted.get("why_matched") or []),
+                self._location_reason(location_score, region_terms),
+            ])
+            reranked.append(adjusted)
+
+        reranked.sort(
+            key=lambda item: (
+                int(item.get("eligibility_score") or 0),
+                int((item.get("score_breakdown") or {}).get("location_fit") or 0),
+                float((item.get("score_breakdown") or {}).get("semantic_similarity") or 0),
+            ),
+            reverse=True,
+        )
+        return reranked[: request.limit]
+
+    def _detailed_summary(self, matches: list[dict], request: PolicyRequest) -> str:
+        if not matches:
+            return (
+                "현재 조건으로는 추천할 지원사업 공고를 찾지 못했습니다. "
+                "지역, 창업 단계, 업종, 필요한 지원 유형을 알려주면 다시 검색하겠습니다."
+            )
+
+        top = matches[0]
+        title = top.get("title") or "지원사업 후보"
+        score = top.get("eligibility_score")
+        details = self._program_details(top)
+        reasons = self._clean_reasons(top.get("why_matched") or [])
+        reason_text = "; ".join(reasons[:2]) if reasons else "질문과 공고 내용의 유사도 및 자격 조건을 기준으로 선정했습니다"
+        next_step = self._next_step_for_policy(top, request)
+        writing_guide = self._writing_guide(top, request)
+        alternatives = [item.get("title") for item in matches[1:3] if item.get("title")]
+        alternative_text = f" 함께 비교할 후보는 {', '.join(alternatives)}입니다." if alternatives else ""
+
+        lines = [
+            f"1순위: {title}{f' (적합도 {score}점)' if score is not None else ''}",
+            "",
+            f"선정 근거: {reason_text}",
+            "",
+            f"공고 핵심 내용: {details}",
+            "",
+            f"작성방법: {writing_guide}",
+            "",
+            f"다음 행동: {next_step}",
+        ]
+        if alternative_text:
+            lines.extend(["", alternative_text.strip()])
+        return "\n".join(lines)
+
+    def _program_details(self, item: dict) -> str:
+        parts = []
+        for label, key in [
+            ("주관", "organization"),
+            ("지원유형", "support_type"),
+            ("지원금", "support_amount"),
+            ("대상", "summary"),
+            ("지역조건", "region_condition"),
+            ("창업단계", "business_stage_condition"),
+            ("마감", "application_end_date"),
+        ]:
+            value = item.get(key)
+            if value:
+                parts.append(f"{label} {self._plain_text(value)}")
+        if parts:
+            return ", ".join(parts[:5])
+        chunks = item.get("source_chunks") or []
+        if chunks:
+            return self._plain_text(chunks[0])[:220]
+        return "상세 조건은 공고 원문 확인이 필요합니다"
+
+    def _plain_text(self, value: Any) -> str:
+        text = str(value or "")
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = text.replace("&nbsp;", " ").replace("&amp;", "&")
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _next_step_for_policy(self, item: dict, request: PolicyRequest) -> str:
+        documents = item.get("required_documents") or []
+        doc_text = f" 필요 서류({', '.join(documents[:3])})를 준비하고" if documents else ""
+        region = request.profile.region or self._first_region_term(request.query or "")
+        region_text = f" {region} 조건이 실제 공고 대상에 포함되는지 확인한 뒤" if region else " 지역/대상 조건을 확인한 뒤"
+        return f"공고 URL에서 모집 기간과{region_text}{doc_text} 사업계획서 초안을 작성하세요"
+
+    def _writing_guide(self, item: dict, request: PolicyRequest) -> str:
+        title = item.get("title") or "해당 공고"
+        region = request.profile.region or self._first_region_term(request.query or "")
+        support_amount = item.get("support_amount")
+        support_type = item.get("support_type")
+        stage = item.get("business_stage_condition")
+        guide = [
+            f"사업계획서 첫 문단에 '{title}'의 지원 대상과 내 조건이 맞는 이유를 적으세요",
+            "문제-해결책-고객-검증계획-예산사용처 순서로 작성하세요",
+            "30일 안에 확인할 지표를 매출, 고객 수, 재구매 또는 문의 수처럼 숫자로 쓰세요",
+        ]
+        if region:
+            guide.append(f"{region} 소재/이전/활동 계획을 증빙 가능한 방식으로 넣으세요")
+        if support_amount:
+            guide.append(f"지원금({support_amount})은 항목별 사용처로 쪼개 쓰세요")
+        elif support_type:
+            guide.append(f"지원유형({support_type})에 맞춰 필요한 멘토링, 공간, 마케팅, 자금 항목을 분리하세요")
+        if stage:
+            guide.append(f"창업단계 조건({stage})에 맞춰 현재 상태와 다음 마일스톤을 연결하세요")
+        return " ".join(guide[:5])
+
+    def _clean_reasons(self, reasons: list[Any]) -> list[str]:
+        cleaned = []
+        for reason in reasons:
+            text = str(reason).strip()
+            if not text:
+                continue
+            if "諛" in text or "吏" in text or "?" in text:
+                continue
+            cleaned.append(text.rstrip(".。"))
+        return cleaned
+
+    def _region_terms(self, request: PolicyRequest) -> list[str]:
+        joined = " ".join([request.profile.region or "", request.query or ""])
+        terms = []
+        stopwords = {"지원사업", "알려줘", "추천해줘", "창업", "예비창업", "사업"}
+        for match in re.findall(r"[가-힣]{2,}(?:시|군|구|도)?", joined):
+            if match in stopwords:
+                continue
+            if match.endswith(("시", "군", "구", "도")) or match in {"구미", "서울", "부산", "대구", "경기", "경북", "경상북도"}:
+                terms.append(match)
+                if match.endswith("시"):
+                    terms.append(match[:-1])
+        return self._unique(terms)
+
+    def _first_region_term(self, text: str) -> str:
+        for match in re.findall(r"[가-힣]{2,}(?:시|군|구|도)?", text):
+            if match.endswith(("시", "군", "구", "도")) or match in {"구미", "서울", "부산", "대구", "경기", "경북", "경상북도"}:
+                return match
+        return ""
+
+    def _match_text(self, item: dict) -> str:
+        chunks = " ".join(str(chunk) for chunk in item.get("source_chunks") or [])
+        return " ".join(
+            str(item.get(key) or "")
+            for key in [
+                "title",
+                "summary",
+                "region_condition",
+                "organization",
+                "source_note",
+                "support_type",
+                "business_stage_condition",
+                "industry_condition",
+            ]
+        ) + " " + chunks
+
+    def _location_score(self, haystack: str, region_terms: list[str]) -> int:
+        if any(term and term in haystack for term in region_terms):
+            return 40
+        if any(term in region_terms for term in ["구미", "구미시"]) and any(term in haystack for term in ["경북", "경상북도"]):
+            return 25
+        if "전국" in haystack:
+            return 10
+        return -20
+
+    def _location_reason(self, location_score: int, region_terms: list[str]) -> str:
+        region = region_terms[0] if region_terms else "요청 지역"
+        if location_score >= 40:
+            return f"공고명 또는 조건에 {region} 지역 관련 표현이 직접 포함되어 있습니다."
+        if location_score >= 25:
+            return f"{region}와 같은 광역권 조건이 공고와 맞을 가능성이 있습니다."
+        if location_score >= 10:
+            return "전국 대상 공고라 지역 제한 리스크가 낮습니다."
+        return f"{region} 직접 대상 공고가 아니어서 우선순위를 낮췄습니다."
+
+    def _has_other_specific_region(self, haystack: str, region_terms: list[str]) -> bool:
+        known_regions = ["서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"]
+        return any(region in haystack for region in known_regions if region not in region_terms)
+
+    def _merge_match(self, left: dict, right: dict) -> dict:
+        merged = dict(left)
+        left_score = int(left.get("eligibility_score") or 0)
+        right_score = int(right.get("eligibility_score") or 0)
+        if right_score >= left_score:
+            merged.update({key: value for key, value in right.items() if value not in (None, "", [])})
+        merged["eligibility_score"] = max(left_score, right_score)
+        merged["fit_level"] = self._fit_level(int(merged["eligibility_score"]))
+        merged["score_breakdown"] = {
+            **(left.get("score_breakdown") or {}),
+            **(right.get("score_breakdown") or {}),
+        }
+        merged["why_matched"] = self._unique([*(left.get("why_matched") or []), *(right.get("why_matched") or [])])
+        merged["eligibility_gaps"] = self._unique([
+            *(left.get("eligibility_gaps") or []),
+            *(right.get("eligibility_gaps") or []),
+        ])
+        merged["source_chunks"] = self._unique([*(left.get("source_chunks") or []), *(right.get("source_chunks") or [])])
+        merged["retrieval"] = {
+            "sources": self._unique([
+                str((left.get("retrieval") or {}).get("source") or ""),
+                str((right.get("retrieval") or {}).get("source") or ""),
+            ]),
+            "semantic_similarity": max(
+                float((left.get("retrieval") or {}).get("semantic_similarity") or 0),
+                float((right.get("retrieval") or {}).get("semantic_similarity") or 0),
+            ),
+        }
+        return merged
 
     async def _fetch_backend_tool_matches(
         self,
@@ -262,6 +516,19 @@ class PolicyAgent(BaseAgent):
     def _contains_any(self, raw: str, keywords: list[str]) -> bool:
         return any(keyword in raw for keyword in keywords)
 
+    def _unique(self, values: list) -> list:
+        seen = set()
+        result = []
+        for value in values:
+            if value in (None, ""):
+                continue
+            key = str(value)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(value)
+        return result
+
     def _fit_level(self, score: int) -> str:
         if score >= 80:
             return "high"
@@ -306,3 +573,5 @@ class PolicyAgent(BaseAgent):
                     seen.add(document)
                     documents.append(document)
         return documents
+
+

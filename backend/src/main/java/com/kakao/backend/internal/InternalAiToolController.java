@@ -8,6 +8,8 @@ import com.kakao.backend.policy.dto.SupportProgramRecommendationRequest;
 import com.kakao.backend.policy.dto.SupportProgramSyncResponse;
 import com.kakao.backend.policy.service.SupportProgramService;
 import java.util.List;
+import java.util.Map;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -51,6 +53,14 @@ public class InternalAiToolController {
     ) {
         internalToolAuthService.verify(token);
         return supportProgramService.recommendWithDemoFallback(request);
+    }
+
+    @GetMapping("/support-programs")
+    public List<Map<String, Object>> exportSupportPrograms(
+            @RequestHeader(value = INTERNAL_TOKEN_HEADER, required = false) String token
+    ) {
+        internalToolAuthService.verify(token);
+        return supportProgramService.exportForAiIndex();
     }
 
     @PostMapping("/commercial-areas/analyze")

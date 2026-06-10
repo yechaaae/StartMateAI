@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.core.backend_tools import BackendToolClient
 from app.core.gms_client import GMSClient
 from app.rag.retriever import SupportProgramRetriever
+from app.rag.support_chroma_retriever import SupportProgramChromaRetriever
 from app.rag.legal_retriever import LegalRetriever
 from app.schemas import (
     AgentResponse,
@@ -44,11 +45,19 @@ router = APIRouter()
 settings = get_settings()
 llm = GMSClient(settings)
 backend_tools = BackendToolClient(settings)
-retriever = SupportProgramRetriever.from_default(
-    retrieval_mode=settings.rag_retrieval_mode,
-    vector_store_path=settings.rag_vector_store_path or None,
-    embedding_dimensions=settings.support_rag_embedding_dimensions,
-)
+if settings.support_rag_chroma_enabled:
+    retriever = SupportProgramChromaRetriever(
+        chroma_path=settings.support_rag_chroma_path,
+        collection_name=settings.support_rag_chroma_collection,
+        embedding_dimensions=settings.rag_embedding_dimensions,
+        embedding_provider=settings.rag_embedding_provider,
+    )
+else:
+    retriever = SupportProgramRetriever.from_default(
+        retrieval_mode=settings.rag_retrieval_mode,
+        vector_store_path=settings.rag_vector_store_path or None,
+        embedding_dimensions=settings.support_rag_embedding_dimensions,
+    )
 legal_retriever = LegalRetriever(
     chroma_path=settings.rag_chroma_path,
     embedding_dimensions=settings.rag_embedding_dimensions,

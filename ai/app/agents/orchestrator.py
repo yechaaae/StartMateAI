@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import json
@@ -431,14 +431,8 @@ class OrchestratorAgent:
                 parts.append(f"재무는 {', '.join(finance_bits)}을 근거로 실행 여력을 판단했습니다.")
 
         policy = results.get("policy")
-        if policy:
-            matches = (policy.data or {}).get("matches") or []
-            if matches:
-                top = matches[0]
-                title = top.get("title") or top.get("name") or "상위 지원사업"
-                score = top.get("eligibility_score") or top.get("score")
-                score_text = f" 점수 {score}" if score is not None else ""
-                parts.append(f"지원사업은 {title}{score_text}를 우선 후보로 봤습니다.")
+        if policy and policy.summary:
+            parts.append(policy.summary)
 
         if not parts:
             agent_names = [response.agent for response in results.values()]
@@ -1739,3 +1733,4 @@ class OrchestratorAgent:
                 "동시에 실행하는 것이 현재 가장 현실적인 전략입니다."
             ),
         }
+

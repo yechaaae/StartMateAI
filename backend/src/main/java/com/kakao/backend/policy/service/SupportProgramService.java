@@ -78,6 +78,13 @@ public class SupportProgramService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> exportForAiIndex() {
+        return supportProgramRepository.findAll().stream()
+                .map(this::toAiIndexDocument)
+                .toList();
+    }
+
     @Transactional
     public List<RecommendedProgramResponse> recommendWithDemoFallback(SupportProgramRecommendationRequest request) {
         if (supportProgramRepository.count() == 0) {
@@ -165,5 +172,35 @@ public class SupportProgramService {
             }
         }
         return count;
+    }
+
+    private Map<String, Object> toAiIndexDocument(SupportProgram program) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("programId", program.getId());
+        item.put("source", program.getSource());
+        item.put("sourceId", program.getSourceId());
+        item.put("title", program.getTitle());
+        item.put("summary", program.getSummary());
+        item.put("content", program.getContent());
+        item.put("category", program.getCategory());
+        item.put("supportType", program.getSupportType());
+        item.put("target", program.getTarget());
+        item.put("ageCondition", program.getAgeCondition());
+        item.put("businessStageCondition", program.getBusinessStageCondition());
+        item.put("regionCondition", program.getRegionCondition());
+        item.put("industryCondition", program.getIndustryCondition());
+        item.put("organization", program.getOrganization());
+        item.put("department", program.getDepartment());
+        item.put("contact", program.getContact());
+        item.put("applicationStartDate", program.getApplicationStartDate());
+        item.put("applicationEndDate", program.getApplicationEndDate());
+        item.put("status", program.getStatus());
+        item.put("supportAmount", program.getSupportAmount());
+        item.put("requiredDocuments", program.getRequiredDocuments());
+        item.put("applyUrl", program.getApplyUrl());
+        item.put("detailUrl", program.getDetailUrl());
+        item.put("sourceUrl", program.getSourceUrl());
+        item.put("tags", program.getTags());
+        return item;
     }
 }

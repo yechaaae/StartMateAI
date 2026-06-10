@@ -24,6 +24,9 @@ class Settings:
     rag_retrieval_mode: str
     rag_vector_store_path: str
     support_rag_embedding_dimensions: int
+    support_rag_chroma_enabled: bool
+    support_rag_chroma_path: str
+    support_rag_chroma_collection: str
     rag_chroma_path: str
     rag_embedding_dimensions: int
     rag_embedding_provider: str
@@ -59,6 +62,9 @@ def get_settings() -> Settings:
         rag_retrieval_mode=os.getenv("RAG_RETRIEVAL_MODE", "hybrid").strip().lower(),
         rag_vector_store_path=os.getenv("RAG_VECTOR_STORE_PATH", ""),
         support_rag_embedding_dimensions=int(os.getenv("SUPPORT_RAG_EMBEDDING_DIMENSIONS", "384")),
+        support_rag_chroma_enabled=_env_bool("SUPPORT_RAG_CHROMA_ENABLED", default=False),
+        support_rag_chroma_path=os.getenv("SUPPORT_RAG_CHROMA_PATH", os.getenv("RAG_CHROMA_PATH", ".chroma")),
+        support_rag_chroma_collection=os.getenv("SUPPORT_RAG_CHROMA_COLLECTION", "support_programs"),
         rag_chroma_path=os.getenv("RAG_CHROMA_PATH", ".chroma"),
         rag_embedding_dimensions=int(os.getenv("RAG_EMBEDDING_DIMENSIONS", "384")),
         rag_embedding_provider=os.getenv("RAG_EMBEDDING_PROVIDER", "hash").strip().lower(),
