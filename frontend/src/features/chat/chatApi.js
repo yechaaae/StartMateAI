@@ -15,6 +15,18 @@ export const getFreeChatRooms = async (userId = CHAT_USER_ID) => {
   return response.json()
 }
 
+export const getFeatureChatRoom = async (userId = CHAT_USER_ID, targetFeature) => {
+  const response = await fetch(buildUrl(`/api/chat/feature-room?userId=${userId}&targetFeature=${encodeURIComponent(targetFeature)}`))
+  if (!response.ok) throw new Error('기능 채팅 정보를 불러오지 못했습니다.')
+  return response.json()
+}
+
+export const getFeatureChatRooms = async (userId = CHAT_USER_ID, targetFeature) => {
+  const response = await fetch(buildUrl(`/api/chat/feature-rooms?userId=${userId}&targetFeature=${encodeURIComponent(targetFeature)}`))
+  if (!response.ok) throw new Error('기능 채팅 세션 목록을 불러오지 못했습니다.')
+  return response.json()
+}
+
 export const createFreeChatRoom = async (userId = CHAT_USER_ID) => {
   const response = await fetch(buildUrl('/api/chat/free-rooms'), {
     method: 'POST',
@@ -28,6 +40,19 @@ export const createFreeChatRoom = async (userId = CHAT_USER_ID) => {
   return response.json()
 }
 
+export const createFeatureChatRoom = async (userId = CHAT_USER_ID, targetFeature) => {
+  const response = await fetch(buildUrl('/api/chat/feature-rooms'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ userId, targetFeature }),
+  })
+
+  if (!response.ok) throw new Error('새 기능 채팅 세션을 만들지 못했습니다.')
+  return response.json()
+}
+
 export const updateFreeChatRoomTitle = async (roomId, userId, title) => {
   const response = await fetch(buildUrl(`/api/chat/free-rooms/${roomId}`), {
     method: 'PATCH',
@@ -35,6 +60,19 @@ export const updateFreeChatRoomTitle = async (roomId, userId, title) => {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ userId, title }),
+  })
+
+  if (!response.ok) throw new Error('세션 이름을 수정하지 못했습니다.')
+  return response.json()
+}
+
+export const updateFeatureChatRoomTitle = async (roomId, userId, targetFeature, title) => {
+  const response = await fetch(buildUrl(`/api/chat/feature-rooms/${roomId}`), {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ userId, targetFeature, title }),
   })
 
   if (!response.ok) throw new Error('세션 이름을 수정하지 못했습니다.')

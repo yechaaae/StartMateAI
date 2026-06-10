@@ -5,10 +5,13 @@ import com.kakao.backend.chat.application.ChatMessageSendResult;
 import com.kakao.backend.chat.application.ChatRoomQueryService;
 import com.kakao.backend.chat.application.SendChatMessageCommand;
 import com.kakao.backend.chat.dto.ChatMessageSendResponse;
+import com.kakao.backend.chat.dto.CreateFeatureChatRoomRequest;
 import com.kakao.backend.chat.dto.CreateFreeChatRoomRequest;
+import com.kakao.backend.chat.dto.FeatureChatRoomResponse;
 import com.kakao.backend.chat.dto.FreeChatRoomResponse;
 import com.kakao.backend.chat.dto.SendChatMessageRequest;
 import com.kakao.backend.chat.dto.UpdateChatRoomTitleRequest;
+import com.kakao.backend.chat.dto.UpdateFeatureChatRoomTitleRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -46,6 +49,19 @@ public class ChatCommandController {
         ));
     }
 
+    @PostMapping("/feature-rooms")
+    public ResponseEntity<FeatureChatRoomResponse> createFeatureRoom(@RequestBody CreateFeatureChatRoomRequest request) {
+        var result = chatRoomQueryService.createNewFeatureRoom(request.userId(), request.targetFeature());
+        return ResponseEntity.status(HttpStatus.CREATED).body(new FeatureChatRoomResponse(
+                result.roomId(),
+                result.workspaceId(),
+                result.title(),
+                result.roomType(),
+                result.targetFeature(),
+                result.created()
+        ));
+    }
+
     @PatchMapping("/free-rooms/{roomId}")
     public ResponseEntity<FreeChatRoomResponse> updateFreeRoomTitle(
             @PathVariable Long roomId,
@@ -53,6 +69,27 @@ public class ChatCommandController {
     ) {
         var result = chatRoomQueryService.updateFreeRoomTitle(roomId, request.userId(), request.title());
         return ResponseEntity.ok(new FreeChatRoomResponse(
+                result.roomId(),
+                result.workspaceId(),
+                result.title(),
+                result.roomType(),
+                result.targetFeature(),
+                result.created()
+        ));
+    }
+
+    @PatchMapping("/feature-rooms/{roomId}")
+    public ResponseEntity<FeatureChatRoomResponse> updateFeatureRoomTitle(
+            @PathVariable Long roomId,
+            @RequestBody UpdateFeatureChatRoomTitleRequest request
+    ) {
+        var result = chatRoomQueryService.updateFeatureRoomTitle(
+                roomId,
+                request.userId(),
+                request.targetFeature(),
+                request.title()
+        );
+        return ResponseEntity.ok(new FeatureChatRoomResponse(
                 result.roomId(),
                 result.workspaceId(),
                 result.title(),

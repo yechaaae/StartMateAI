@@ -141,6 +141,86 @@ class ChatRoomQueryServiceTest {
     }
 
     @Test
+    void returnsLatestFeatureDiscussionRoom() {
+        User user = User.create("test@example.com", "tester", "USER");
+        user.setId(2L);
+
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
+        workspace.setId(1L);
+        workspace.setUser(user);
+
+        ChatRoom room = ChatRoom.create(workspace, "Item recommendation", "FEATURE_DISCUSSION", "ITEM");
+        room.setId(20L);
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user));
+        when(chatRoomRepository.findFirstByWorkspaceUserIdAndRoomTypeAndTargetFeatureOrderByIdDesc(
+                2L,
+                "FEATURE_DISCUSSION",
+                "ITEM"
+        )).thenReturn(Optional.of(room));
+
+        FeatureChatRoomResult result = chatRoomQueryService.getOrCreateFeatureRoom(2L, "ITEM");
+
+        assertThat(result.roomId()).isEqualTo(20L);
+        assertThat(result.title()).isEqualTo("Item recommendation");
+        assertThat(result.targetFeature()).isEqualTo("ITEM");
+        assertThat(result.created()).isFalse();
+    }
+
+    @Test
+    void createsFeatureDiscussionRoomUsingExistingWorkspace() {
+        User user = User.create("test@example.com", "tester", "USER");
+        user.setId(2L);
+
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
+        workspace.setId(1L);
+        workspace.setUser(user);
+
+        ChatRoom createdRoom = ChatRoom.create(workspace, "Item recommendation", "FEATURE_DISCUSSION", "ITEM");
+        createdRoom.setId(20L);
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user));
+        when(chatRoomRepository.findByWorkspaceUserIdAndRoomTypeAndTargetFeatureOrderByIdDesc(
+                2L,
+                "FEATURE_DISCUSSION",
+                "ITEM"
+        )).thenReturn(List.of());
+        when(workspaceRepository.findFirstByUserIdAndStatusOrderByIdAsc(2L, "ACTIVE"))
+                .thenReturn(Optional.of(workspace));
+        when(chatRoomRepository.save(any(ChatRoom.class))).thenReturn(createdRoom);
+
+        FeatureChatRoomResult result = chatRoomQueryService.createNewFeatureRoom(2L, "ITEM");
+
+        assertThat(result.roomId()).isEqualTo(20L);
+        assertThat(result.title()).isEqualTo("Item recommendation");
+        assertThat(result.targetFeature()).isEqualTo("ITEM");
+        assertThat(result.created()).isTrue();
+    }
+
+    @Test
+    void updatesFeatureDiscussionRoomTitle() {
+        User user = User.create("test@example.com", "tester", "USER");
+        user.setId(2L);
+
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
+        workspace.setId(1L);
+        workspace.setUser(user);
+
+        ChatRoom room = ChatRoom.create(workspace, "Item recommendation", "FEATURE_DISCUSSION", "ITEM");
+        room.setId(20L);
+
+        when(chatRoomRepository.findById(20L)).thenReturn(Optional.of(room));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user));
+
+        FeatureChatRoomResult result = chatRoomQueryService.updateFeatureRoomTitle(20L, 2L, "ITEM", "  쿠키 추천 브랜치  ");
+
+        assertThat(result.roomId()).isEqualTo(20L);
+        assertThat(result.title()).isEqualTo("쿠키 추천 브랜치");
+        assertThat(room.getTitle()).isEqualTo("쿠키 추천 브랜치");
+        assertThat(result.targetFeature()).isEqualTo("ITEM");
+    }
+
+    @Test
     void rejectsBlankRoomTitleUpdate() {
         User user = User.create("test@example.com", "tester", "USER");
         user.setId(2L);
