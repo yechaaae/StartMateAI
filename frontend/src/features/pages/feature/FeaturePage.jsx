@@ -1016,7 +1016,7 @@ export const FeaturePage = ({
           )}
           {messages
             .filter((message) => !message.metadata?.hidden)
-            .map((message) => <ChatRow key={message.id} message={message} />)}
+            .map((message) => <ChatRow key={message.id} message={message} onOpenReport={go} />)}
           {statusProgresses.map((progress) => <StatusProgressRow key={progress.id} progress={progress} />)}
           {typing && <TypingRow agent={typing} />}
         </div>

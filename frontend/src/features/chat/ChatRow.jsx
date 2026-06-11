@@ -1,4 +1,5 @@
 import { agents } from '../../shared/data/agents'
+import { features } from '../../shared/data/features'
 import { AgentAvatar } from '../../shared/components/AgentAvatar'
 import { Icon } from '../../shared/components/Icon'
 
@@ -112,7 +113,77 @@ const ProgressConversationRow = ({ message, agent }) => {
   )
 }
 
-export const ChatRow = ({ message }) => {
+const ReportCard = ({ card, onOpenReport }) => {
+  const feature = features[card.featureId]
+  const title = card.title || feature?.title || 'AI 리포트'
+  const summary = card.summary || ''
+  const bullets = Array.isArray(card.bullets) ? card.bullets.filter(Boolean).slice(0, 4) : []
+  const canOpen = Boolean(card.featureId && onOpenReport)
+
+  return (
+    <div className="chat-report-card">
+      <div className="chat-report-card-head">
+        <span>{feature?.title || card.reportType || 'AI 리포트'}</span>
+        <strong>{title}</strong>
+      </div>
+      {summary && <p>{summary}</p>}
+      {bullets.length > 0 && (
+        <ul>
+          {bullets.map((item, index) => <li key={`${title}-${index}`}>{item}</li>)}
+        </ul>
+      )}
+      {canOpen && (
+        <button type="button" onClick={() => onOpenReport(card.featureId)}>
+          <span>{card.ctaLabel || '리포트 보러가기'}</span>
+          <Icon name="arrow" size={14} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+const renderReportSection = (section, index) => {
+  if (typeof section === 'string') {
+    return (
+      <section key={`section-${index}`}>
+        <p>{section}</p>
+      </section>
+    )
+  }
+
+  if (!section || typeof section !== 'object') return null
+  const items = Array.isArray(section.items) ? section.items.filter(Boolean) : []
+  const body = section.body || section.text || ''
+
+  return (
+    <section key={`${section.title || 'section'}-${index}`}>
+      {section.title && <h4>{section.title}</h4>}
+      {body && <p>{body}</p>}
+      {items.length > 0 && (
+        <ul>
+          {items.map((item, itemIndex) => <li key={`${section.title || index}-${itemIndex}`}>{item}</li>)}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+const ReportBlock = ({ block }) => {
+  const sections = Array.isArray(block.sections) ? block.sections : []
+
+  return (
+    <div className="chat-report-block">
+      <div className="chat-report-block-head">
+        <span>{block.reportType || 'custom'}</span>
+        <strong>{block.title || 'AI 상담 리포트'}</strong>
+      </div>
+      {block.summary && <p className="chat-report-block-summary">{block.summary}</p>}
+      {sections.map(renderReportSection)}
+    </div>
+  )
+}
+
+export const ChatRow = ({ message, onOpenReport }) => {
   if (message.role === 'user') return <div className="chat-row user"><div>{message.text}</div></div>
 
   const agent = agents[message.agent] ?? null
@@ -134,7 +205,13 @@ export const ChatRow = ({ message }) => {
       )}
       <div className="chat-copy">
         <strong style={agent ? { color: agent.color } : undefined}>{displayName}</strong>
-        <p>{message.text}</p>
+        {message.reportCard ? (
+          <ReportCard card={message.reportCard} onOpenReport={onOpenReport} />
+        ) : message.reportBlock ? (
+          <ReportBlock block={message.reportBlock} />
+        ) : (
+          <p>{message.text}</p>
+        )}
       </div>
     </div>
   )

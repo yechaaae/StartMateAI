@@ -510,7 +510,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
             {chatLoading && <div className="chat-loading">대화를 불러오는 중...</div>}
             {messages
               .filter((message) => !message.metadata?.hidden)
-              .map((message) => <ChatRow key={message.id} message={message} />)}
+              .map((message) => <ChatRow key={message.id} message={message} onOpenReport={go} />)}
             {typing && <TypingRow agent={typing} />}
           </div>
           {!!latestStatus && (

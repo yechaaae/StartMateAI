@@ -88,6 +88,7 @@ class OrchestratorAgent:
         if state["mode"] == "collaboration":
             result = await self._collaborative_consultation(request, state)
             result = self._annotate_response(result, state)
+            result = self._attach_feature_result(result, state)
             await self._emit_progress(
                 state,
                 "orchestrator.completed",
@@ -1214,7 +1215,7 @@ class OrchestratorAgent:
         return response
 
     def _attach_feature_result(self, response: AgentResponse, state: dict[str, Any]) -> AgentResponse:
-        if not self._should_create_feature_result(state["request"]):
+        if not self._should_attach_result(state):
             return response
         feature_result = build_feature_result(
             request=state["request"],
@@ -1225,8 +1226,42 @@ class OrchestratorAgent:
         if feature_result is None:
             return response
         response.result = feature_result
-        response.data["feature_result"] = feature_result
         return response
+
+    def _should_attach_result(self, state: dict[str, Any]) -> bool:
+        request = state["request"]
+        if self._should_create_feature_result(request):
+            return True
+        if feature_key_from_request(request):
+            return True
+        if state.get("mode") == "collaboration":
+            return True
+        if len(state.get("results", {})) > 1:
+            return True
+        result_intents = set(state.get("results", {}).keys())
+        if result_intents & {
+            "idea",
+            "policy",
+            "finance",
+            "simulation",
+            "operation",
+            "marketing",
+            "legal",
+            "commercial_area",
+        }:
+            return True
+        intent = (request.intent or "").lower()
+        return intent in {
+            "idea",
+            "policy",
+            "finance",
+            "simulation",
+            "operation",
+            "marketing",
+            "legal",
+            "commercial_area",
+            "roadmap",
+        }
 
     def _should_create_feature_result(self, request: ChatRequest) -> bool:
         metadata = self._dict_at(request.context or {}, "requestMetadata")

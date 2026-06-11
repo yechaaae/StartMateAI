@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from app.schemas import AgentResponse, ChatRequest
@@ -34,6 +35,24 @@ FEATURE_IDS: dict[str, str] = {
     "SNS": "sns",
 }
 
+FEATURE_REPORT_TYPES: dict[str, str] = {
+    "ITEM": "idea_recommendation",
+    "SIMULATOR": "simulation",
+    "SUPPORT": "support_program",
+    "PLAN": "business_plan",
+    "OPERATION": "operation_feedback",
+    "SNS": "sns_marketing",
+}
+
+FEATURE_CTA_LABELS: dict[str, str] = {
+    "ITEM": "아이템 추천 리포트 보기",
+    "SIMULATOR": "시뮬레이션 리포트 보기",
+    "SUPPORT": "지원사업 리포트 보기",
+    "PLAN": "사업계획 리포트 보기",
+    "OPERATION": "운영 피드백 리포트 보기",
+    "SNS": "SNS 마케팅 리포트 보기",
+}
+
 
 def feature_key_from_request(request: ChatRequest) -> str:
     context = request.context or {}
@@ -48,6 +67,42 @@ def feature_key_from_request(request: ChatRequest) -> str:
     return ""
 
 
+def feature_key_for_result(
+    *,
+    request: ChatRequest,
+    response: AgentResponse,
+    results: dict[str, AgentResponse],
+) -> str:
+    explicit = feature_key_from_request(request)
+    if explicit:
+        return explicit
+
+    intents = {key for key in results.keys() if key}
+    response_intent = (response.intent or "").lower()
+
+    if response_intent in {"collaboration", "roadmap"} or len(intents) >= 4:
+        return "PLAN"
+    if "simulation" in intents or response_intent == "simulation":
+        return "SIMULATOR"
+    if "operation" in intents and ("finance" in intents or "marketing" in intents or len(intents) == 1):
+        return "OPERATION"
+    if "marketing" in intents and ("operation" in intents or "profile" in intents or len(intents) == 1):
+        return "SNS"
+    if "policy" in intents and ("profile" in intents or "finance" in intents or len(intents) == 1):
+        return "SUPPORT"
+    if "idea" in intents:
+        return "ITEM"
+    if response_intent in {"idea", "policy", "operation", "marketing", "finance"}:
+        return {
+            "idea": "ITEM",
+            "policy": "SUPPORT",
+            "operation": "OPERATION",
+            "marketing": "SNS",
+            "finance": "SIMULATOR",
+        }.get(response_intent, "")
+    return ""
+
+
 def build_feature_result(
     *,
     request: ChatRequest,
@@ -55,9 +110,9 @@ def build_feature_result(
     results: dict[str, AgentResponse],
     agent_review: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    feature_key = feature_key_from_request(request)
+    feature_key = feature_key_for_result(request=request, response=response, results=results)
     if feature_key not in FEATURE_REPORT_TEAMS:
-        return None
+        return _custom_report_result(request, response)
 
     report_data = _report_data(feature_key, request, results)
     if not report_data:
@@ -65,11 +120,14 @@ def build_feature_result(
     report_data = _with_agent_review(feature_key, report_data, results, agent_review)
 
     payload = {
+        "reportType": FEATURE_REPORT_TYPES[feature_key],
         "featureId": FEATURE_IDS[feature_key],
         "reportData": report_data,
+        "primaryReport": report_data,
+        "chatCard": _chat_card(feature_key, response, report_data),
         "agentSummary": response.summary,
         "selectedAgents": [item.agent for item in results.values()],
-        "agentResults": {intent: item.data for intent, item in results.items()},
+        "agentResults": {intent: deepcopy(item.data) for intent, item in results.items()},
     }
     review = _dict(agent_review)
     if review and feature_key in FEATURE_REVIEW_FEATURES:
@@ -88,6 +146,145 @@ def build_feature_result(
         "referenceId": _nested(request.context, "rabbitmq", "roomId"),
         "payload": payload,
     }
+
+
+def _chat_card(feature_key: str, response: AgentResponse, report_data: dict[str, Any]) -> dict[str, Any]:
+    title = _result_title(feature_key, report_data)
+    bullets = _chat_card_bullets(feature_key, report_data, response)
+    summary = _chat_card_summary(feature_key, response, report_data)
+    if not summary and bullets:
+        summary = bullets[0]
+    return {
+        "kind": "feature_report",
+        "reportType": FEATURE_REPORT_TYPES[feature_key],
+        "featureId": FEATURE_IDS[feature_key],
+        "targetFeature": feature_key,
+        "resultType": FEATURE_RESULT_TYPES[feature_key],
+        "title": title,
+        "summary": summary or title,
+        "bullets": bullets[:4],
+        "ctaLabel": FEATURE_CTA_LABELS[feature_key],
+        "routeKey": f"{FEATURE_IDS[feature_key]}-report",
+    }
+
+
+def _chat_card_summary(
+    feature_key: str,
+    response: AgentResponse,
+    report_data: dict[str, Any],
+) -> str:
+    if feature_key == "PLAN":
+        target = report_data.get("target") or "창업 실행안"
+        return f"{target} 기준으로 Agent들이 검토한 내용을 사업계획 리포트로 정리했어요."
+    if feature_key == "ITEM":
+        return "추천 아이템과 선정 근거를 리포트로 정리했어요."
+    if feature_key == "SIMULATOR":
+        return "초기 비용, 매출, 손익분기 흐름을 시뮬레이션 리포트로 정리했어요."
+    if feature_key == "SUPPORT":
+        return "지원사업 후보와 선정 근거를 리포트로 정리했어요."
+    if feature_key == "OPERATION":
+        return "운영 데이터와 개선 액션을 피드백 리포트로 정리했어요."
+    if feature_key == "SNS":
+        return "SNS 콘텐츠 방향과 실행안을 마케팅 리포트로 정리했어요."
+    return _first_paragraph(response.summary)
+
+
+def _chat_card_bullets(
+    feature_key: str,
+    report_data: dict[str, Any],
+    response: AgentResponse,
+) -> list[str]:
+    if feature_key == "ITEM":
+        items = [item for item in _list(report_data.get("items")) if isinstance(item, dict)]
+        return [
+            f"{item.get('rank', index + 1)}순위: {item.get('title')} ({item.get('score', '-')}점)"
+            for index, item in enumerate(items[:3])
+            if item.get("title")
+        ]
+    if feature_key == "SUPPORT":
+        items = [item for item in _list(report_data.get("list")) if isinstance(item, dict)]
+        return [
+            f"{index + 1}. {item.get('title')} - 적합도 {item.get('score', '-')}점"
+            for index, item in enumerate(items[:3])
+            if item.get("title")
+        ]
+    if feature_key == "PLAN":
+        sections = _list(report_data.get("sections"))
+        return [
+            _section_preview(section)
+            for section in sections[:4]
+            if isinstance(section, list) and section
+        ]
+    if feature_key == "OPERATION":
+        return [
+            f"{item[0]}: {item[1]}"
+            for item in _list(report_data.get("suggestions"))[:3]
+            if isinstance(item, list) and len(item) >= 2
+        ]
+    if feature_key == "SNS":
+        return [
+            f"채널: {report_data.get('channel')}",
+            f"훅: {report_data.get('hook')}",
+            f"CTA: {report_data.get('callToAction')}",
+        ]
+    if feature_key == "SIMULATOR":
+        summary = _dict(report_data.get("summary"))
+        bullets = []
+        if summary.get("totalRevenue") is not None:
+            bullets.append(f"30일 매출 {_money(summary.get('totalRevenue'))}")
+        if summary.get("totalProfit") is not None:
+            bullets.append(f"30일 손익 {_money(summary.get('totalProfit'))}")
+        if summary.get("bepDay"):
+            bullets.append(f"손익분기 {summary.get('bepDay')}일차")
+        return bullets
+    first = _first_paragraph(response.summary)
+    return [first] if first else []
+
+
+def _custom_report_result(request: ChatRequest, response: AgentResponse) -> dict[str, Any]:
+    report_block = _custom_report_block(response)
+    return {
+        "targetFeature": "CUSTOM",
+        "resultType": "CUSTOM_REPORT",
+        "resultTitle": report_block["title"],
+        "shouldCreateResult": False,
+        "routeKey": "custom-report",
+        "referenceId": _nested(request.context, "rabbitmq", "roomId"),
+        "payload": {
+            "reportType": "custom",
+            "reportBlock": report_block,
+        },
+    }
+
+
+def _custom_report_block(response: AgentResponse) -> dict[str, Any]:
+    sections = _summary_to_sections(response.summary)
+    next_actions = [str(item) for item in response.next_actions[:5] if item]
+    if next_actions:
+        sections.append({"title": "다음 행동", "items": next_actions})
+    return {
+        "kind": "custom_report",
+        "reportType": "custom",
+        "title": "AI 상담 리포트",
+        "summary": _first_paragraph(response.summary),
+        "sections": sections or [{"title": "요약", "body": response.summary}],
+    }
+
+
+def _summary_to_sections(summary: str) -> list[dict[str, Any]]:
+    text = (summary or "").strip()
+    if not text:
+        return []
+    parts = [part.strip() for part in text.split("\n\n") if part.strip()]
+    if len(parts) <= 1:
+        return [{"title": "상담 요약", "body": text}]
+    sections: list[dict[str, Any]] = []
+    for index, part in enumerate(parts[:6], start=1):
+        lines = [line.strip() for line in part.splitlines() if line.strip()]
+        title = lines[0].rstrip(":") if lines and len(lines[0]) <= 32 else f"{index}. 핵심 정리"
+        body = "\n".join(lines[1:]) if len(lines) > 1 and title == lines[0].rstrip(":") else part
+        sections.append({"title": title, "body": body})
+    return sections
 
 
 def _report_data(
@@ -226,6 +423,129 @@ def _plan_report(results: dict[str, AgentResponse]) -> dict[str, Any]:
             ["1. 사업 개요", str(plan.get("recommendation") or "선택한 아이템을 기준으로 사업 개요를 정리하세요.")],
         ],
     }
+
+
+def _plan_report(results: dict[str, AgentResponse]) -> dict[str, Any]:
+    plan = _data(results, "plan")
+    sections = _list(plan.get("sections"))
+    generated_sections = [
+        section
+        for section in [
+            _agent_section("추천 방향", results, "idea"),
+            _agent_section("재무 검토", results, "finance"),
+            _agent_section("지원사업 검토", results, "policy"),
+            _agent_section("상권/입지 검토", results, "commercial_area"),
+            _agent_section("마케팅 실행", results, "marketing"),
+            _agent_section("운영 리스크", results, "operation"),
+        ]
+        if section
+    ]
+    generated_sections = [
+        [f"{index}. {section[0]}", section[1]]
+        for index, section in enumerate(generated_sections, start=1)
+    ]
+    return {
+        "target": str(plan.get("target") or _plan_target(results)),
+        "sections": [
+            [str(item.get("title") or f"{index}. 섹션"), str(item.get("body") or "내용을 보완하세요.")]
+            for index, item in enumerate(sections[:6], start=1)
+            if isinstance(item, dict)
+        ] or generated_sections or [
+            ["1. 사업 개요", str(plan.get("recommendation") or "선택된 아이템과 검토 근거를 기준으로 사업 방향을 정리하세요.")],
+        ],
+    }
+
+
+def _plan_target(results: dict[str, AgentResponse]) -> str:
+    idea = _data(results, "idea")
+    top = _first_idea(idea)
+    if top.get("title"):
+        return str(top["title"])
+    finance = _data(results, "finance")
+    if finance.get("item_name"):
+        return str(finance["item_name"])
+    return "AI 창업 실행안"
+
+
+def _agent_section(title: str, results: dict[str, AgentResponse], intent: str) -> list[str] | None:
+    response = results.get(intent)
+    if response is None:
+        return None
+    data = response.data or {}
+    lines: list[str] = []
+    summary = str(response.summary or "").strip()
+    if summary:
+        lines.append(summary)
+
+    if intent == "idea":
+        top = _first_idea(data)
+        if top.get("title"):
+            lines.append(f"1순위 후보: {top.get('title')}")
+        if top.get("match_score"):
+            lines.append(f"적합도: {top.get('match_score')}점")
+        reasons = _list(top.get("why_recommended")) or _list(top.get("reasons"))
+        if reasons:
+            lines.append(f"추천 근거: {', '.join(map(str, reasons[:3]))}")
+    elif intent == "finance":
+        for key, label in [
+            ("initial_cash_needed_krw", "초기 필요 현금"),
+            ("monthly_profit_krw", "월 예상 손익"),
+            ("break_even_units_per_day", "손익분기 판매량"),
+        ]:
+            value = data.get(key)
+            if value is not None:
+                suffix = "원" if key.endswith("_krw") else "개/day"
+                lines.append(f"{label}: {_number(value)}{suffix}")
+    elif intent == "policy":
+        matches = _list(data.get("matches"))
+        if matches and isinstance(matches[0], dict):
+            top = matches[0]
+            if top.get("title"):
+                lines.append(f"1순위 공고: {top.get('title')}")
+            if top.get("eligibility_score") or top.get("score"):
+                lines.append(f"적합도: {top.get('eligibility_score') or top.get('score')}점")
+            if top.get("summary"):
+                lines.append(f"공고 핵심: {top.get('summary')}")
+    elif intent == "commercial_area":
+        payload = _dict(data.get("payload")) or data
+        for key, label in [
+            ("region", "지역"),
+            ("business_type", "업종"),
+            ("total_stores", "전체 점포"),
+            ("direct_competitors", "직접 경쟁점"),
+            ("competition_level", "경쟁 강도"),
+        ]:
+            value = payload.get(key)
+            if value not in (None, ""):
+                lines.append(f"{label}: {value}")
+    elif intent == "marketing":
+        for key, label in [
+            ("target_customer", "타깃"),
+            ("channel", "채널"),
+            ("objective", "목표"),
+            ("reels_hook", "콘텐츠 훅"),
+        ]:
+            value = data.get(key)
+            if value:
+                lines.append(f"{label}: {value}")
+    elif intent == "operation":
+        missing = _list(data.get("missing_inputs"))
+        risks = _list(data.get("risk_items")) or _list(data.get("risks"))
+        if missing:
+            lines.append(f"부족 데이터: {', '.join(map(str, missing[:4]))}")
+        if risks:
+            lines.append(f"우선 리스크: {_first_text(risks[0])}")
+
+    body = "\n".join(_unique_lines(lines))
+    return [title, body] if body else None
+
+
+def _first_idea(data: dict[str, Any]) -> dict[str, Any]:
+    recommendations = _list(data.get("recommendations")) or _list(data.get("all_candidates"))
+    if recommendations and isinstance(recommendations[0], dict):
+        return recommendations[0]
+    evidence = _dict(data.get("evidence"))
+    return _dict(evidence.get("top_idea"))
 
 
 def _with_agent_review(
@@ -400,6 +720,66 @@ def _result_title(feature_key: str, report_data: dict[str, Any]) -> str:
     if feature_key == "SNS":
         return f"{report_data.get('topic') or 'SNS'} 캠페인 초안"
     return "AI 기능 리포트"
+
+
+def _compact_text(value: Any, *, limit: int = 180) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text
+
+
+def _first_paragraph(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return next((part.strip() for part in text.split("\n\n") if part.strip()), text)
+
+
+def _number(value: Any) -> str:
+    try:
+        return f"{int(float(value)):,}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _unique_lines(values: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            result.append(text)
+    return result
+
+
+def _first_text(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("risk", "title", "summary", "description", "reason", "text"):
+            text = str(value.get(key) or "").strip()
+            if text:
+                return text
+        return ""
+    if isinstance(value, list):
+        for item in value:
+            text = _first_text(item)
+            if text:
+                return text
+        return ""
+    return str(value or "").strip()
+
+
+def _section_preview(section: list[Any]) -> str:
+    title = str(section[0] if section else "").strip()
+    body = str(section[1] if len(section) > 1 else "").strip()
+    if not body:
+        return title
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    preview = " ".join(lines[:3])
+    if not preview:
+        return title
+    return f"{title}\n{preview}"
 
 
 def _data(results: dict[str, AgentResponse], intent: str) -> dict[str, Any]:

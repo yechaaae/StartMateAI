@@ -119,6 +119,14 @@ const inferEventViewType = (agentProgress) => {
 
 export const normalizeChatMessage = (message) => {
   const metadata = parseMetadata(message.metadata)
+  const result = metadata.result && typeof metadata.result === 'object' ? metadata.result : null
+  const resultPayload = result?.payload && typeof result.payload === 'object' ? result.payload : {}
+  const reportCard = resultPayload.chatCard && typeof resultPayload.chatCard === 'object'
+    ? resultPayload.chatCard
+    : null
+  const reportBlock = resultPayload.reportBlock && typeof resultPayload.reportBlock === 'object'
+    ? resultPayload.reportBlock
+    : null
   const selectedAgents = Array.isArray(metadata.selectedAgents)
     ? metadata.selectedAgents.map(normalizeAgentDescriptor).filter(Boolean)
     : []
@@ -133,6 +141,11 @@ export const normalizeChatMessage = (message) => {
     agentLabel: metadata.agentLabel ?? metadata.agent ?? '',
     text: message.content,
     metadata,
+    result,
+    reportCard,
+    reportBlock,
+    reportType: resultPayload.reportType ?? reportCard?.reportType ?? reportBlock?.reportType ?? '',
+    reportFeatureId: reportCard?.featureId ?? resultPayload.featureId ?? '',
     progressMessage: metadata.progressMessage === true,
     progressType: inferProgressViewType(metadata),
     progressStatus: metadata.progressStatus ?? '',
@@ -225,6 +238,11 @@ export const normalizeAgentProgressMessage = (agentProgress) => {
     agentLabel: agentProgress.agent?.label ?? '',
     text: agentProgress.message || 'Agent is working on the request.',
     metadata,
+    result: null,
+    reportCard: null,
+    reportBlock: null,
+    reportType: '',
+    reportFeatureId: '',
     progressMessage: true,
     progressType: inferProgressViewType(metadata),
     progressStatus: metadata.progressStatus,
