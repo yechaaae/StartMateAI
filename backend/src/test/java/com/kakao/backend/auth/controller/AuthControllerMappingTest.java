@@ -17,7 +17,7 @@ class AuthControllerMappingTest {
     void registersAuthLoginAndSignupRoutes() {
         String mappings = handlerMapping.getHandlerMethods().keySet().toString();
 
-        assertThat(mappings).contains("/auth/login");
-        assertThat(mappings).contains("/auth/signup");
+        assertThat(mappings).contains("/api/auth/login");
+        assertThat(mappings).contains("/api/auth/signup");
     }
 }
