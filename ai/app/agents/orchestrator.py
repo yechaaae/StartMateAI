@@ -744,6 +744,12 @@ class OrchestratorAgent:
         results: dict[str, AgentResponse] = state["results"]
         challenges = self._debate_challenges(results)[:2]
         if not challenges:
+            await self._emit_progress(
+                state,
+                "orchestrator.synthesizing",
+                "Agent 의견을 한 번 맞춰보고 있어요.",
+                view_type="discussion",
+            )
             return {
                 "arguments": [],
                 "challenges": [],
