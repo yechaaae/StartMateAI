@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { savedResultApi } from '../../../shared/api/client'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { operationFeedbackApi, savedResultApi } from '../../../shared/api/client'
 import { agents } from '../../../shared/data/agents'
 import { features } from '../../../shared/data/features'
 import { AgentAvatar } from '../../../shared/components/AgentAvatar'
@@ -38,6 +38,7 @@ import {
   upsertMessage,
 } from '../../chat/chatMappers'
 import { Report } from '../../reports/Report'
+import { buildMockOperationSuggestions } from '../../reports/operationFeedbackLogic'
 import { buildFeatureSavedReport } from '../../reports/savedReportPayload'
 import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from '../featureChatContext'
 import { buildFeaturePageTheme } from './featurePageTheme'
@@ -172,6 +173,28 @@ export const FeaturePage = ({
   const hiddenRequestIdsRef = useRef(new Set())
   const autoGenerationKeysRef = useRef(new Set())
 
+  const applyReportData = useCallback((reportData) => {
+    setData(reportData)
+    if (id === 'item') {
+      setSelectedIdeaRank(reportData.items?.[0]?.rank ?? null)
+    }
+    if (id === 'support') {
+      setSelectedSupportTitle(reportData.list?.[0]?.title ?? null)
+      if (reportData.list?.length) {
+        setSupportHasSearched(true)
+      }
+    }
+    if (id === 'plan') {
+      setFocusedSectionTitle(reportData.sections?.[0]?.[0] ?? null)
+    }
+    if (id === 'operation') {
+      const firstSuggestion = reportData.suggestions?.[0]
+      setSelectedOperationSuggestionTitle(
+        Array.isArray(firstSuggestion) ? firstSuggestion[0] : firstSuggestion?.title ?? null,
+      )
+    }
+  }, [id])
+
   useEffect(() => {
     if (chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight
@@ -204,6 +227,8 @@ export const FeaturePage = ({
         if (reportData) {
           applyReportData(reportData)
           setAiReportStatus('ready')
+        } else if (id === 'operation') {
+          setAiReportStatus('ready')
         } else {
           setAiReportStatus('empty')
         }
@@ -221,7 +246,7 @@ export const FeaturePage = ({
     return () => {
       active = false
     }
-  }, [targetFeature])
+  }, [applyReportData, id, targetFeature])
 
   useEffect(() => {
     let active = true
@@ -408,7 +433,7 @@ export const FeaturePage = ({
       }
       eventSource.close()
     }
-  }, [id, room?.roomId, streamVersion])
+  }, [applyReportData, id, room?.roomId, streamVersion])
 
   const latestStatus = useMemo(() => Object.values(statusMap).at(-1) ?? null, [statusMap])
   const activeProgresses = useMemo(() => listActiveProgresses(activeProgressMap), [activeProgressMap])
@@ -503,25 +528,6 @@ export const FeaturePage = ({
   )
   const resolvedIdeaId = workspaceContext?.selectedIdea?.rank ?? selectedIdeaRank ?? null
 
-  function applyReportData(reportData) {
-    setData(reportData)
-    if (id === 'item') {
-      setSelectedIdeaRank(reportData.items?.[0]?.rank ?? null)
-    }
-    if (id === 'support') {
-      setSelectedSupportTitle(reportData.list?.[0]?.title ?? null)
-      if (reportData.list?.length) {
-        setSupportHasSearched(true)
-      }
-    }
-    if (id === 'plan') {
-      setFocusedSectionTitle(reportData.sections?.[0]?.[0] ?? null)
-    }
-    if (id === 'operation') {
-      setSelectedOperationSuggestionTitle(reportData.suggestions?.[0]?.[0] ?? null)
-    }
-  }
-
   const sendFeatureMessage = async (text, { hidden = false } = {}) => {
     if (!room?.roomId) {
       return null
@@ -595,7 +601,7 @@ export const FeaturePage = ({
   }
 
   useEffect(() => {
-    if (aiReportStatus !== 'empty' || !room?.roomId) {
+    if (id === 'operation' || aiReportStatus !== 'empty' || !room?.roomId) {
       return
     }
 
@@ -608,13 +614,48 @@ export const FeaturePage = ({
     setAiReportStatus('loading')
     sendFeatureMessage(GENERATE_REPORT_PROMPT, { hidden: true })
       .catch(() => setAiReportStatus('error'))
-  }, [aiReportStatus, room?.roomId, targetFeature])
+  }, [aiReportStatus, id, room?.roomId, targetFeature])
 
   const updateRoomState = (updatedRoom) => {
     setRooms((prev) => prev.map((candidate) => (
       candidate.roomId === updatedRoom.roomId ? updatedRoom : candidate
     )))
     setRoom((prev) => (prev?.roomId === updatedRoom.roomId ? updatedRoom : prev))
+  }
+
+  const handleOperationFeedbackRequest = async () => {
+    if (savingReport || id !== 'operation') {
+      return
+    }
+
+    const suggestions = buildMockOperationSuggestions({
+      kpis: data.kpis ?? [],
+      products: data.products ?? [],
+      notes: data.notes ?? '',
+    })
+    const nextData = { ...data, suggestions }
+    const nextSelectedTitle = suggestions[0]?.title ?? null
+
+    try {
+      setSavingReport(true)
+      setError('')
+      setData(nextData)
+      setSelectedOperationSuggestionTitle(nextSelectedTitle)
+
+      await operationFeedbackApi.save({
+        period: nextData.period,
+        kpis: nextData.kpis,
+        products: nextData.products,
+        channels: nextData.channels,
+        notes: nextData.notes,
+        suggestions,
+        selectedSuggestionTitle: nextSelectedTitle,
+      })
+    } catch (nextError) {
+      setError(nextError.message ?? '운영 피드백을 저장하지 못했습니다.')
+    } finally {
+      setSavingReport(false)
+    }
   }
 
   const handleSaveReport = async () => {
@@ -820,6 +861,8 @@ export const FeaturePage = ({
             onFocusSection={setFocusedSectionTitle}
             planGoal={planGoal}
             onChangePlanGoal={setPlanGoal}
+            onRequestOperationFeedback={handleOperationFeedbackRequest}
+            operationFeedbackSaving={savingReport}
           />
         ) : (
           <div className="ai-report-state">
