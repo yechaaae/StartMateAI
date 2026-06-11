@@ -4,6 +4,13 @@ import { AgentAvatar } from '../../shared/components/AgentAvatar'
 import { Icon } from '../../shared/components/Icon'
 import { ChatInput } from '../chat/ChatInput'
 import { ChatRow } from '../chat/ChatRow'
+import {
+  clearActiveProgressByRequest,
+  listActiveProgresses,
+  resolveTypingAgent,
+  upsertActiveProgress,
+} from '../chat/chatProgressState'
+import { StatusProgressRow } from '../chat/StatusProgressRow'
 import { TypingRow } from '../chat/TypingRow'
 import {
   createChatEventSource,
@@ -32,17 +39,19 @@ export const DiscussPage = ({ user }) => {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [statusMap, setStatusMap] = useState({})
-  const [agentProgress, setAgentProgress] = useState(null)
+  const [activeProgressMap, setActiveProgressMap] = useState(new Map())
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState(null)
   const [titleDraft, setTitleDraft] = useState('')
   const [savingTitle, setSavingTitle] = useState(false)
+  const [streamVersion, setStreamVersion] = useState(0)
   const scroll = useRef(null)
   const sessionMenuRef = useRef(null)
+  const reconnectTimeoutRef = useRef(null)
 
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight
-  }, [items, statusMap])
+  }, [items, statusMap, activeProgressMap])
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -94,19 +103,26 @@ export const DiscussPage = ({ user }) => {
   }, [])
 
   useEffect(() => {
+    setStreamVersion(0)
+  }, [room?.roomId])
+
+  useEffect(() => {
     if (!room?.roomId) return undefined
 
     let active = true
     const eventSource = createChatEventSource(room.roomId)
 
-    const loadHistory = async () => {
+    const loadHistory = async ({ reset = false, showLoading = false } = {}) => {
       try {
-        setLoading(true)
+        if (showLoading) setLoading(true)
         setError('')
-        setItems([])
-        setStatusMap({})
-        setAgentProgress(null)
-        setConnection('connecting')
+
+        if (reset) {
+          setItems([])
+          setStatusMap({})
+          setActiveProgressMap(new Map())
+          setConnection('connecting')
+        }
 
         const history = await getChatMessages(room.roomId)
         if (!active) return
@@ -115,15 +131,18 @@ export const DiscussPage = ({ user }) => {
         if (!active) return
         setError(nextError.message ?? '이전 대화를 불러오지 못했습니다.')
       } finally {
-        if (active) setLoading(false)
+        if (active && showLoading) setLoading(false)
       }
     }
 
-    loadHistory()
+    loadHistory({ reset: true, showLoading: true })
 
     eventSource.addEventListener('chat-connected', () => {
       if (!active) return
       setConnection('connected')
+      if (streamVersion > 0) {
+        loadHistory()
+      }
     })
 
     eventSource.addEventListener('chat-message', (event) => {
@@ -139,6 +158,10 @@ export const DiscussPage = ({ user }) => {
       if (!payload.status) return
       const nextStatus = normalizeStatusEvent(payload.status)
       setStatusMap((prev) => ({ ...prev, [nextStatus.requestId]: nextStatus }))
+
+      if (['COMPLETED', 'FAILED'].includes(nextStatus.status)) {
+        setActiveProgressMap((prev) => clearActiveProgressByRequest(prev, nextStatus.requestId))
+      }
     })
 
     eventSource.addEventListener('agent-progress', (event) => {
@@ -146,26 +169,50 @@ export const DiscussPage = ({ user }) => {
       const payload = JSON.parse(event.data)
       if (!payload.agentProgress) return
       const nextProgress = normalizeAgentProgressEvent(payload.agentProgress)
-      setAgentProgress(nextProgress)
-      if (nextProgress.agent && nextProgress.message) {
+      setActiveProgressMap((prev) => upsertActiveProgress(prev, nextProgress))
+
+      if (nextProgress.viewType !== 'status' && nextProgress.agent && nextProgress.message) {
         setItems((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
       }
     })
 
     eventSource.onerror = () => {
       if (!active) return
-      setConnection('error')
+      setConnection('connecting')
+      if (reconnectTimeoutRef.current) return
+
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        reconnectTimeoutRef.current = null
+        if (!active) return
+        eventSource.close()
+        setStreamVersion((prev) => prev + 1)
+      }, 1200)
     }
 
     return () => {
       active = false
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
       eventSource.close()
     }
-  }, [room?.roomId])
+  }, [room?.roomId, streamVersion])
 
   const latestStatus = useMemo(() => Object.values(statusMap).at(-1) ?? null, [statusMap])
-  const typing = agentProgress?.agent?.status === 'running'
-    ? agentProgress.agent.key
+  const activeProgresses = useMemo(() => listActiveProgresses(activeProgressMap), [activeProgressMap])
+  const statusProgresses = useMemo(
+    () => activeProgresses.filter((progress) => progress.viewType === 'status'),
+    [activeProgresses],
+  )
+  const typing = activeProgresses.length
+    ? resolveTypingAgent(
+        activeProgresses.filter((progress) => (
+          ['running', 'queued'].includes(String(progress.agent?.status ?? '').toLowerCase())
+          || progress.eventType === 'orchestrator.synthesizing'
+        )),
+        null,
+      )
     : latestStatus && ['QUEUED', 'PROCESSING'].includes(latestStatus.status)
       ? 'profile'
       : null
@@ -183,7 +230,6 @@ export const DiscussPage = ({ user }) => {
     setError('')
 
     try {
-      setAgentProgress(null)
       const response = await sendChatMessage(room.roomId, {
         userId: user?.id ?? null,
         content: text,
@@ -235,7 +281,7 @@ export const DiscussPage = ({ user }) => {
       setSessionMenuOpen(false)
       setEditingRoomId(null)
     } catch (nextError) {
-      setError(nextError.message ?? '새 자유 상담실을 만들지 못했습니다.')
+      setError(nextError.message ?? '새 자유 상담 세션을 만들지 못했습니다.')
     } finally {
       setCreatingRoom(false)
     }
@@ -381,10 +427,11 @@ export const DiscussPage = ({ user }) => {
           </div>
         )}
         {items.map((item) => <ChatRow key={item.id} message={item} />)}
+        {statusProgresses.map((progress) => <StatusProgressRow key={progress.id} progress={progress} />)}
         {typing && <TypingRow agent={typing} />}
       </div>
 
-      {!!latestStatus && (
+      {!!latestStatus && latestStatus.status === 'FAILED' && (
         <div className={`chat-status-banner ${latestStatus.status?.toLowerCase()}`}>
           <b>{latestStatus.status}</b>
           {latestStatus.errorMessage ? <span>{latestStatus.errorMessage}</span> : <span>요청 ID {latestStatus.requestId}</span>}

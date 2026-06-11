@@ -6,6 +6,13 @@ import { AgentAvatar } from '../../../shared/components/AgentAvatar'
 import { Icon } from '../../../shared/components/Icon'
 import { ChatInput } from '../../chat/ChatInput'
 import { ChatRow } from '../../chat/ChatRow'
+import {
+  clearActiveProgressByRequest,
+  listActiveProgresses,
+  resolveTypingAgent,
+  upsertActiveProgress,
+} from '../../chat/chatProgressState'
+import { StatusProgressRow } from '../../chat/StatusProgressRow'
 import { TypingRow } from '../../chat/TypingRow'
 import { runSupportProgramSearch } from '../../reports/supportProgramSearch'
 import {
@@ -127,22 +134,24 @@ export const FeaturePage = ({
   const [creatingRoom, setCreatingRoom] = useState(false)
   const [connection, setConnection] = useState('idle')
   const [statusMap, setStatusMap] = useState({})
-  const [agentProgress, setAgentProgress] = useState(null)
+  const [activeProgressMap, setActiveProgressMap] = useState(new Map())
   const [error, setError] = useState('')
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState(null)
   const [titleDraft, setTitleDraft] = useState('')
   const [savingTitle, setSavingTitle] = useState(false)
   const [savingReport, setSavingReport] = useState(false)
+  const [streamVersion, setStreamVersion] = useState(0)
 
   const chatRef = useRef(null)
   const sessionMenuRef = useRef(null)
+  const reconnectTimeoutRef = useRef(null)
 
   useEffect(() => {
     if (chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight
     }
-  }, [messages, agentProgress, statusMap])
+  }, [messages, activeProgressMap, statusMap])
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -202,6 +211,10 @@ export const FeaturePage = ({
   }, [targetFeature])
 
   useEffect(() => {
+    setStreamVersion(0)
+  }, [room?.roomId])
+
+  useEffect(() => {
     if (!room?.roomId) {
       return undefined
     }
@@ -209,14 +222,18 @@ export const FeaturePage = ({
     let active = true
     const eventSource = createChatEventSource(room.roomId)
 
-    const loadHistory = async () => {
+    const loadHistory = async ({ reset = false, showLoading = false } = {}) => {
       try {
-        setLoading(true)
+        if (showLoading) {
+          setLoading(true)
+        }
         setError('')
-        setMessages([])
-        setStatusMap({})
-        setAgentProgress(null)
-        setConnection('connecting')
+        if (reset) {
+          setMessages([])
+          setStatusMap({})
+          setActiveProgressMap(new Map())
+          setConnection('connecting')
+        }
 
         const history = await getChatMessages(room.roomId)
         if (!active) {
@@ -229,19 +246,22 @@ export const FeaturePage = ({
         }
         setError(nextError.message ?? '이전 대화를 불러오지 못했습니다.')
       } finally {
-        if (active) {
+        if (active && showLoading) {
           setLoading(false)
         }
       }
     }
 
-    loadHistory()
+    loadHistory({ reset: true, showLoading: true })
 
     eventSource.addEventListener('chat-connected', () => {
       if (!active) {
         return
       }
       setConnection('connected')
+      if (streamVersion > 0) {
+        loadHistory()
+      }
     })
 
     eventSource.addEventListener('chat-message', (event) => {
@@ -265,6 +285,9 @@ export const FeaturePage = ({
       }
       const nextStatus = normalizeStatusEvent(payload.status)
       setStatusMap((prev) => ({ ...prev, [nextStatus.requestId]: nextStatus }))
+      if (['COMPLETED', 'FAILED'].includes(nextStatus.status)) {
+        setActiveProgressMap((prev) => clearActiveProgressByRequest(prev, nextStatus.requestId))
+      }
     })
 
     eventSource.addEventListener('agent-progress', (event) => {
@@ -276,8 +299,8 @@ export const FeaturePage = ({
         return
       }
       const nextProgress = normalizeAgentProgressEvent(payload.agentProgress)
-      setAgentProgress(nextProgress)
-      if (nextProgress.agent && nextProgress.message) {
+      setActiveProgressMap((prev) => upsertActiveProgress(prev, nextProgress))
+      if (nextProgress.viewType !== 'status' && nextProgress.agent && nextProgress.message) {
         setMessages((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
       }
     })
@@ -286,18 +309,44 @@ export const FeaturePage = ({
       if (!active) {
         return
       }
-      setConnection('error')
+      setConnection('connecting')
+      if (reconnectTimeoutRef.current) {
+        return
+      }
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        reconnectTimeoutRef.current = null
+        if (!active) {
+          return
+        }
+        eventSource.close()
+        setStreamVersion((prev) => prev + 1)
+      }, 1200)
     }
 
     return () => {
       active = false
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
       eventSource.close()
     }
-  }, [room?.roomId])
+  }, [room?.roomId, streamVersion])
 
   const latestStatus = useMemo(() => Object.values(statusMap).at(-1) ?? null, [statusMap])
-  const typing = agentProgress?.agent?.status === 'running'
-    ? agentProgress.agent.key
+  const activeProgresses = useMemo(() => listActiveProgresses(activeProgressMap), [activeProgressMap])
+  const statusProgresses = useMemo(
+    () => activeProgresses.filter((progress) => progress.viewType === 'status'),
+    [activeProgresses],
+  )
+  const typing = activeProgresses.length
+    ? resolveTypingAgent(
+        activeProgresses.filter((progress) => (
+          ['running', 'queued'].includes(String(progress.agent?.status ?? '').toLowerCase())
+          || progress.eventType === 'orchestrator.synthesizing'
+        )),
+        null,
+      )
     : latestStatus && ['QUEUED', 'PROCESSING'].includes(latestStatus.status)
       ? feature.agent
       : null
@@ -404,7 +453,6 @@ export const FeaturePage = ({
     setError('')
 
     try {
-      setAgentProgress(null)
       const response = await sendChatMessage(room.roomId, {
         userId: user?.id ?? null,
         content: text,
@@ -704,10 +752,11 @@ export const FeaturePage = ({
             </div>
           )}
           {messages.map((message) => <ChatRow key={message.id} message={message} />)}
+          {statusProgresses.map((progress) => <StatusProgressRow key={progress.id} progress={progress} />)}
           {typing && <TypingRow agent={typing} />}
         </div>
 
-        {!!latestStatus && (
+        {!!latestStatus && latestStatus.status === 'FAILED' && (
           <div className={`chat-status-banner ${latestStatus.status?.toLowerCase()}`}>
             <b>{latestStatus.status}</b>
             {latestStatus.errorMessage ? <span>{latestStatus.errorMessage}</span> : <span>요청 ID {latestStatus.requestId}</span>}
