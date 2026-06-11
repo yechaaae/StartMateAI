@@ -264,13 +264,17 @@ class PolicyAgent(BaseAgent):
         lines = [
             f"1순위: {title}{f' (적합도 {score}점)' if score is not None else ''}",
             "",
-            f"선정 근거: {reason_text}",
+            "선정 근거",
+            f"- {reason_text}",
             "",
-            f"공고 핵심 내용: {details}",
+            "공고 핵심 내용",
+            details,
             "",
-            f"작성방법: {writing_guide}",
+            "작성방법",
+            writing_guide,
             "",
-            f"다음 행동: {next_step}",
+            "다음 행동",
+            f"- {next_step}",
         ]
         if alternative_text:
             lines.extend(["", alternative_text.strip()])
@@ -289,12 +293,12 @@ class PolicyAgent(BaseAgent):
         ]:
             value = item.get(key)
             if value:
-                parts.append(f"{label} {self._plain_text(value)}")
+                parts.append(f"- {label}: {self._plain_text(value)}")
         if parts:
-            return ", ".join(parts[:5])
+            return "\n".join(parts)
         chunks = item.get("source_chunks") or []
         if chunks:
-            return self._plain_text(chunks[0])[:220]
+            return "\n".join(f"- 원문 요약: {self._plain_text(chunk)}" for chunk in chunks[:3] if chunk)
         return "상세 조건은 공고 원문 확인이 필요합니다"
 
     def _plain_text(self, value: Any) -> str:
@@ -329,7 +333,7 @@ class PolicyAgent(BaseAgent):
             guide.append(f"지원유형({support_type})에 맞춰 필요한 멘토링, 공간, 마케팅, 자금 항목을 분리하세요")
         if stage:
             guide.append(f"창업단계 조건({stage})에 맞춰 현재 상태와 다음 마일스톤을 연결하세요")
-        return " ".join(guide[:5])
+        return "\n".join(f"- {item}" for item in guide)
 
     def _clean_reasons(self, reasons: list[Any]) -> list[str]:
         cleaned = []

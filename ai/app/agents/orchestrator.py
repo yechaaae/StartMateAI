@@ -86,7 +86,7 @@ class OrchestratorAgent:
             await self._emit_progress(
                 state,
                 "orchestrator.completed",
-                "최종 답변을 준비했습니다. 아래 답변에서 합의 내용을 확인하세요.",
+                "Agent들 의견까지 맞춰봤어요. 이제 정리해서 답할게요.",
                 agent_status="completed",
                 status="COMPLETED",
             )
@@ -104,21 +104,19 @@ class OrchestratorAgent:
             )
             await self._run_agents(state, followups)
 
+        if len(state["results"]) > 1:
+            state["debate_rounds"] = await self._run_debate_round(state)
+
         if len(state["results"]) == 1 and not followups:
             result = next(iter(state["results"].values()))
         else:
-            await self._emit_progress(
-                state,
-                "orchestrator.synthesizing",
-                "각 Agent 의견을 합쳐 최종 답변을 정리합니다.",
-            )
             result = self._synthesize_selective_response(state)
         result = self._annotate_response(result, state)
         result = self._attach_feature_result(result, state)
         await self._emit_progress(
             state,
             "orchestrator.completed",
-            "최종 답변을 준비했습니다. 아래 답변에서 합의 내용을 확인하세요.",
+            "Agent들 의견까지 맞춰봤어요. 이제 정리해서 답할게요.",
             agent_status="completed",
             status="COMPLETED",
         )
@@ -134,6 +132,8 @@ class OrchestratorAgent:
         agent_status: str = "running",
         selected_intents: list[str] | None = None,
         status: str = "PROCESSING",
+        view_type: str | None = None,
+        detail: dict[str, Any] | None = None,
     ) -> None:
         callback = state.get("progress_callback")
         if callback is None:
@@ -141,11 +141,14 @@ class OrchestratorAgent:
 
         event = {
             "eventType": event_type,
+            "type": view_type or self._progress_view_type(event_type, agent_intent, agent_status),
             "orchestrator": self.name,
             "status": status,
             "message": message,
             "agent": self._agent_descriptor(agent_intent, agent_status),
         }
+        if detail:
+            event["detail"] = detail
         if selected_intents is not None:
             event["selectedAgents"] = [
                 self._agent_descriptor(intent, "queued")
@@ -156,6 +159,27 @@ class OrchestratorAgent:
             await callback(event)
         except Exception as error:  # noqa: BLE001 - progress events should not fail the final chat answer.
             LOGGER.warning("Failed to publish agent progress event: %s", error)
+
+    def _progress_view_type(self, event_type: str, agent_intent: str, agent_status: str) -> str:
+        if event_type in {"orchestrator.started", "agents.selected", "agent.started", "orchestrator.completed"}:
+            return "status"
+        if event_type == "agent.completed":
+            return "result"
+        if event_type == "agent.argument":
+            return "argument"
+        if event_type == "agent.challenge":
+            return "challenge"
+        if event_type == "agent.revision":
+            return "revision"
+        if event_type == "orchestrator.consensus":
+            return "consensus"
+        if event_type == "orchestrator.synthesizing":
+            return "discussion"
+        if event_type == "agent.failed" or agent_status == "failed":
+            return "status"
+        if agent_intent == "orchestrator":
+            return "discussion"
+        return "discussion"
 
     def _agent_descriptor(self, intent: str, status: str) -> dict[str, str]:
         descriptors = {
@@ -187,20 +211,289 @@ class OrchestratorAgent:
     def _selected_agents_message(self, state: dict[str, Any]) -> str:
         labels = [self._agent_descriptor(intent, "queued")["label"] for intent in self._selected_intents_for_progress(state)]
         if not labels:
-            return "질문을 분석해 필요한 Agent를 고르는 중입니다."
-        return f"{', '.join(labels)}가 이 질문을 함께 검토합니다."
+            return "잠깐만요. 어떤 Agent가 들어오면 좋을지 먼저 볼게요."
+        return f"이번엔 {', '.join(labels)}가 같이 들어와서 서로 의견을 맞춰볼게요."
 
     def _agent_started_message(self, intent: str) -> str:
         descriptor = self._agent_descriptor(intent, "running")
-        return f"{descriptor['label']}가 {descriptor['role']}를 시작했습니다."
+        return f"{descriptor['label']}가 {descriptor['role']} 쪽 근거를 먼저 살펴보고 있어요."
 
     def _agent_completed_message(self, response: AgentResponse) -> str:
         summary = (response.summary or "").strip()
         if not summary:
-            return f"{response.agent} 검토가 끝났습니다."
-        if len(summary) > 180:
-            summary = summary[:177].rstrip() + "..."
-        return summary
+            return f"{response.agent}는 아직 확정 의견을 내기 어렵다고 봅니다."
+        message = self._discussion_prefix(response.agent, summary)
+        evidence_lines = self._agent_evidence_lines(response)
+        if evidence_lines:
+            message += "\n\n판단 근거\n" + "\n".join(f"- {line}" for line in evidence_lines[:5])
+        return message
+
+    def _agent_short_position(self, response: AgentResponse) -> str:
+        data = response.data or {}
+        text = str(data.get("position") or response.summary or "").strip()
+        if not text:
+            return ""
+        text = re.sub(r"\s+", " ", text)
+        sentences = re.split(r"(?<=[.!?。！？])\s+", text)
+        compact = sentences[0].strip() if sentences else text
+        if len(compact) > 180:
+            compact = compact[:177].rstrip() + "..."
+        return compact
+
+    def _agent_progress_detail(self, response: AgentResponse) -> dict[str, Any]:
+        data = response.data or {}
+        return {
+            "position": data.get("position"),
+            "score": data.get("score"),
+            "evidence": data.get("evidence"),
+            "risks": data.get("risks", [])[:3] if isinstance(data.get("risks"), list) else [],
+            "missingInputs": data.get("missing_inputs", [])[:3] if isinstance(data.get("missing_inputs"), list) else [],
+            "recommendation": data.get("recommendation"),
+        }
+
+    def _discussion_prefix(self, agent: str, summary: str) -> str:
+        labels = {
+            "ProfileAgent": "프로필 관점에서는",
+            "IdeaAgent": "아이디어 관점에서는",
+            "PolicyAgent": "지원사업 관점에서는",
+            "LegalAgent": "법률 관점에서는",
+            "FinanceAgent": "재무 관점에서는",
+            "OperationAgent": "운영 관점에서는",
+            "MarketingAgent": "마케팅 관점에서는",
+            "CommercialAreaAgent": "상권 관점에서는",
+            "SimulationAgent": "시뮬레이션 관점에서는",
+        }
+        prefix = labels.get(agent)
+        if not prefix or summary.startswith(prefix):
+            return summary
+        return f"{prefix} {summary}"
+
+    def _agent_evidence_lines(self, response: AgentResponse) -> list[str]:
+        data = response.data or {}
+        lines: list[str] = []
+        score = data.get("score")
+        if isinstance(score, (int, float)):
+            lines.append(f"검토 점수 {int(score)}점")
+
+        lines.extend(self._agent_specific_evidence(response.agent, data))
+
+        evidence = data.get("evidence")
+        lines.extend(self._flatten_evidence(evidence))
+
+        recommendation = data.get("recommendation")
+        if isinstance(recommendation, str) and recommendation.strip():
+            lines.append(f"권장 방향: {recommendation.strip()}")
+
+        risks = data.get("risks")
+        if isinstance(risks, list):
+            for risk in risks[:2]:
+                if isinstance(risk, str) and risk.strip():
+                    lines.append(f"주의 신호: {risk.strip()}")
+
+        return self._unique_compact(lines, limit=7)
+
+    def _agent_specific_evidence(self, agent: str, data: dict[str, Any]) -> list[str]:
+        if agent == "FinanceAgent":
+            return self._finance_evidence(data)
+        if agent == "OperationAgent":
+            return self._operation_evidence(data)
+        if agent == "PolicyAgent":
+            return self._policy_evidence(data)
+        if agent == "LegalAgent":
+            return self._legal_evidence(data)
+        if agent == "CommercialAreaAgent":
+            return self._commercial_area_evidence(data)
+        if agent == "MarketingAgent":
+            return self._marketing_evidence(data)
+        if agent == "IdeaAgent":
+            return self._idea_evidence(data)
+        if agent == "ProfileAgent":
+            return self._profile_evidence(data)
+        return []
+
+    def _finance_evidence(self, data: dict[str, Any]) -> list[str]:
+        lines: list[str] = []
+        for key, label, suffix in [
+            ("initial_cash_needed_krw", "초기 필요 현금", "원"),
+            ("monthly_profit_krw", "월 예상 손익", "원"),
+            ("break_even_units_per_day", "손익분기 판매량", "개/day"),
+        ]:
+            value = data.get(key)
+            if isinstance(value, (int, float)):
+                lines.append(f"{label} {int(value):,}{suffix}")
+        budget = data.get("budget_analysis")
+        if isinstance(budget, dict) and isinstance(budget.get("funding_gap_krw"), (int, float)):
+            lines.append(f"예산 대비 부족액 {int(budget['funding_gap_krw']):,}원")
+        return lines
+
+    def _operation_evidence(self, data: dict[str, Any]) -> list[str]:
+        lines: list[str] = []
+        sales = data.get("sales_analysis")
+        if isinstance(sales, dict) and isinstance(sales.get("latest_sales_krw"), (int, float)):
+            lines.append(f"최근 매출 {int(sales['latest_sales_krw']):,}원")
+        orders = data.get("order_analysis")
+        if isinstance(orders, dict) and orders.get("orders") is not None:
+            lines.append(f"주문 수 {orders.get('orders')}건")
+        inventory = data.get("inventory_analysis")
+        if isinstance(inventory, dict):
+            stockouts = inventory.get("stockout_items") or []
+            slow = inventory.get("slow_moving_items") or []
+            if stockouts:
+                lines.append(f"품절 품목: {', '.join(map(str, stockouts[:3]))}")
+            if slow:
+                lines.append(f"재고 누적 품목: {', '.join(map(str, slow[:3]))}")
+        risks = data.get("risk_items")
+        if isinstance(risks, list) and risks:
+            top = risks[0]
+            if isinstance(top, dict) and top.get("risk"):
+                lines.append(f"최우선 운영 리스크: {top.get('risk')}")
+        return lines
+
+    def _policy_evidence(self, data: dict[str, Any]) -> list[str]:
+        matches = data.get("matches")
+        if not isinstance(matches, list) or not matches:
+            return []
+        top = matches[0]
+        if not isinstance(top, dict):
+            return []
+        lines = []
+        title = top.get("title")
+        score = top.get("eligibility_score")
+        if title:
+            lines.append(f"1순위 공고: {title}")
+        if isinstance(score, (int, float)):
+            lines.append(f"공고 적합도 {int(score)}점")
+        reasons = top.get("why_matched")
+        if isinstance(reasons, list) and reasons:
+            lines.append(f"매칭 이유: {reasons[0]}")
+        return lines
+
+    def _legal_evidence(self, data: dict[str, Any]) -> list[str]:
+        lines: list[str] = []
+        for key in ("citations", "source_chunks", "legal_references", "references"):
+            values = data.get(key)
+            if isinstance(values, list) and values:
+                first = values[0]
+                if isinstance(first, dict):
+                    title = first.get("law_name") or first.get("title") or first.get("source")
+                    article = first.get("article_title") or first.get("article_no")
+                    if title:
+                        lines.append(f"참조 법령: {title}{f' {article}' if article else ''}")
+                elif isinstance(first, str):
+                    lines.append(f"참조 근거: {first}")
+                break
+        checklist = data.get("checklist") or data.get("required_checks")
+        if isinstance(checklist, list) and checklist:
+            lines.append(f"우선 확인 항목: {checklist[0]}")
+        return lines
+
+    def _commercial_area_evidence(self, data: dict[str, Any]) -> list[str]:
+        payload = data.get("payload")
+        source = payload if isinstance(payload, dict) else data
+        lines = []
+        for key, label in [
+            ("total_stores", "전체 점포"),
+            ("direct_competitors", "직접 경쟁점"),
+            ("similar_competitors", "유사 경쟁점"),
+        ]:
+            value = source.get(key)
+            if isinstance(value, (int, float)):
+                lines.append(f"{label} {int(value):,}개")
+        level = source.get("competition_level")
+        if level:
+            lines.append(f"경쟁 강도 {level}")
+        return lines
+
+    def _marketing_evidence(self, data: dict[str, Any]) -> list[str]:
+        lines = []
+        for key, label in [
+            ("target_customer", "타깃"),
+            ("channel", "채널"),
+            ("objective", "목표"),
+        ]:
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                lines.append(f"{label}: {value.strip()}")
+        schedule = data.get("upload_schedule") or data.get("schedule")
+        if isinstance(schedule, list) and schedule:
+            lines.append(f"실행 일정: {schedule[0]}")
+        return lines
+
+    def _idea_evidence(self, data: dict[str, Any]) -> list[str]:
+        recommendations = data.get("recommendations")
+        if not isinstance(recommendations, list) or not recommendations:
+            return []
+        top = recommendations[0]
+        if not isinstance(top, dict):
+            return []
+        lines = []
+        title = top.get("title")
+        score = top.get("match_score")
+        if title:
+            lines.append(f"1순위 후보: {title}")
+        if isinstance(score, (int, float)):
+            lines.append(f"아이템 적합도 {int(score)}점")
+        why = top.get("why_recommended")
+        if isinstance(why, list) and why:
+            lines.append(f"추천 이유: {why[0]}")
+        return lines
+
+    def _profile_evidence(self, data: dict[str, Any]) -> list[str]:
+        summary = data.get("profile_summary")
+        if not isinstance(summary, dict):
+            return []
+        lines = []
+        for key, label in [
+            ("region", "지역"),
+            ("budget_krw", "예산"),
+            ("risk_tolerance", "위험 선호"),
+        ]:
+            value = summary.get(key)
+            if isinstance(value, (int, float)) and key.endswith("_krw"):
+                lines.append(f"{label} {int(value):,}원")
+            elif value:
+                lines.append(f"{label}: {value}")
+        return lines
+
+    def _flatten_evidence(self, evidence: Any) -> list[str]:
+        if not evidence:
+            return []
+        if isinstance(evidence, str):
+            return [evidence.strip()] if evidence.strip() else []
+        if isinstance(evidence, list):
+            lines: list[str] = []
+            for item in evidence[:3]:
+                lines.extend(self._flatten_evidence(item))
+            return lines
+        if isinstance(evidence, dict):
+            lines = []
+            for key, value in evidence.items():
+                if value in (None, "", [], {}):
+                    continue
+                label = str(key).replace("_", " ")
+                if isinstance(value, (int, float)):
+                    lines.append(f"{label}: {value:,}")
+                elif isinstance(value, str):
+                    lines.append(f"{label}: {value}")
+                elif isinstance(value, list) and value:
+                    lines.append(f"{label}: {', '.join(map(str, value[:3]))}")
+                if len(lines) >= 3:
+                    break
+            return lines
+        return []
+
+    def _unique_compact(self, values: list[str], limit: int = 4) -> list[str]:
+        seen = set()
+        result: list[str] = []
+        for value in values:
+            item = " ".join(str(value).split())
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            result.append(item)
+            if len(result) >= limit:
+                break
+        return result
 
     def _effective_profile_from_response(
         self,
@@ -280,6 +573,7 @@ class OrchestratorAgent:
             self._agent_completed_message(response),
             agent_intent=intent,
             agent_status="completed",
+            detail=self._agent_progress_detail(response),
         )
         return intent, response
 
@@ -357,6 +651,7 @@ class OrchestratorAgent:
                 state.get("plan_meta"),
                 state.get("followup_meta"),
             ),
+            "debate_rounds": state.get("debate_rounds", {}),
             "agent_results": {intent: response.data for intent, response in results.items()},
             "agent_contracts": contracts,
         }
@@ -368,7 +663,7 @@ class OrchestratorAgent:
         return AgentResponse(
             intent="selective_collaboration",
             agent=self.name,
-            summary=self._selective_summary(results),
+            summary=self._selective_summary(results, state.get("debate_rounds")),
             data=data,
             next_actions=self._unique(
                 [
@@ -381,65 +676,377 @@ class OrchestratorAgent:
             warnings=self._unique([warning for response in results.values() for warning in response.warnings]),
         )
 
-    def _selective_summary(self, results: dict[str, AgentResponse]) -> str:
-        parts: list[str] = []
+    def _selective_summary(self, results: dict[str, AgentResponse], debate_rounds: dict[str, Any] | None = None) -> str:
+        sections: list[str] = []
+        for intent, response in results.items():
+            sections.append(self._agent_final_section(intent, response))
 
-        operation = results.get("operation")
-        if operation:
-            op_data = operation.data or {}
-            risks = op_data.get("risk_items") or []
-            top_risk = risks[0] if risks else {}
-            op_evidence = []
-            sales = op_data.get("sales_analysis") or {}
-            orders = op_data.get("order_analysis") or {}
-            marketing = op_data.get("marketing_efficiency") or {}
-            inventory = op_data.get("inventory_analysis") or {}
-            customer = op_data.get("customer_feedback_analysis") or {}
-            if sales.get("latest_sales_krw"):
-                op_evidence.append(f"매출 {int(sales['latest_sales_krw']):,}원")
-            if orders.get("orders"):
-                op_evidence.append(f"주문 {orders['orders']}건")
-            if marketing.get("ad_cost_per_order_krw"):
-                op_evidence.append(f"주문당 광고비 {marketing['ad_cost_per_order_krw']:,}원")
-            if inventory.get("stockout_items"):
-                op_evidence.append("품절 신호")
-            if inventory.get("slow_moving_items"):
-                op_evidence.append("재고 누적 신호")
-            feedback_categories = customer.get("categories") or {}
-            if feedback_categories.get("price") or feedback_categories.get("waiting"):
-                op_evidence.append("가격/대기 피드백")
-            if top_risk:
-                parts.append(
-                    f"운영은 {', '.join(op_evidence) or '입력 데이터'}를 근거로 "
-                    f"{top_risk.get('risk')}을 우선 리스크로 봤고, {top_risk.get('action')}가 필요합니다."
-                )
-            elif op_data.get("needs_more_data"):
-                parts.append("운영은 현재 데이터가 부족해 매출, 주문 수, 재고, 고객 피드백을 먼저 확인해야 합니다.")
+        if not sections:
+            agent_names = [response.agent for response in results.values()]
+            return f"{', '.join(agent_names)}가 이 질문에 필요한 범위로 검토했습니다."
+
+        if len(sections) == 1:
+            return sections[0]
+
+        return "\n\n".join(
+            [
+                "Agent들이 각자 먼저 보고, 서로 걸리는 부분까지 맞춰본 내용이에요.",
+                *sections,
+                self._debate_transcript_summary(debate_rounds),
+                self._final_consensus(results, debate_rounds),
+            ]
+        )
+
+    def _agent_final_section(self, intent: str, response: AgentResponse) -> str:
+        label = self._agent_descriptor(intent, "completed")["label"]
+        summary = (response.summary or response.data.get("position") or "").strip()
+        evidence_lines = self._agent_evidence_lines(response)
+        risks = response.data.get("risks", []) if isinstance(response.data, dict) else []
+        next_actions = response.next_actions or []
+
+        lines = [f"[{label}]"]
+        if summary:
+            lines.append(summary)
+        if evidence_lines:
+            lines.append("")
+            lines.append("근거")
+            lines.extend(f"- {line}" for line in evidence_lines)
+        if isinstance(risks, list) and risks:
+            lines.append("")
+            lines.append("주의할 점")
+            lines.extend(f"- {str(risk).strip()}" for risk in risks[:3] if str(risk).strip())
+        if next_actions:
+            lines.append("")
+            lines.append("다음 행동")
+            lines.extend(f"- {action}" for action in next_actions[:3])
+        return "\n".join(lines)
+
+    def _final_consensus(self, results: dict[str, AgentResponse], debate_rounds: dict[str, Any] | None = None) -> str:
+        labels = [
+            self._agent_descriptor(intent, "completed")["label"]
+            for intent in results
+        ]
+        actions = self._unique([
+            action
+            for response in results.values()
+            for action in response.next_actions[:2]
+        ])
+        lines = [
+            "[마지막 정리]",
+            self._consensus_sentence(results, debate_rounds, labels),
+        ]
+        if actions:
+            lines.append("우선순위 액션")
+            lines.extend(f"- {action}" for action in actions[:4])
+        return "\n".join(lines)
+
+    async def _run_debate_round(self, state: dict[str, Any]) -> dict[str, Any]:
+        results: dict[str, AgentResponse] = state["results"]
+        challenges = self._debate_challenges(results)[:2]
+        if not challenges:
+            return {
+                "arguments": [],
+                "challenges": [],
+                "revisions": [],
+                "consensus": self._debate_consensus(results, [], []),
+            }
+
+        await self._emit_progress(
+            state,
+            "orchestrator.synthesizing",
+            "의견이 갈리는 부분만 짧게 짚어볼게요.",
+            view_type="discussion",
+        )
+
+        for challenge in challenges:
+            await self._emit_progress(
+                state,
+                "agent.challenge",
+                challenge["message"],
+                agent_intent=challenge["source_intent"],
+                agent_status="completed",
+                view_type="challenge",
+                detail=challenge,
+            )
+
+        revisions: list[dict[str, Any]] = []
+
+        consensus = self._debate_consensus(results, challenges, revisions)
+        await self._emit_progress(
+            state,
+            "orchestrator.consensus",
+            consensus["message"],
+            agent_intent="orchestrator",
+            agent_status="completed",
+            view_type="consensus",
+            detail=consensus,
+        )
+
+        return {
+            "arguments": [],
+            "challenges": challenges,
+            "revisions": revisions,
+            "consensus": consensus,
+        }
+
+    def _debate_argument(self, intent: str, response: AgentResponse) -> dict[str, Any]:
+        label = self._agent_descriptor(intent, "completed")["label"]
+        position = str(response.data.get("position") or response.summary or "추가 판단이 필요합니다.").strip()
+        evidence = self._agent_evidence_lines(response)
+        evidence_text = "; ".join(evidence[:3]) if evidence else "명시 근거 부족"
+        return {
+            "type": "argument",
+            "source_intent": intent,
+            "source_agent": response.agent,
+            "label": label,
+            "position": position,
+            "evidence": evidence,
+            "message": f"{label}: 저는 일단 이렇게 봤어요.\n{position}\n근거로는 {evidence_text}를 봤습니다.",
+        }
+
+    def _debate_challenges(self, results: dict[str, AgentResponse]) -> list[dict[str, Any]]:
+        challenges: list[dict[str, Any]] = []
 
         finance = results.get("finance")
         if finance:
-            data = finance.data or {}
-            monthly_profit = data.get("monthly_profit_krw")
-            initial_cash = data.get("initial_cash_needed_krw")
-            budget = data.get("budget_analysis") or {}
-            finance_bits = []
-            if monthly_profit is not None:
-                finance_bits.append(f"월 손익 {int(monthly_profit):,}원")
-            if initial_cash is not None:
-                finance_bits.append(f"초기 필요 현금 {int(initial_cash):,}원")
-            if budget.get("funding_gap_krw"):
-                finance_bits.append(f"부족액 {int(budget['funding_gap_krw']):,}원")
-            if finance_bits:
-                parts.append(f"재무는 {', '.join(finance_bits)}을 근거로 실행 여력을 판단했습니다.")
+            finance_data = finance.data or {}
+            budget = finance_data.get("budget_analysis") or {}
+            monthly_profit = finance_data.get("monthly_profit_krw")
+            funding_gap = budget.get("funding_gap_krw") or 0
+            if funding_gap > 0 or (isinstance(monthly_profit, (int, float)) and monthly_profit < 0):
+                target = "idea" if "idea" in results else "orchestrator"
+                challenges.append(self._challenge(
+                    source="finance",
+                    target=target,
+                    issue="현재 아이템/실행안은 재무 조건과 충돌합니다.",
+                    basis=self._join_nonempty([
+                        f"부족액 {int(funding_gap):,}원" if funding_gap else "",
+                        f"월 손익 {int(monthly_profit):,}원" if isinstance(monthly_profit, (int, float)) else "",
+                        f"손익분기 {finance_data.get('break_even_units_per_day')}개/day" if finance_data.get("break_even_units_per_day") else "",
+                    ]),
+                    proposal="아이디어를 유지하더라도 매장형/재고형 실행은 미루고 30일 MVP나 예약판매로 축소해야 합니다.",
+                ))
+            elif "policy" in results and (finance_data.get("support_handoff") or {}).get("needed_support_types"):
+                challenges.append(self._challenge(
+                    source="finance",
+                    target="policy",
+                    issue="재무 Agent는 지원사업 매칭을 비용 보완 수단으로 요청합니다.",
+                    basis="초기 현금, 마케팅비, 공간/장비 지원 필요 신호가 있습니다.",
+                    proposal="PolicyAgent는 단순 추천보다 자금/공간/장비 지원 여부를 우선 검토해야 합니다.",
+                ))
 
         policy = results.get("policy")
-        if policy and policy.summary:
-            parts.append(policy.summary)
+        if policy:
+            matches = policy.data.get("matches") or []
+            top = matches[0] if matches else {}
+            score = top.get("eligibility_score") if isinstance(top, dict) else None
+            gaps = top.get("eligibility_gaps") if isinstance(top, dict) else []
+            if isinstance(score, (int, float)) and score < 70:
+                challenges.append(self._challenge(
+                    source="policy",
+                    target="orchestrator",
+                    issue="지원사업 후보를 최종 전략의 중심에 두기에는 적합도가 낮습니다.",
+                    basis=f"상위 공고 적합도 {int(score)}점",
+                    proposal="지원사업은 보조 플랜으로 두고 고객 검증과 재무 축소안을 먼저 확정해야 합니다.",
+                ))
+            elif gaps:
+                challenges.append(self._challenge(
+                    source="policy",
+                    target="profile" if "profile" in results else "orchestrator",
+                    issue="지원사업 신청 전 자격 공백이 남아 있습니다.",
+                    basis=", ".join(map(str, gaps[:3])),
+                    proposal="지역, 창업 단계, 사업자 등록 여부 같은 증빙 정보를 먼저 확인해야 합니다.",
+                ))
 
-        if not parts:
-            agent_names = [response.agent for response in results.values()]
-            return f"{', '.join(agent_names)}가 이 질문에 필요한 범위로 검토했습니다."
-        return " ".join(parts[:3])
+        operation = results.get("operation")
+        if operation:
+            data = operation.data or {}
+            missing = data.get("missing_inputs") or []
+            risk_items = data.get("risk_items") or []
+            if missing or data.get("needs_more_data"):
+                challenges.append(self._challenge(
+                    source="operation",
+                    target="finance" if "finance" in results else "idea" if "idea" in results else "orchestrator",
+                    issue="운영 Agent는 현재 결론의 실행 근거가 부족하다고 봅니다.",
+                    basis=f"부족 입력: {', '.join(map(str, missing[:4]))}" if missing else "매출/주문/재고/피드백 데이터 부족",
+                    proposal="최종 답변은 확정 판단보다 추가 질문과 데이터 수집 액션을 먼저 제시해야 합니다.",
+                ))
+            elif risk_items:
+                top_risk = risk_items[0]
+                if isinstance(top_risk, dict):
+                    challenges.append(self._challenge(
+                        source="operation",
+                        target="marketing" if "marketing" in results else "idea" if "idea" in results else "orchestrator",
+                        issue=f"운영 리스크 '{top_risk.get('risk')}'가 실행안을 제한합니다.",
+                        basis=str(top_risk.get("basis") or top_risk.get("signal") or "운영 데이터 기반 위험 신호"),
+                        proposal=str(top_risk.get("action") or "다음 주 운영 액션에 리스크 완화 계획을 넣어야 합니다."),
+                    ))
+
+        legal = results.get("legal")
+        if legal:
+            citations = legal.data.get("citations") or legal.data.get("search_results") or []
+            if citations:
+                challenges.append(self._challenge(
+                    source="legal",
+                    target="marketing" if "marketing" in results else "operation" if "operation" in results else "orchestrator",
+                    issue="법률 Agent는 홍보/판매 실행 전에 인허가와 고지 의무를 확인해야 한다고 봅니다.",
+                    basis=self._join_nonempty(self._agent_evidence_lines(legal)[:3]),
+                    proposal="최종 액션에 관할 지자체 확인, 신고 대상 여부, 표시/광고/개인정보 체크를 넣어야 합니다.",
+                ))
+
+        commercial_area = results.get("commercial_area")
+        if commercial_area:
+            payload = commercial_area.data.get("payload") if isinstance(commercial_area.data, dict) else {}
+            level = (payload or {}).get("competition_level") or commercial_area.data.get("competition_level")
+            direct = (payload or {}).get("direct_competitors") or commercial_area.data.get("direct_competitors")
+            if str(level).lower() in {"high", "높음"} or (isinstance(direct, (int, float)) and direct >= 50):
+                challenges.append(self._challenge(
+                    source="commercial_area",
+                    target="idea" if "idea" in results else "marketing" if "marketing" in results else "orchestrator",
+                    issue="상권 Agent는 입지 경쟁 강도가 높아 일반적인 아이템 추천만으로는 부족하다고 봅니다.",
+                    basis=self._join_nonempty([
+                        f"경쟁 강도 {level}" if level else "",
+                        f"직접 경쟁점 {int(direct):,}개" if isinstance(direct, (int, float)) else "",
+                    ]),
+                    proposal="입점 판단 전에 메뉴/가격/운영 시간 차별화와 후보지 비교를 먼저 해야 합니다.",
+                ))
+
+        marketing = results.get("marketing")
+        if marketing and marketing.data.get("missing_inputs"):
+            challenges.append(self._challenge(
+                source="marketing",
+                target="idea" if "idea" in results else "orchestrator",
+                issue="마케팅 Agent는 타깃/장소/일정이 부족하면 홍보안의 전환성이 낮다고 봅니다.",
+                basis=", ".join(map(str, marketing.data.get("missing_inputs", [])[:4])),
+                proposal="콘텐츠 초안보다 타깃 고객, 판매 장소, CTA를 먼저 좁혀야 합니다.",
+            ))
+
+        return challenges
+
+    def _challenge(self, *, source: str, target: str, issue: str, basis: str, proposal: str) -> dict[str, Any]:
+        source_label = self._agent_descriptor(source, "completed")["label"]
+        target_label = self._agent_descriptor(target, "completed")["label"] if target != "orchestrator" else "Plan Agent"
+        return {
+            "type": "challenge",
+            "source_intent": source,
+            "target_intent": target,
+            "issue": issue,
+            "basis": basis,
+            "proposal": proposal,
+            "message": (
+                f"{source_label} -> {target_label}: 잠깐, 이 부분은 그대로 가면 조금 위험해 보여요.\n"
+                f"걸리는 점: {issue}\n"
+                f"제가 본 근거: {basis or '근거를 조금 더 확인해야 합니다'}\n"
+                f"그래서 제안은 이거예요: {proposal}"
+            ),
+        }
+
+    def _debate_revisions(
+        self,
+        challenges: list[dict[str, Any]],
+        results: dict[str, AgentResponse],
+    ) -> list[dict[str, Any]]:
+        revisions: list[dict[str, Any]] = []
+        handled_targets: set[str] = set()
+        for challenge in challenges:
+            target = str(challenge.get("target_intent") or "orchestrator")
+            if target in handled_targets and target != "orchestrator":
+                continue
+            handled_targets.add(target)
+            source = target if target in results else str(challenge.get("source_intent") or "orchestrator")
+            label = self._agent_descriptor(source, "completed")["label"] if source != "orchestrator" else "Plan Agent"
+            message = self._revision_message(source, challenge, results)
+            revisions.append({
+                "type": "revision",
+                "source_intent": source,
+                "target_intent": challenge.get("source_intent"),
+                "based_on_issue": challenge.get("issue"),
+                "message": f"{label}: 맞아요, 그 지적 반영하면 이렇게 조정하는 게 낫겠어요.\n{message}",
+            })
+        return revisions
+
+    def _revision_message(
+        self,
+        source: str,
+        challenge: dict[str, Any],
+        results: dict[str, AgentResponse],
+    ) -> str:
+        issue = str(challenge.get("issue") or "")
+        if source == "idea":
+            return "아이템 자체는 괜찮지만, 바로 크게 열기보다는 30일 MVP/예약판매/팝업 테스트로 작게 검증하는 쪽으로 바꿀게요."
+        if source == "finance":
+            return "수익은 확정처럼 말하면 안 되겠네요. 가정 기반 시뮬레이션으로 낮춰 말하고, 실제 원가/임대료/판매량 확인을 먼저 넣겠습니다."
+        if source == "policy":
+            return "지원사업은 1순위와 예비 후보를 나누고, 실제 공고의 지역/업력/업종 조건 확인을 먼저 하도록 정리할게요."
+        if source == "marketing":
+            return "홍보안은 확정 캠페인처럼 말하지 않고, 타깃/장소/일정을 확인한 뒤 A/B 테스트하는 초안으로 둘게요."
+        if source == "operation":
+            return "운영 평가는 결론부터 내리기보다, 매출/주문/재고/피드백 중 최소 2~3개를 더 묻는 쪽이 맞겠어요."
+        if source == "legal":
+            return "실행 전에 인허가, 신고 대상, 표시광고, 개인정보 확인을 체크리스트에 꼭 넣겠습니다."
+        if "재무" in issue or "비용" in issue:
+            return "최종안은 비용 부담이 낮은 검증형 실행으로 낮춰 잡겠습니다."
+        return "최종 답변에서 이 걸리는 지점을 숨기지 않고, 확인할 조건까지 같이 말하겠습니다."
+
+    def _debate_consensus(
+        self,
+        results: dict[str, AgentResponse],
+        challenges: list[dict[str, Any]],
+        revisions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if not challenges:
+            message = "Plan Agent: 크게 부딪히는 부분은 없네요. 각 Agent 의견을 한 실행 흐름으로 묶어도 괜찮겠습니다."
+            decision = "agent_agreement"
+        else:
+            main_issues = self._unique([str(item.get("issue")) for item in challenges if item.get("issue")])
+            message = (
+                "Plan Agent: 좋아요, 이 충돌은 최종 답변에 조건으로 반영할게요.\n"
+                f"체크할 부분: {' / '.join(main_issues[:3])}\n"
+                "그래서 결론은 '바로 확정'이 아니라, 아이템 방향은 살리되 필요한 정보 확인과 30일 검증을 먼저 두는 쪽으로 정리하겠습니다."
+            )
+            decision = "conditional_consensus"
+        return {
+            "type": "consensus",
+            "decision": decision,
+            "challenge_count": len(challenges),
+            "revision_count": len(revisions),
+            "message": message,
+        }
+
+    def _debate_transcript_summary(self, debate_rounds: dict[str, Any] | None) -> str:
+        if not debate_rounds:
+            return ""
+        challenges = debate_rounds.get("challenges") or []
+        revisions = debate_rounds.get("revisions") or []
+        consensus = debate_rounds.get("consensus") or {}
+        lines = ["[Agent 의견 조율]"]
+        if challenges:
+            lines.append("걸리는 부분")
+            for item in challenges[:4]:
+                lines.append(f"- {item.get('source_intent')} -> {item.get('target_intent')}: {item.get('issue')}")
+        else:
+            return ""
+        if consensus.get("message"):
+            lines.append("정리")
+            lines.append(f"- {consensus['message']}")
+        return "\n".join(lines)
+
+    def _consensus_sentence(
+        self,
+        results: dict[str, AgentResponse],
+        debate_rounds: dict[str, Any] | None,
+        labels: list[str],
+    ) -> str:
+        consensus = (debate_rounds or {}).get("consensus") or {}
+        if consensus.get("decision") == "conditional_consensus":
+            return (
+                f"{', '.join(labels)}가 이야기해본 결과, 바로 확정 실행하기보다는 "
+                "아이템 방향은 살리고 재무, 법률, 운영 리스크를 30일 검증으로 낮추는 쪽이 좋아 보입니다."
+            )
+        return f"{', '.join(labels)} 의견을 모아보면, 위 근거를 같이 보고 다음 행동을 정하면 됩니다."
+
+    def _join_nonempty(self, values: list[str]) -> str:
+        return ", ".join(value for value in values if value)
 
     def _annotate_response(self, response: AgentResponse, state: dict[str, Any]) -> AgentResponse:
         request: ChatRequest = state["request"]
@@ -673,6 +1280,8 @@ class OrchestratorAgent:
         if followups:
             state["followups"] = followups
             await self._run_agents(state, followups)
+        if len(state["results"]) > 1:
+            state["debate_rounds"] = await self._run_debate_round(state)
         return self._synthesize_selective_response(state)
 
     def _agent_plan_reason(
@@ -1523,6 +2132,7 @@ class OrchestratorAgent:
             self._agent_completed_message(response),
             agent_intent=intent,
             agent_status="completed",
+            detail=self._agent_progress_detail(response),
         )
         return response
 
@@ -1591,11 +2201,15 @@ class OrchestratorAgent:
             self.operation_agent.run(OperationRequest(profile=effective_profile, business_name=top_idea_name)),
         )
         finance, marketing, operation = await asyncio.gather(finance_task, marketing_task, operation_task)
-        await self._emit_progress(
-            state,
-            "orchestrator.synthesizing",
-            "각 Agent 의견의 충돌 지점을 정리하고 최종 실행안을 합의합니다.",
-        )
+        state["results"] = {
+            "profile": profile,
+            "idea": ideas,
+            "policy": policies,
+            "finance": finance,
+            "marketing": marketing,
+            "operation": operation,
+        }
+        debate_rounds = await self._run_debate_round(state)
 
         data = {
             "collaboration_mode": "parallel_multi_agent",
@@ -1627,6 +2241,7 @@ class OrchestratorAgent:
                 self._contract_summary(marketing),
                 self._contract_summary(operation),
             ],
+            "debate_rounds": debate_rounds,
             "debate": self._build_debate(profile, ideas, policies, finance, marketing, operation),
             "recommended_flow": [
                 "프로필 제약조건 확정",
@@ -1639,9 +2254,15 @@ class OrchestratorAgent:
         return AgentResponse(
             intent="collaboration",
             agent=self.name,
-            summary=(
-                "여러 전문 에이전트가 동시에 후보를 검토한 뒤, 실행 가능성과 리스크를 기준으로 "
-                f"{top_idea_name} 중심의 실행안을 합의했습니다."
+            summary=self._collaborative_final_summary(
+                top_idea_name=top_idea_name,
+                profile=profile,
+                ideas=ideas,
+                policies=policies,
+                finance=finance,
+                marketing=marketing,
+                operation=operation,
+                debate_rounds=debate_rounds,
             ),
             data=data,
             next_actions=[
@@ -1653,6 +2274,150 @@ class OrchestratorAgent:
             sources=policies.sources,
             warnings=policies.warnings,
         )
+
+    def _collaborative_final_summary(
+        self,
+        *,
+        top_idea_name: str,
+        profile: AgentResponse,
+        ideas: AgentResponse,
+        policies: AgentResponse,
+        finance: AgentResponse,
+        marketing: AgentResponse,
+        operation: AgentResponse,
+        debate_rounds: dict[str, Any] | None = None,
+    ) -> str:
+        top_idea = self._pick_top_idea(ideas)
+        top_policy = self._pick_top_policy(policies)
+        profile_summary = profile.data.get("profile_summary", {}) if isinstance(profile.data, dict) else {}
+        finance_data = finance.data or {}
+        marketing_data = marketing.data or {}
+        operation_data = operation.data or {}
+
+        profile_bits = self._unique([
+            f"지역 {profile_summary.get('region')}" if profile_summary.get("region") else "",
+            f"예산 {self._format_money(profile_summary.get('budget_krw'))}" if profile_summary.get("budget_krw") else "",
+            f"관심 분야 {profile_summary.get('interest_area')}" if profile_summary.get("interest_area") else "",
+            f"전공/역량 {profile_summary.get('major')}" if profile_summary.get("major") else "",
+        ])
+        idea_reason = self._first_text(top_idea.get("why_recommended"), top_idea.get("reason"), top_idea.get("description"))
+        policy_title = str(top_policy.get("title")) if top_policy else ""
+        policy_score = top_policy.get("eligibility_score") if isinstance(top_policy, dict) else None
+        target = self._first_text(
+            marketing_data.get("target_customer"),
+            marketing_data.get("target"),
+            marketing_data.get("primary_target"),
+        )
+        channel = self._first_text(
+            marketing_data.get("channel"),
+            marketing_data.get("recommended_channel"),
+            marketing_data.get("primary_channel"),
+        )
+
+        finance_bits = self._unique([
+            f"초기 필요 현금 {self._format_money(finance_data.get('initial_cash_needed_krw'))}" if finance_data.get("initial_cash_needed_krw") is not None else "",
+            f"월 예상 손익 {self._format_money(finance_data.get('monthly_profit_krw'))}" if finance_data.get("monthly_profit_krw") is not None else "",
+            f"손익분기 {finance_data.get('break_even_units_per_day')}개/day" if finance_data.get("break_even_units_per_day") else "",
+            f"리스크 등급 {finance_data.get('risk_grade')}" if finance_data.get("risk_grade") else "",
+        ])
+        operation_missing = operation_data.get("missing_inputs") or []
+        operation_risks = operation_data.get("risk_items") or operation_data.get("risks") or []
+        challenges = (debate_rounds or {}).get("challenges") or []
+
+        lines = [
+            f"정리하면, 지금은 `{top_idea_name}`을 바로 확정 창업안으로 밀기보다 30일 검증 아이템으로 잡는 게 가장 현실적입니다.",
+            "Agent들이 각자 본 결론을 합치면 방향성은 괜찮지만, 재무 가정과 운영 데이터는 아직 확인이 필요해요.",
+            "",
+            "왜 이 방향이냐면",
+        ]
+        if profile_bits:
+            lines.append(f"- 프로필: {', '.join(profile_bits)} 조건을 기준으로 봤습니다.")
+        else:
+            lines.append("- 프로필: 아직 사용자 조건이 충분히 고정되지 않아, 지역/예산/투입 시간을 먼저 확인해야 합니다.")
+
+        idea_line = f"- 아이디어: `{top_idea_name}`이 1순위 후보입니다."
+        if top_idea.get("match_score"):
+            idea_line += f" 적합도는 {top_idea.get('match_score')}점으로 계산됐습니다."
+        if idea_reason:
+            idea_line += f" 이유는 {idea_reason}"
+        lines.append(idea_line)
+
+        if finance_bits:
+            lines.append(f"- 재무: {', '.join(finance_bits)} 기준으로 봤습니다. 다만 실제 원가, 임대료, 판매량이 들어가야 확정 판단이 가능합니다.")
+        else:
+            lines.append("- 재무: 아직 초기 비용과 월 손익을 확정할 입력이 부족해서, 실제 원가와 고정비를 먼저 넣어야 합니다.")
+
+        if policy_title:
+            policy_line = f"- 지원사업: `{policy_title}`을 우선 후보로 봤습니다."
+            if isinstance(policy_score, (int, float)):
+                policy_line += f" 적합도는 {int(policy_score)}점입니다."
+            policy_line += " 단, 모집 상태와 자격 요건은 실제 공고에서 다시 확인해야 합니다."
+            lines.append(policy_line)
+
+        marketing_line = "- 마케팅: 큰 캠페인보다 작은 콘텐츠 테스트로 문의 수와 저장 수를 먼저 보는 쪽이 맞습니다."
+        if target or channel:
+            marketing_line += f" 현재 가정은 타깃 {target or '확인 필요'}, 채널 {channel or '확인 필요'}입니다."
+        lines.append(marketing_line)
+
+        if operation_missing:
+            lines.append(f"- 운영: {', '.join(map(str, operation_missing[:4]))} 데이터가 부족해서 운영 평가는 보수적으로 봐야 합니다.")
+        elif operation_risks:
+            risk_text = self._first_text(operation_risks[0])
+            lines.append(f"- 운영: 가장 먼저 볼 리스크는 {risk_text}입니다.")
+        else:
+            lines.append("- 운영: 매출, 주문 수, 재고, 고객 피드백을 주간 단위로 쌓아야 다음 판단이 좋아집니다.")
+
+        if challenges:
+            lines.append("")
+            lines.append("Agent들이 조심하자고 본 부분")
+            for challenge in challenges[:3]:
+                issue = str(challenge.get("issue") or "").strip()
+                proposal = str(challenge.get("proposal") or "").strip()
+                if issue and proposal:
+                    lines.append(f"- {issue} 그래서 {proposal}")
+                elif issue:
+                    lines.append(f"- {issue}")
+
+        lines.extend([
+            "",
+            "30일 실행안",
+            "1. 1주차: 고객 또는 매장 후보 5~10곳을 인터뷰해서 실제 불편, 지불 의사, 구매 동선을 확인합니다.",
+            "2. 2주차: 가장 작은 형태의 상품/서비스 설명서와 가격안을 만들고, 첫 유료 제안 1건을 목표로 테스트합니다.",
+            "3. 3주차: 광고비를 크게 쓰기보다 릴스/게시글 1~2개로 문의 수, 저장 수, 상담 전환을 기록합니다.",
+            "4. 4주차: 실제 반응, 예상 비용, 지원사업 자격을 합쳐 계속 진행/축소/전환 중 하나로 결정합니다.",
+            "",
+            "지금 바로 확인할 것",
+            "- 주당 투입 가능 시간과 같이 일할 수 있는 인력",
+            "- 실제 원가, 임대료 또는 장비비, 월 고정비",
+            "- 첫 고객을 만날 채널과 검증 지표",
+            "- 지원사업의 지역, 업력, 사업자등록, 제출 서류 조건",
+            "",
+            f"결론은 이거예요. `{top_idea_name}` 방향은 살릴 만하지만, 지금 답은 확정 판정이 아니라 검증 계획에 가깝습니다. 30일 동안 숫자를 모아서 재무와 운영 Agent가 다시 계산하게 만드는 게 다음 단계입니다.",
+        ])
+        return "\n".join(lines)
+
+    def _format_money(self, value: object) -> str:
+        if isinstance(value, (int, float)):
+            return f"{int(value):,}원"
+        return str(value).strip() if value is not None else ""
+
+    def _first_text(self, *values: object) -> str:
+        for value in values:
+            if isinstance(value, list):
+                for item in value:
+                    text = self._first_text(item)
+                    if text:
+                        return text
+            elif isinstance(value, dict):
+                for key in ("summary", "text", "description", "reason", "risk", "title", "name"):
+                    text = str(value.get(key) or "").strip()
+                    if text:
+                        return text
+            else:
+                text = str(value or "").strip()
+                if text:
+                    return text
+        return ""
 
     def _pick_top_idea(self, ideas: AgentResponse) -> dict[str, object]:
         recommendations = ideas.data.get("recommendations", [])

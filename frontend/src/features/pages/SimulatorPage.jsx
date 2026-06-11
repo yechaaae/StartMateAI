@@ -446,7 +446,6 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
               <h1>창업 시뮬레이션</h1>
               <p>지도에서 위치를 고르고 지역 평균 임대료와 판매 가정을 반영해 첫 30일 손익을 예측합니다.</p>
             </div>
-            <span>Finance Simulation</span>
           </div>
 
           {!idea ? (

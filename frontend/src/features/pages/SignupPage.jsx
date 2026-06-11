@@ -8,6 +8,7 @@ import {
   getVisibleAuthFieldNames,
   isAuthStepValueReady,
 } from './authStepFlow'
+import { signupFields } from './authFormFields'
 
 const initialForm = {
   email: '',
@@ -15,38 +16,6 @@ const initialForm = {
   passwordConfirm: '',
   nickname: '',
 }
-
-const signupFields = [
-  {
-    name: 'email',
-    label: '이메일',
-    type: 'email',
-    placeholder: 'startmate@example.com',
-    autoComplete: 'email',
-  },
-  {
-    name: 'nickname',
-    label: '닉네임',
-    type: 'text',
-    placeholder: '민서',
-    autoComplete: 'nickname',
-  },
-  {
-    name: 'password',
-    label: '비밀번호',
-    type: 'password',
-    placeholder: '6자 이상',
-    autoComplete: 'new-password',
-  },
-  {
-    name: 'passwordConfirm',
-    label: '비밀번호 확인',
-    type: 'password',
-    placeholder: '비밀번호를 한 번 더 입력',
-    autoComplete: 'new-password',
-    revealWithPrevious: true,
-  },
-]
 
 export const SignupPage = ({ go, onSignup }) => {
   const [form, setForm] = useState(initialForm)
@@ -132,9 +101,14 @@ export const SignupPage = ({ go, onSignup }) => {
           <BrandMark /><b>StartMate AI</b>
         </button>
         <h1>창업 작업공간을 만들어볼까요?</h1>
-        <p>필요한 정보가 준비되는 순서대로 아래 입력칸이 펼쳐집니다.</p>
+        <p>필요한 정보가 준비되는 순서대로 아래 입력창이 이어집니다.</p>
 
-        <form className="auth-form auth-form-expand" onSubmit={submit}>
+        <form
+          className="auth-form auth-form-expand"
+          onSubmit={submit}
+          autoComplete="off"
+          data-form-type="other"
+        >
           {signupFields.map((field) => {
             if (!visibleFieldNames.includes(field.name)) {
               return null
@@ -160,6 +134,9 @@ export const SignupPage = ({ go, onSignup }) => {
                     onKeyDown={completeField}
                     placeholder={field.placeholder}
                     autoComplete={field.autoComplete}
+                    data-lpignore={field.ignorePasswordManagers ? 'true' : undefined}
+                    data-1p-ignore={field.ignorePasswordManagers ? 'true' : undefined}
+                    data-form-type={field.ignorePasswordManagers ? 'other' : undefined}
                     required
                   />
                 </span>
