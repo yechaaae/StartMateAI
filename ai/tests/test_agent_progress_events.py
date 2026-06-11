@@ -130,11 +130,18 @@ class AgentProgressEventsTest(unittest.IsolatedAsyncioTestCase):
 
         selected_event = next(event for event in events if event["eventType"] == "agents.selected")
         selected_keys = [agent["agentKey"] for agent in selected_event["selectedAgents"]]
-        self.assertEqual(selected_keys, ["ProfileAgent", "IdeaAgent", "PolicyAgent", "PlanAgent"])
+        self.assertEqual(
+            selected_keys,
+            ["ProfileAgent", "IdeaAgent", "PolicyAgent", "PlanAgent", "FinanceAgent", "CommercialAreaAgent"],
+        )
+        event_types = [event["eventType"] for event in events]
+        self.assertIn("feature_review.started", event_types)
+        self.assertIn("feature_review.completed", event_types)
         self.assertIsNotNone(response.result)
         self.assertEqual(response.result["targetFeature"], "PLAN")
         self.assertEqual(response.result["payload"]["featureId"], "plan")
         self.assertIn("reportData", response.result["payload"])
+        self.assertIn("agentReview", response.result["payload"]["reportData"])
 
     async def test_feature_chat_without_update_intent_does_not_attach_result(self):
         orchestrator = build_orchestrator()

@@ -558,6 +558,7 @@ export const FeaturePage = ({
           return next
         })
       } else {
+        messageMetadata.requestId = response.requestId
         setMessages((prev) => upsertMessage(prev, {
           id: response.messageId,
           role: 'user',

@@ -16,7 +16,12 @@ from app.agents.plan import PlanAgent
 from app.agents.policy import PolicyAgent
 from app.agents.profile import ProfileAgent
 from app.agents.simulation import SimulationAgent
-from app.feature_reports import FEATURE_REPORT_TEAMS, build_feature_result, feature_key_from_request
+from app.feature_reports import (
+    FEATURE_REPORT_TEAMS,
+    FEATURE_REVIEW_FEATURES,
+    build_feature_result,
+    feature_key_from_request,
+)
 from app.schemas import (
     AgentResponse,
     FinanceAssumption,
@@ -106,6 +111,8 @@ class OrchestratorAgent:
 
         if len(state["results"]) > 1:
             state["debate_rounds"] = await self._run_debate_round(state)
+        if self._should_run_feature_report_review(state):
+            await self._run_feature_report_review(state)
 
         if len(state["results"]) == 1 and not followups:
             result = next(iter(state["results"].values()))
@@ -795,6 +802,142 @@ class OrchestratorAgent:
             "consensus": consensus,
         }
 
+    def _should_run_feature_report_review(self, state: dict[str, Any]) -> bool:
+        feature_key = str(state.get("target_feature") or "").upper()
+        return (
+            feature_key in FEATURE_REVIEW_FEATURES
+            and self._should_create_feature_result(state["request"])
+            and len(state.get("results", {})) > 1
+        )
+
+    async def _run_feature_report_review(self, state: dict[str, Any]) -> None:
+        feature_key = str(state.get("target_feature") or "").upper()
+        try:
+            await self._emit_progress(
+                state,
+                "feature_review.started",
+                "Agent들이 리포트 초안을 한 번 더 검토하고 있어요.",
+                view_type="discussion",
+            )
+            results: dict[str, AgentResponse] = state["results"]
+            debate_rounds = state.get("debate_rounds") or {}
+            raw_challenges = debate_rounds.get("challenges")
+            challenges = raw_challenges[:3] if isinstance(raw_challenges, list) else []
+            if not challenges:
+                challenges = self._debate_challenges(results)[:3]
+            revisions = self._debate_revisions(challenges, results)
+            consensus = self._debate_consensus(results, challenges, revisions)
+            review = self._feature_report_review(feature_key, results, challenges, revisions, consensus)
+            state["feature_review"] = review
+            state["debate_rounds"] = {
+                **debate_rounds,
+                "challenges": challenges,
+                "revisions": revisions,
+                "consensus": consensus,
+            }
+            await self._emit_progress(
+                state,
+                "feature_review.completed",
+                review["summary"],
+                agent_intent="orchestrator",
+                agent_status="completed",
+                view_type="consensus",
+                detail=review,
+            )
+        except Exception as exc:
+            state["feature_review"] = {
+                "summary": "Agent 검토 중 일부 오류가 있어 기본 리포트를 우선 생성했습니다.",
+                "checks": self._feature_review_checks(feature_key, state.get("results", {}), []),
+                "revisions": [],
+                "warnings": [str(exc)],
+                "rounds": [],
+                "challenges": [],
+                "revisionMessages": [],
+                "consensus": {},
+            }
+
+    def _feature_report_review(
+        self,
+        feature_key: str,
+        results: dict[str, AgentResponse],
+        challenges: list[dict[str, Any]],
+        revisions: list[dict[str, Any]],
+        consensus: dict[str, Any],
+    ) -> dict[str, Any]:
+        checks = self._feature_review_checks(feature_key, results, challenges)
+        revision_lines = self._feature_review_revisions(feature_key, challenges, revisions)
+        if challenges:
+            summary = f"{', '.join(checks[:3])} 기준으로 {len(challenges)}개 보완점을 리포트에 반영했습니다."
+        else:
+            summary = f"{', '.join(checks[:3])} 기준으로 Agent들이 초안을 재검토했고 큰 충돌은 없었습니다."
+        return {
+            "summary": summary,
+            "checks": checks,
+            "revisions": revision_lines,
+            "warnings": [],
+            "rounds": [
+                {"round": 1, "type": "draft", "agents": [response.agent for response in results.values()]},
+                {"round": 2, "type": "critique", "items": challenges},
+                {"round": 2, "type": "revision", "items": revisions},
+            ],
+            "challenges": challenges,
+            "revisionMessages": revisions,
+            "consensus": consensus,
+        }
+
+    def _feature_review_checks(
+        self,
+        feature_key: str,
+        results: dict[str, AgentResponse],
+        challenges: list[dict[str, Any]],
+    ) -> list[str]:
+        labels = {
+            "profile": "프로필 적합성",
+            "idea": "아이템-고객 적합성",
+            "finance": "예산 현실성",
+            "policy": "지원조건 부합성",
+            "plan": "사업계획서 논리",
+            "commercial_area": "지역/상권 경쟁도",
+        }
+        feature_defaults = {
+            "ITEM": ["프로필 적합성", "아이템-고객 적합성", "예산 현실성", "지원조건 부합성", "지역/상권 경쟁도"],
+            "SUPPORT": ["프로필 적합성", "지원조건 부합성", "예산 현실성"],
+            "PLAN": ["사업계획서 논리", "지원조건 부합성", "예산 현실성", "지역/상권 경쟁도"],
+        }
+        ordered = [labels[intent] for intent in results if intent in labels]
+        ordered.extend(labels[str(item.get("source_intent"))] for item in challenges if str(item.get("source_intent")) in labels)
+        ordered.extend(feature_defaults.get(feature_key, []))
+        return self._unique_compact(ordered, limit=5)
+
+    def _feature_review_revisions(
+        self,
+        feature_key: str,
+        challenges: list[dict[str, Any]],
+        revisions: list[dict[str, Any]],
+    ) -> list[str]:
+        proposals = [
+            str(item.get("proposal") or "").strip()
+            for item in challenges
+            if str(item.get("proposal") or "").strip()
+        ]
+        if proposals:
+            return self._unique_compact(proposals, limit=4)
+        if revisions:
+            messages = [self._compact_revision_message(item.get("message")) for item in revisions]
+            return self._unique_compact(messages, limit=4)
+        defaults = {
+            "ITEM": ["추천 아이템은 상권 경쟁도와 초기비용을 함께 보고 우선순위를 유지했습니다."],
+            "SUPPORT": ["지원사업 후보는 자격 조건과 자금 사용 계획을 함께 확인하도록 보완했습니다."],
+            "PLAN": ["사업계획서 초안은 지원조건, 비용 가정, 실행 근거를 확인하는 문단을 추가했습니다."],
+        }
+        return defaults.get(feature_key, [])
+
+    def _compact_revision_message(self, value: Any) -> str:
+        text = " ".join(str(value or "").split())
+        if "\n" in str(value or ""):
+            text = " ".join(str(value).splitlines()[-1].split())
+        return text[:180]
+
     def _debate_argument(self, intent: str, response: AgentResponse) -> dict[str, Any]:
         label = self._agent_descriptor(intent, "completed")["label"]
         position = str(response.data.get("position") or response.summary or "추가 판단이 필요합니다.").strip()
@@ -1077,6 +1220,7 @@ class OrchestratorAgent:
             request=state["request"],
             response=response,
             results=state.get("results", {}),
+            agent_review=state.get("feature_review"),
         )
         if feature_result is None:
             return response

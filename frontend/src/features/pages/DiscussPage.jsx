@@ -230,16 +230,18 @@ export const DiscussPage = ({ user }) => {
     setError('')
 
     try {
+      const messageMetadata = { source: 'discuss-page' }
       const response = await sendChatMessage(room.roomId, {
         userId: user?.id ?? null,
         content: text,
-        metadata: JSON.stringify({ source: 'discuss-page' }),
+        metadata: JSON.stringify(messageMetadata),
         intent: 'auto',
         sessionType: 'FREE_CHAT',
         candidateAgents: [],
         currentResult: {},
       })
 
+      messageMetadata.requestId = response.requestId
       setItems((prev) => upsertMessage(prev, {
         id: response.messageId,
         role: 'user',
@@ -248,7 +250,7 @@ export const DiscussPage = ({ user }) => {
         agentId: null,
         agent: null,
         text: response.content,
-        metadata: { source: 'discuss-page' },
+        metadata: messageMetadata,
         createdAt: null,
       }))
 

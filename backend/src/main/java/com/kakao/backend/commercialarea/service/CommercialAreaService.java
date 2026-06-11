@@ -1,5 +1,6 @@
 package com.kakao.backend.commercialarea.service;
 
+import com.kakao.backend.commercialarea.connector.CommercialStoreApiConnector;
 import com.kakao.backend.commercialarea.domain.CommercialAreaMetric;
 import com.kakao.backend.commercialarea.domain.Store;
 import com.kakao.backend.commercialarea.dto.CommercialAreaRequest;
@@ -11,6 +12,7 @@ import com.kakao.backend.commercialarea.repository.StoreRepository;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,24 +24,37 @@ import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class CommercialAreaService {
 
+    private static final List<Charset> CSV_CHARSETS = List.of(
+            StandardCharsets.UTF_8,
+            Charset.forName("MS949"),
+            Charset.forName("EUC-KR")
+    );
+
     private final StoreRepository storeRepository;
     private final CommercialAreaMetricRepository metricRepository;
     private final StoreNormalizer storeNormalizer;
+    private final CommercialStoreApiConnector storeApiConnector;
+    private final String csvFallbackPath;
 
     public CommercialAreaService(
             StoreRepository storeRepository,
             CommercialAreaMetricRepository metricRepository,
-            StoreNormalizer storeNormalizer
+            StoreNormalizer storeNormalizer,
+            CommercialStoreApiConnector storeApiConnector,
+            @Value("${STARTMATE_COMMERCIAL_AREA_CSV_PATH:}") String csvFallbackPath
     ) {
         this.storeRepository = storeRepository;
         this.metricRepository = metricRepository;
         this.storeNormalizer = storeNormalizer;
+        this.storeApiConnector = storeApiConnector;
+        this.csvFallbackPath = csvFallbackPath;
     }
 
     @Transactional
@@ -58,10 +73,8 @@ public class CommercialAreaService {
             return new StoreImportResponse(imported, (int) storeRepository.count());
         }
 
-        int imported = 0;
-        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-            imported = importCsvReader(reader);
-        } catch (IOException ignored) {
+        int imported = importCsvFile(path);
+        if (imported == 0) {
             imported += importDemoStores();
         }
         return new StoreImportResponse(imported, (int) storeRepository.count());
@@ -69,20 +82,39 @@ public class CommercialAreaService {
 
     private int importZip(Path path, String region) {
         String targetRegion = notBlank(region) ? normalizeSido(region) : "서울";
-        try (ZipInputStream zipInputStream = new ZipInputStream(Files.newInputStream(path), StandardCharsets.UTF_8)) {
-            ZipEntry entry;
-            while ((entry = zipInputStream.getNextEntry()) != null) {
-                String entryName = entry.getName();
-                if (!entry.isDirectory()
-                        && entryName.endsWith(".csv")
-                        && normalizeSido(entryName).contains(targetRegion)) {
-                    return importCsvReader(new BufferedReader(new InputStreamReader(zipInputStream, StandardCharsets.UTF_8)));
+        for (Charset charset : CSV_CHARSETS) {
+            try (ZipInputStream zipInputStream = new ZipInputStream(Files.newInputStream(path), charset)) {
+                ZipEntry entry;
+                while ((entry = zipInputStream.getNextEntry()) != null) {
+                    String entryName = entry.getName();
+                    if (!entry.isDirectory()
+                            && entryName.endsWith(".csv")
+                            && normalizeSido(entryName).contains(targetRegion)) {
+                        int imported = importCsvReader(new BufferedReader(new InputStreamReader(zipInputStream, charset)));
+                        if (imported > 0) {
+                            return imported;
+                        }
+                    }
                 }
+            } catch (IOException ignored) {
+                // Try the next charset before falling back to demo data.
             }
-        } catch (IOException ignored) {
-            return importDemoStores();
         }
         return importDemoStores();
+    }
+
+    private int importCsvFile(Path path) {
+        for (Charset charset : CSV_CHARSETS) {
+            try (BufferedReader reader = Files.newBufferedReader(path, charset)) {
+                int imported = importCsvReader(reader);
+                if (imported > 0) {
+                    return imported;
+                }
+            } catch (IOException ignored) {
+                // Try the next charset before falling back to demo data.
+            }
+        }
+        return 0;
     }
 
     private int importCsvReader(BufferedReader reader) throws IOException {
@@ -93,6 +125,9 @@ public class CommercialAreaService {
         List<String> headers = parseCsvLine(headerLine).stream()
                 .map(header -> header.replace("\uFEFF", "").replace("\"", "").trim())
                 .toList();
+        if (!hasStoreHeaders(headers)) {
+            return 0;
+        }
         int imported = 0;
         String line;
         while ((line = reader.readLine()) != null) {
@@ -128,10 +163,22 @@ public class CommercialAreaService {
 
     @Transactional
     public CommercialAreaResponse analyze(CommercialAreaRequest request) {
-        if (storeRepository.count() == 0) {
-            importDemoStores();
+        List<String> notes = new ArrayList<>();
+        List<Store> stores = storesFromApi(request);
+        if (!stores.isEmpty()) {
+            notes.add("외부 상권 API 데이터를 조회해 최신 주변 점포 기준으로 계산했습니다.");
+        } else {
+            stores = storesForArea(request);
+            if (stores.isEmpty() && notBlank(csvFallbackPath)) {
+                importCsv(csvFallbackPath, request.sido());
+                stores = storesForArea(request);
+            }
+            if (stores.isEmpty() && storeRepository.count() == 0) {
+                importDemoStores();
+                stores = storesForArea(request);
+            }
+            notes.add(sourceNote(stores));
         }
-        List<Store> stores = storesForArea(request);
         int totalStores = stores.size();
         int directCompetitors = (int) stores.stream().filter(store -> isDirectCompetitor(store, request)).count();
         int similarCompetitors = (int) stores.stream()
@@ -140,6 +187,10 @@ public class CommercialAreaService {
                 .count();
         String level = competitionLevel(directCompetitors);
         upsertMetric(request, totalStores, directCompetitors);
+        if (stores.isEmpty()) {
+            notes.add("해당 지역/업종 데이터가 없어 경쟁 강도는 보수적으로 해석해야 합니다.");
+        }
+        notes.add("정확한 임대료/매출/유동인구는 별도 데이터가 필요합니다.");
         return new CommercialAreaResponse(
                 areaLabel(request),
                 industryLabel(request),
@@ -147,11 +198,24 @@ public class CommercialAreaService {
                 directCompetitors,
                 similarCompetitors,
                 level,
-                List.of(
-                        "V0는 소상공인 상가 CSV/샘플 데이터 기준의 단순 경쟁점 계산입니다.",
-                        "정확한 임대료/매출/유동인구는 별도 데이터가 필요합니다."
-                )
+                notes
         );
+    }
+
+    private List<Store> storesFromApi(CommercialAreaRequest request) {
+        List<Map<String, Object>> rows = storeApiConnector.fetchStoresInRadius(request);
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<Store> stores = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Store store = storeNormalizer.normalizeApiRow(row);
+            if (notBlank(store.getSourceStoreId()) || notBlank(store.getStoreName())) {
+                upsertStore(store);
+                stores.add(store);
+            }
+        }
+        return stores;
     }
 
     private void upsertStore(Store incoming) {
@@ -195,6 +259,26 @@ public class CommercialAreaService {
             return false;
         }
         return actual.contains(expected) || expected.contains(actual);
+    }
+
+    private boolean hasStoreHeaders(List<String> headers) {
+        return headers.contains("상호명")
+                || headers.contains("상가업소명")
+                || headers.contains("bizesNm")
+                || headers.contains("상가업소번호");
+    }
+
+    private String sourceNote(List<Store> stores) {
+        if (stores.stream().anyMatch(store -> "sbiz_api".equals(store.getSource()))) {
+            return "DB에 저장된 외부 상권 API 스냅샷을 사용했습니다.";
+        }
+        if (stores.stream().anyMatch(store -> "sbiz_csv".equals(store.getSource()))) {
+            return "외부 상권 API를 사용할 수 없어 소상공인 상가 CSV 데이터를 사용했습니다.";
+        }
+        if (stores.stream().anyMatch(store -> "demo".equals(store.getSource()))) {
+            return "외부 상권 API와 CSV 데이터가 없어 샘플 상가 데이터를 사용했습니다.";
+        }
+        return "외부 상권 API와 CSV 데이터가 없어 샘플 상가 데이터를 사용했습니다.";
     }
 
     private String competitionLevel(int directCompetitors) {
@@ -241,6 +325,7 @@ public class CommercialAreaService {
             String dong
     ) {
         Map<String, String> row = new LinkedHashMap<>();
+        row.put("source", "demo");
         row.put("상가업소번호", id);
         row.put("상호명", name);
         row.put("상권업종대분류명", large);

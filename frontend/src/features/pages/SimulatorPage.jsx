@@ -373,6 +373,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
           return next
         })
       } else {
+        messageMetadata.requestId = response.requestId
         setMessages((prev) => upsertMessage(prev, {
           id: response.messageId,
           role: 'user',

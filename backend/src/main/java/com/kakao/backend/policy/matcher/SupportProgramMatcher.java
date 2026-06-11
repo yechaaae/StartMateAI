@@ -13,6 +13,27 @@ import org.springframework.stereotype.Component;
 @Component
 public class SupportProgramMatcher {
 
+    private static final List<RegionAlias> REGION_ALIASES = List.of(
+            new RegionAlias("서울", List.of("서울", "서울시", "서울특별시")),
+            new RegionAlias("부산", List.of("부산", "부산시", "부산광역시")),
+            new RegionAlias("대구", List.of("대구", "대구시", "대구광역시")),
+            new RegionAlias("인천", List.of("인천", "인천시", "인천광역시")),
+            new RegionAlias("광주", List.of("광주", "광주시", "광주광역시")),
+            new RegionAlias("대전", List.of("대전", "대전시", "대전광역시")),
+            new RegionAlias("울산", List.of("울산", "울산시", "울산광역시")),
+            new RegionAlias("세종", List.of("세종", "세종시", "세종특별자치시")),
+            new RegionAlias("경기", List.of("경기", "경기도")),
+            new RegionAlias("강원", List.of("강원", "강원도", "강원특별자치도")),
+            new RegionAlias("충북", List.of("충북", "충청북도")),
+            new RegionAlias("충남", List.of("충남", "충청남도")),
+            new RegionAlias("전북", List.of("전북", "전라북도", "전북특별자치도")),
+            new RegionAlias("전남", List.of("전남", "전라남도")),
+            new RegionAlias("경북", List.of("경북", "경상북도")),
+            new RegionAlias("경남", List.of("경남", "경상남도")),
+            new RegionAlias("제주", List.of("제주", "제주도", "제주특별자치도"))
+    );
+    private static final List<String> CAPITAL_AREA_REGIONS = List.of("서울", "경기", "인천");
+
     public RecommendedProgramResponse match(SupportProgram program, SupportProgramRecommendationRequest profile) {
         int score = 0;
         List<String> reasons = new ArrayList<>();
@@ -60,19 +81,35 @@ public class SupportProgramMatcher {
 
     private int regionScore(SupportProgram program, SupportProgramRecommendationRequest profile, List<String> reasons, List<String> cautions) {
         String condition = text(program.getRegionCondition());
-        String desiredSido = text(profile.desiredSido());
+        String desiredSido = normalizeRegion(profile.desiredSido());
         String desiredSigungu = text(profile.desiredSigungu());
-        if (condition.isBlank() || containsAny(condition, "전국", "전체")) {
-            reasons.add("전국 또는 지역 제한이 약한 공고입니다.");
-            return 20;
+        if (condition.isBlank()) {
+            cautions.add("지역 조건 데이터가 없어 공고 원문 확인이 필요합니다.");
+            return 0;
         }
-        if (!desiredSido.isBlank() && condition.contains(desiredSido)) {
-            reasons.add("희망 시도와 지역 조건이 맞습니다.");
+        if (containsAny(condition, "비수도권") && CAPITAL_AREA_REGIONS.contains(desiredSido)) {
+            cautions.add("비수도권 대상 공고라 희망 지역과 맞지 않을 수 있습니다.");
+            return -35;
+        }
+        if (containsAny(condition, "전국", "전체")) {
+            reasons.add("전국 또는 지역 제한이 약한 공고입니다.");
             return 20;
         }
         if (!desiredSigungu.isBlank() && condition.contains(desiredSigungu)) {
             reasons.add("희망 시군구와 지역 조건이 맞습니다.");
+            return 25;
+        }
+        if (!desiredSido.isBlank() && regionMatches(condition, desiredSido)) {
+            reasons.add("희망 시도와 지역 조건이 맞습니다.");
             return 20;
+        }
+        if (containsAny(condition, "수도권") && CAPITAL_AREA_REGIONS.contains(desiredSido)) {
+            reasons.add("수도권 대상 공고로 희망 지역과 맞을 가능성이 있습니다.");
+            return 15;
+        }
+        if (!desiredSido.isBlank() && mentionsKnownRegion(condition)) {
+            cautions.add("희망 지역과 공고 지역 조건이 다릅니다.");
+            return -35;
         }
         cautions.add("희망 지역과 공고 지역 조건이 다를 수 있습니다.");
         return -20;
@@ -181,5 +218,49 @@ public class SupportProgramMatcher {
 
     private String firstNonBlank(String first, String second) {
         return first != null && !first.isBlank() ? first : second;
+    }
+
+    private boolean regionMatches(String condition, String desiredSido) {
+        String normalized = normalizeRegion(desiredSido);
+        for (RegionAlias region : REGION_ALIASES) {
+            if (region.name().equals(normalized) && region.matches(condition)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean mentionsKnownRegion(String condition) {
+        for (RegionAlias region : REGION_ALIASES) {
+            if (region.matches(condition)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String normalizeRegion(String value) {
+        String region = text(value);
+        for (RegionAlias alias : REGION_ALIASES) {
+            if (alias.matches(region)) {
+                return alias.name();
+            }
+        }
+        return region;
+    }
+
+    private record RegionAlias(String name, List<String> aliases) {
+
+        private boolean matches(String text) {
+            if (text == null || text.isBlank()) {
+                return false;
+            }
+            for (String alias : aliases) {
+                if (text.contains(alias)) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 }

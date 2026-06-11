@@ -16,6 +16,7 @@ import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
@@ -109,12 +110,11 @@ public class CommercialRentReferenceService {
             Double areaM2,
             String commercialType
     ) {
-        String type = defaultIfBlank(commercialType, DEFAULT_COMMERCIAL_TYPE);
-        CommercialRentReference latest = rentReferenceRepository.findTopByCommercialTypeOrderByBaseYearDescBaseQuarterDesc(type)
+        CommercialRentReference latest = latestReference(defaultIfBlank(commercialType, DEFAULT_COMMERCIAL_TYPE))
                 .orElseThrow(() -> new IllegalStateException("임대료 기준 데이터가 없습니다. CSV를 먼저 import 해주세요."));
 
         List<CommercialRentReference> references = rentReferenceRepository.findByCommercialTypeAndBaseYearAndBaseQuarter(
-                type,
+                latest.getCommercialType(),
                 latest.getBaseYear(),
                 latest.getBaseQuarter()
         );
@@ -146,6 +146,15 @@ public class CommercialRentReferenceService {
                 matchLevel(matched, sido),
                 matched.getSource()
         );
+    }
+
+    private Optional<CommercialRentReference> latestReference(String commercialType) {
+        Optional<CommercialRentReference> requested = rentReferenceRepository
+                .findTopByCommercialTypeOrderByBaseYearDescBaseQuarterDesc(commercialType);
+        if (requested.isPresent() || DEFAULT_COMMERCIAL_TYPE.equals(commercialType)) {
+            return requested;
+        }
+        return rentReferenceRepository.findTopByCommercialTypeOrderByBaseYearDescBaseQuarterDesc(DEFAULT_COMMERCIAL_TYPE);
     }
 
     private int score(CommercialRentReference reference, String sido, String sigungu, String dong, String address) {

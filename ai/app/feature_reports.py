@@ -6,13 +6,15 @@ from app.schemas import AgentResponse, ChatRequest
 
 
 FEATURE_REPORT_TEAMS: dict[str, list[str]] = {
-    "ITEM": ["profile", "idea", "finance"],
+    "ITEM": ["profile", "idea", "finance", "policy", "commercial_area"],
     "SIMULATOR": ["idea", "finance", "simulation"],
-    "SUPPORT": ["profile", "idea", "policy"],
-    "PLAN": ["profile", "idea", "policy", "plan"],
+    "SUPPORT": ["profile", "idea", "policy", "finance"],
+    "PLAN": ["profile", "idea", "policy", "plan", "finance", "commercial_area"],
     "OPERATION": ["operation", "finance", "marketing"],
     "SNS": ["marketing", "operation", "profile"],
 }
+
+FEATURE_REVIEW_FEATURES = {"ITEM", "SUPPORT", "PLAN"}
 
 FEATURE_RESULT_TYPES: dict[str, str] = {
     "ITEM": "IDEA_REPORT",
@@ -51,6 +53,7 @@ def build_feature_result(
     request: ChatRequest,
     response: AgentResponse,
     results: dict[str, AgentResponse],
+    agent_review: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     feature_key = feature_key_from_request(request)
     if feature_key not in FEATURE_REPORT_TEAMS:
@@ -59,6 +62,22 @@ def build_feature_result(
     report_data = _report_data(feature_key, request, results)
     if not report_data:
         return None
+    report_data = _with_agent_review(feature_key, report_data, results, agent_review)
+
+    payload = {
+        "featureId": FEATURE_IDS[feature_key],
+        "reportData": report_data,
+        "agentSummary": response.summary,
+        "selectedAgents": [item.agent for item in results.values()],
+        "agentResults": {intent: item.data for intent, item in results.items()},
+    }
+    review = _dict(agent_review)
+    if review and feature_key in FEATURE_REVIEW_FEATURES:
+        payload["agentReview"] = report_data.get("agentReview")
+        payload["agentDiscussion"] = _agent_discussion(review)
+        warnings = _list(review.get("warnings"))
+        if warnings:
+            payload["warnings"] = warnings
 
     return {
         "targetFeature": feature_key,
@@ -67,13 +86,7 @@ def build_feature_result(
         "shouldCreateResult": True,
         "routeKey": f"{FEATURE_IDS[feature_key]}-report",
         "referenceId": _nested(request.context, "rabbitmq", "roomId"),
-        "payload": {
-            "featureId": FEATURE_IDS[feature_key],
-            "reportData": report_data,
-            "agentSummary": response.summary,
-            "selectedAgents": [item.agent for item in results.values()],
-            "agentResults": {intent: item.data for intent, item in results.items()},
-        },
+        "payload": payload,
     }
 
 
@@ -213,6 +226,109 @@ def _plan_report(results: dict[str, AgentResponse]) -> dict[str, Any]:
             ["1. 사업 개요", str(plan.get("recommendation") or "선택한 아이템을 기준으로 사업 개요를 정리하세요.")],
         ],
     }
+
+
+def _with_agent_review(
+    feature_key: str,
+    report_data: dict[str, Any],
+    results: dict[str, AgentResponse],
+    agent_review: dict[str, Any] | None,
+) -> dict[str, Any]:
+    review = _dict(agent_review)
+    if feature_key not in FEATURE_REVIEW_FEATURES or not review:
+        return report_data
+
+    compact_review = {
+        "summary": str(review.get("summary") or "Agent들이 리포트 초안을 검토했습니다."),
+        "checks": _list(review.get("checks"))[:4],
+        "revisions": _list(review.get("revisions"))[:4],
+    }
+    report_data["agentReview"] = compact_review
+
+    if feature_key == "ITEM":
+        _apply_item_review(report_data, results, compact_review)
+    elif feature_key == "SUPPORT":
+        _apply_support_review(report_data, compact_review)
+    elif feature_key == "PLAN":
+        _apply_plan_review(report_data, compact_review)
+    return report_data
+
+
+def _apply_item_review(
+    report_data: dict[str, Any],
+    results: dict[str, AgentResponse],
+    review: dict[str, Any],
+) -> None:
+    analysis = _list(report_data.get("analysis"))
+    commercial = _data(results, "commercial_area")
+    metrics = _commercial_area_metrics(commercial)
+    if metrics.get("competition_level"):
+        _append_metric(analysis, "상권 경쟁도", str(metrics["competition_level"]))
+    if isinstance(metrics.get("direct_competitors"), (int, float)):
+        _append_metric(analysis, "직접 경쟁점", f"{int(metrics['direct_competitors']):,}개")
+    if analysis:
+        report_data["analysis"] = analysis
+
+    revisions = _list(review.get("revisions"))
+    items = _list(report_data.get("items"))
+    if revisions and items and isinstance(items[0], dict):
+        current_reason = str(items[0].get("reason") or "")
+        if "Agent 검토" not in current_reason:
+            items[0]["reason"] = f"{current_reason} Agent 검토: {revisions[0]}".strip()
+
+
+def _apply_support_review(report_data: dict[str, Any], review: dict[str, Any]) -> None:
+    revisions = _list(review.get("revisions"))
+    items = [item for item in _list(report_data.get("list")) if isinstance(item, dict)]
+    for item in items[:3]:
+        docs = _list(item.get("docs"))
+        if "자금 사용 계획" not in docs:
+            item["docs"] = [*docs, "자금 사용 계획"] if docs else ["사업계획서", "자격 증빙", "자금 사용 계획"]
+    if revisions and items and not items[0].get("summary"):
+        items[0]["summary"] = f"Agent 검토 반영: {revisions[0]}"
+
+
+def _apply_plan_review(report_data: dict[str, Any], review: dict[str, Any]) -> None:
+    revisions = _list(review.get("revisions"))
+    if not revisions:
+        return
+    sections = _list(report_data.get("sections"))
+    if any(isinstance(section, list) and section and section[0] == "Agent 검토 반영사항" for section in sections):
+        return
+    sections.append(["Agent 검토 반영사항", " / ".join(map(str, revisions[:3]))])
+    report_data["sections"] = sections[:7]
+
+
+def _agent_discussion(review: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "rounds": _list(review.get("rounds")),
+        "challenges": _list(review.get("challenges")),
+        "revisions": _list(review.get("revisionMessages")),
+        "consensus": _dict(review.get("consensus")),
+    }
+
+
+def _commercial_area_metrics(data: dict[str, Any]) -> dict[str, Any]:
+    payload = _dict(data.get("payload"))
+    area = _dict(payload.get("commercial_area"))
+    return {
+        "competition_level": (
+            payload.get("competition_level")
+            or area.get("competitionLevel")
+            or data.get("competition_level")
+        ),
+        "direct_competitors": (
+            payload.get("direct_competitors")
+            or area.get("directCompetitors")
+            or data.get("direct_competitors")
+        ),
+    }
+
+
+def _append_metric(analysis: list[Any], label: str, value: str) -> None:
+    if not value or any(isinstance(item, list) and item and item[0] == label for item in analysis):
+        return
+    analysis.append([label, value])
 
 
 def _operation_report(request: ChatRequest, results: dict[str, AgentResponse]) -> dict[str, Any]:

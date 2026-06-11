@@ -1,4 +1,5 @@
 import { Card } from '../../shared/components/Card'
+import { AgentReview } from './AgentReview'
 
 const PLAN_GOALS = [
   ['ALIGN_SUPPORT', '공고 맞춤 보완'],
@@ -14,43 +15,48 @@ export const PlanReport = ({
   planGoal,
   onChangePlanGoal,
 }) => (
-  <Card>
-    <div className="card-head">
-      <h3>사업계획서 초안 · {data.target}</h3>
-      <button type="button">초안 저장</button>
-    </div>
+  <div className="report-stack">
+    <AgentReview review={data.agentReview} />
 
-    <div className="support-control-block">
-      <small>작성 목표</small>
-      <div className="support-control-row">
-        {PLAN_GOALS.map(([value, label]) => (
-          <button
-            key={value}
-            className={planGoal === value ? 'support-filter on' : 'support-filter'}
-            onClick={() => onChangePlanGoal?.(value)}
-          >
-            {label}
-          </button>
-        ))}
+    <Card>
+      <div className="card-head">
+        <h3>사업계획서 초안 · {data.target}</h3>
+        <button type="button">초안 저장</button>
       </div>
-    </div>
 
-    {data.sections.map(([title, body]) => {
-      const selected = focusedSectionTitle === title
-      return (
-        <details key={title} open={title.startsWith('1')}>
-          <summary>
+      <div className="support-control-block">
+        <small>작성 목표</small>
+        <div className="support-control-row">
+          {PLAN_GOALS.map(([value, label]) => (
             <button
+              key={value}
+              className={planGoal === value ? 'support-filter on' : 'support-filter'}
+              onClick={() => onChangePlanGoal?.(value)}
               type="button"
-              className={selected ? 'plan-section-trigger selected' : 'plan-section-trigger'}
-              onClick={() => onFocusSection?.(title)}
             >
-              {title}
+              {label}
             </button>
-          </summary>
-          <p>{body}</p>
-        </details>
-      )
-    })}
-  </Card>
+          ))}
+        </div>
+      </div>
+
+      {data.sections.map(([title, body]) => {
+        const selected = focusedSectionTitle === title
+        return (
+          <details key={title} open={title.startsWith('1')}>
+            <summary>
+              <button
+                type="button"
+                className={selected ? 'plan-section-trigger selected' : 'plan-section-trigger'}
+                onClick={() => onFocusSection?.(title)}
+              >
+                {title}
+              </button>
+            </summary>
+            <p>{body}</p>
+          </details>
+        )
+      })}
+    </Card>
+  </div>
 )
