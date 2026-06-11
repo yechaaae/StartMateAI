@@ -30,7 +30,8 @@ class ChatCandidateAgentResolverTest {
                         "PolicyAgent",
                         "PlanAgent",
                         "OperationAgent",
-                        "MarketingAgent"
+                        "MarketingAgent",
+                        "SimulationAgent"
                 );
     }
 
@@ -40,5 +41,21 @@ class ChatCandidateAgentResolverTest {
 
         assertThat(resolver.resolve("FEATURE_CHAT", room, java.util.List.of()))
                 .containsExactly("IdeaAgent", "ProfileAgent", "FinanceAgent");
+    }
+
+    @Test
+    void returnsFeatureSpecificDefaultsForEachReportFeature() {
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
+
+        assertThat(resolver.resolve("FEATURE_CHAT", ChatRoom.create(workspace, "room", "FEATURE_DISCUSSION", "SIMULATOR"), java.util.List.of()))
+                .containsExactly("IdeaAgent", "FinanceAgent", "SimulationAgent");
+        assertThat(resolver.resolve("FEATURE_CHAT", ChatRoom.create(workspace, "room", "FEATURE_DISCUSSION", "SUPPORT"), java.util.List.of()))
+                .containsExactly("ProfileAgent", "IdeaAgent", "PolicyAgent");
+        assertThat(resolver.resolve("FEATURE_CHAT", ChatRoom.create(workspace, "room", "FEATURE_DISCUSSION", "PLAN"), java.util.List.of()))
+                .containsExactly("ProfileAgent", "IdeaAgent", "PolicyAgent", "PlanAgent");
+        assertThat(resolver.resolve("FEATURE_CHAT", ChatRoom.create(workspace, "room", "FEATURE_DISCUSSION", "OPERATION"), java.util.List.of()))
+                .containsExactly("OperationAgent", "FinanceAgent", "MarketingAgent");
+        assertThat(resolver.resolve("FEATURE_CHAT", ChatRoom.create(workspace, "room", "FEATURE_DISCUSSION", "SNS"), java.util.List.of()))
+                .containsExactly("MarketingAgent", "OperationAgent", "ProfileAgent");
     }
 }

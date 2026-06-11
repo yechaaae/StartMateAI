@@ -27,6 +27,7 @@ def request_from_envelope(envelope: dict[str, Any]) -> ChatRequest:
     feature_context = payload.get("featureContext") or {}
     conversation = payload.get("conversation") or {}
     result_context = payload.get("resultContext") or {}
+    request_metadata = _request_metadata(envelope)
 
     message = str(common.get("message") or "")
     context = {
@@ -34,6 +35,7 @@ def request_from_envelope(envelope: dict[str, Any]) -> ChatRequest:
         "featureContext": feature_context,
         "conversation": conversation,
         "resultContext": result_context,
+        "requestMetadata": request_metadata,
         "rabbitmq": {
             "requestId": envelope.get("requestId"),
             "roomId": envelope.get("roomId"),
@@ -52,6 +54,8 @@ def request_from_envelope(envelope: dict[str, Any]) -> ChatRequest:
 
 
 def response_to_envelope(request_envelope: dict[str, Any], response) -> dict[str, Any]:
+    request_metadata = _request_metadata(request_envelope)
+    result = response.result
     return {
         "requestId": request_envelope.get("requestId"),
         "roomId": request_envelope.get("roomId"),
@@ -62,7 +66,7 @@ def response_to_envelope(request_envelope: dict[str, Any], response) -> dict[str
         "data": response.data,
         "nextActions": response.next_actions,
         "warnings": response.warnings,
-        "result": None,
+        "result": result,
         "version": "v1",
         "messageType": "CHAT_RESPONSE",
         "userId": request_envelope.get("userId"),
@@ -81,8 +85,25 @@ def response_to_envelope(request_envelope: dict[str, Any], response) -> dict[str
             "agent": response.agent,
             "data": response.data,
             "sources": [source.model_dump() for source in response.sources],
+            "result": result,
+            "requestMetadata": request_metadata,
         },
     }
+
+
+def _request_metadata(request_envelope: dict[str, Any]) -> dict[str, Any]:
+    payload = request_envelope.get("payload") or {}
+    common = payload.get("common") or {}
+    metadata = common.get("metadata")
+    if isinstance(metadata, dict):
+        return metadata
+    if isinstance(metadata, str) and metadata.strip():
+        try:
+            parsed = json.loads(metadata)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
 
 
 def progress_event_to_envelope(
@@ -276,22 +297,18 @@ def _profile_from_payload(profile: dict[str, Any]) -> StartupProfile:
 
 def _intent_from_envelope(envelope: dict[str, Any], message: str, reference: dict[str, Any]) -> str:
     external_data = reference.get("externalData") if isinstance(reference, dict) else {}
-    target_feature = str(envelope.get("targetFeature") or "").upper()
     text = message.lower()
+    requested_intent = str(envelope.get("intent") or "auto").strip().lower()
 
-    if target_feature == "SUPPORT":
-        return "policy"
-    if target_feature == "ITEM":
-        return "idea"
-    if target_feature == "OPERATION":
-        return "operation"
+    if requested_intent not in {"", "auto"}:
+        return requested_intent
     if isinstance(external_data, dict) and external_data.get("commercialArea"):
         if external_data.get("supportPrograms") or any(keyword in text for keyword in ["지원사업", "공고", "정책"]):
             return "auto"
         return "commercial_area"
     if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "주변 점포", "주변 가게", "연남동", "마포구", "구미", "인동동"]):
         return "commercial_area"
-    return str(envelope.get("intent") or "auto")
+    return "auto"
 
 
 if __name__ == "__main__":

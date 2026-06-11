@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import com.kakao.backend.commercialarea.dto.CommercialAreaRequest;
 import com.kakao.backend.commercialarea.dto.CommercialAreaResponse;
 import com.kakao.backend.commercialarea.service.CommercialAreaService;
+import com.kakao.backend.commercialarea.service.CommercialRentReferenceService;
 import com.kakao.backend.policy.dto.RecommendedProgramResponse;
 import com.kakao.backend.policy.dto.SupportProgramRecommendationRequest;
 import com.kakao.backend.policy.dto.SupportProgramSyncResponse;
@@ -32,6 +33,9 @@ class InternalAiToolControllerTest {
 
     @Mock
     private CommercialAreaService commercialAreaService;
+
+    @Mock
+    private CommercialRentReferenceService rentReferenceService;
 
     @Test
     void rejectsRequestWithoutValidInternalToken() {
@@ -117,7 +121,8 @@ class InternalAiToolControllerTest {
         return new InternalAiToolController(
                 new InternalToolAuthService(TOKEN),
                 supportProgramService,
-                commercialAreaService
+                commercialAreaService,
+                rentReferenceService
         );
     }
 

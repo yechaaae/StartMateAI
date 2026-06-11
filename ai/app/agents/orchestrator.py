@@ -12,9 +12,11 @@ from app.agents.legal import LegalAgent
 from app.agents.marketing import MarketingAgent
 from app.agents.commercial_area import CommercialAreaAgent
 from app.agents.operation import OperationAgent
+from app.agents.plan import PlanAgent
 from app.agents.policy import PolicyAgent
 from app.agents.profile import ProfileAgent
 from app.agents.simulation import SimulationAgent
+from app.feature_reports import FEATURE_REPORT_TEAMS, build_feature_result, feature_key_from_request
 from app.schemas import (
     AgentResponse,
     FinanceAssumption,
@@ -26,6 +28,7 @@ from app.schemas import (
     MarketingRequest,
     OperationMetric,
     OperationRequest,
+    PlanRequest,
     PolicyRequest,
     ProfileRequest,
     SimulationStartRequest,
@@ -47,6 +50,7 @@ class OrchestratorAgent:
         legal_agent: LegalAgent,
         finance_agent: FinanceAgent,
         operation_agent: OperationAgent,
+        plan_agent: PlanAgent,
         marketing_agent: MarketingAgent,
         commercial_area_agent: CommercialAreaAgent,
         simulation_agent: SimulationAgent,
@@ -57,6 +61,7 @@ class OrchestratorAgent:
         self.legal_agent = legal_agent
         self.finance_agent = finance_agent
         self.operation_agent = operation_agent
+        self.plan_agent = plan_agent
         self.marketing_agent = marketing_agent
         self.commercial_area_agent = commercial_area_agent
         self.simulation_agent = simulation_agent
@@ -107,6 +112,7 @@ class OrchestratorAgent:
         else:
             result = self._synthesize_selective_response(state)
         result = self._annotate_response(result, state)
+        result = self._attach_feature_result(result, state)
         await self._emit_progress(
             state,
             "orchestrator.completed",
@@ -181,6 +187,7 @@ class OrchestratorAgent:
             "profile": ("ProfileAgent", "프로필 Agent", "사용자 조건 분석"),
             "idea": ("IdeaAgent", "아이디어 Agent", "아이템 후보 탐색"),
             "policy": ("PolicyAgent", "지원사업 Agent", "지원사업 추천"),
+            "plan": ("PlanAgent", "사업계획 Agent", "사업계획서 초안 작성"),
             "legal": ("LegalAgent", "법률 Agent", "체크리스트 검토"),
             "finance": ("FinanceAgent", "재무 Agent", "비용/손익 검토"),
             "operation": ("OperationAgent", "운영 Agent", "운영 리스크 검토"),
@@ -501,7 +508,15 @@ class OrchestratorAgent:
         return fallback_profile
 
     async def _build_orchestration_state(self, request: ChatRequest) -> dict[str, Any]:
-        if request.intent == "auto":
+        feature_key = feature_key_from_request(request)
+        if feature_key in FEATURE_REPORT_TEAMS:
+            plan = FEATURE_REPORT_TEAMS[feature_key]
+            plan_meta = {
+                "source": "feature_report_team",
+                "target_feature": feature_key,
+                "reason": "기능 페이지 리포트 생성을 위해 고정 Agent 팀을 사용합니다.",
+            }
+        elif request.intent == "auto":
             plan, plan_meta = await self.plan_agents(request)
         else:
             plan = ["collaboration"] if request.intent == "roadmap" else [request.intent]
@@ -515,6 +530,7 @@ class OrchestratorAgent:
         return {
             "request": request,
             "mode": mode,
+            "target_feature": feature_key,
             "plan": plan,
             "plan_meta": plan_meta,
             "effective_profile": effective_profile,
@@ -592,15 +608,9 @@ class OrchestratorAgent:
             return intent, await self.operation_agent.run(
                 self._operation_request_from_context(request, effective_profile)
             )
-        if intent == "operation":
-            return intent, await self.operation_agent.run(
-                OperationRequest(
-                    profile=effective_profile,
-                    business_name=request.context.get(
-                        "business_name",
-                        request.context.get("item_name", request.context.get("product_name", "테스트 매장")),
-                    ),
-                )
+        if intent == "plan":
+            return intent, await self.plan_agent.run(
+                self._plan_request_from_context(request, effective_profile)
             )
         if intent == "commercial_area":
             return intent, await self.commercial_area_agent.run(
@@ -734,6 +744,12 @@ class OrchestratorAgent:
         results: dict[str, AgentResponse] = state["results"]
         challenges = self._debate_challenges(results)[:2]
         if not challenges:
+            await self._emit_progress(
+                state,
+                "orchestrator.synthesizing",
+                "Agent 의견을 한 번 맞춰보고 있어요.",
+                view_type="discussion",
+            )
             return {
                 "arguments": [],
                 "challenges": [],
@@ -1054,6 +1070,50 @@ class OrchestratorAgent:
         response.data["user_message"] = request.message
         return response
 
+    def _attach_feature_result(self, response: AgentResponse, state: dict[str, Any]) -> AgentResponse:
+        if not self._should_create_feature_result(state["request"]):
+            return response
+        feature_result = build_feature_result(
+            request=state["request"],
+            response=response,
+            results=state.get("results", {}),
+        )
+        if feature_result is None:
+            return response
+        response.result = feature_result
+        response.data["feature_result"] = feature_result
+        return response
+
+    def _should_create_feature_result(self, request: ChatRequest) -> bool:
+        metadata = self._dict_at(request.context or {}, "requestMetadata")
+        report_generation = metadata.get("reportGeneration")
+        if report_generation is True or str(report_generation).lower() == "true":
+            return True
+
+        text = (request.message or "").lower()
+        update_keywords = [
+            "다시 추천",
+            "다시 만들어",
+            "재생성",
+            "새로고침",
+            "갱신",
+            "업데이트",
+            "수정",
+            "반영",
+            "조건 바꿔",
+            "조건을 바꿔",
+            "바꿔줘",
+            "변경",
+            "고쳐줘",
+            "다시 짜",
+            "다시 써",
+            "refresh",
+            "update",
+            "regenerate",
+            "revise",
+        ]
+        return any(keyword in text for keyword in update_keywords)
+
     def _detect_intent(self, message: str) -> str:
         return self._heuristic_agent_plan(message)[0]
 
@@ -1134,6 +1194,7 @@ class OrchestratorAgent:
             "profile",
             "idea",
             "policy",
+            "plan",
             "legal",
             "finance",
             "operation",
@@ -1729,6 +1790,40 @@ class OrchestratorAgent:
         if any(keyword in message for keyword in ["홍보", "인지", "브랜딩"]):
             return "인지도 확보"
         return None
+
+    def _plan_request_from_context(self, request: ChatRequest, profile=None) -> PlanRequest:
+        context = request.context or {}
+        current_result = self._dict_at(context, "currentResult")
+        plan_context = (
+            self._dict_at(context, "planContext")
+            or self._dict_at(current_result, "planContext")
+        )
+        selection = self._dict_at(context, "selection")
+        support_program = (
+            self._dict_at(context, "selectedSupportProgram")
+            or self._dict_at(current_result, "selectedSupportProgram")
+            or self._dict_at(selection, "selectedSupportProgram")
+        )
+        idea_context = (
+            self._dict_at(current_result, "ideaContext")
+            or self._dict_at(context, "ideaContext")
+        )
+        plan_draft = self._dict_at(current_result, "planDraft")
+        target = (
+            plan_context.get("target")
+            or plan_draft.get("target")
+            or support_program.get("title")
+            or "창업 지원사업"
+        )
+        return PlanRequest(
+            profile=profile or request.profile,
+            target=str(target),
+            idea_name=self._title_at(idea_context),
+            support_program=support_program,
+            focused_section=self._dict_at(plan_context, "focusedSection") or self._dict_at(current_result, "focusedSection"),
+            goal=str(plan_context.get("planGoal") or current_result.get("planGoal") or "ALIGN_SUPPORT"),
+            context=context,
+        )
 
     def _operation_request_from_context(self, request: ChatRequest, profile=None) -> OperationRequest:
         context = request.context or {}
@@ -2612,4 +2707,3 @@ class OrchestratorAgent:
                 "동시에 실행하는 것이 현재 가장 현실적인 전략입니다."
             ),
         }
-

@@ -81,7 +81,7 @@ const resolveAgentKey = (...values) => {
     if (AGENT_TOKEN_TO_KEY[String(value).toLowerCase()]) return AGENT_TOKEN_TO_KEY[String(value).toLowerCase()]
     if (AGENT_NAME_TO_KEY[value]) return AGENT_NAME_TO_KEY[value]
   }
-  return 'profile'
+  return null
 }
 
 export const normalizeChatMessage = (message) => {
@@ -167,7 +167,7 @@ export const normalizeAgentProgressMessage = (agentProgress) => ({
   senderType: 'AGENT',
   userId: null,
   agentId: null,
-  agent: agentProgress.agent?.key ?? 'profile',
+  agent: agentProgress.agent?.key ?? null,
   text: agentProgress.message || '에이전트가 작업 중입니다.',
   metadata: {
     agent: agentProgress.agent?.label ?? '',

@@ -47,6 +47,7 @@ def build_orchestrator() -> OrchestratorAgent:
         legal_agent=FakeAgent("LegalAgent", "legal"),
         finance_agent=FakeFinanceAgent("FinanceAgent", "finance"),
         operation_agent=FakeAgent("OperationAgent", "operation"),
+        plan_agent=FakeAgent("PlanAgent", "plan"),
         marketing_agent=FakeAgent("MarketingAgent", "marketing"),
         commercial_area_agent=FakeAgent("CommercialAreaAgent", "commercial_area"),
         simulation_agent=FakeAgent("SimulationAgent", "simulation"),
@@ -106,6 +107,47 @@ class AgentProgressEventsTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("agent.completed", event_types)
         self.assertIn("orchestrator.completed", event_types)
         self.assertEqual(response.agent, "PolicyAgent")
+
+    async def test_feature_report_request_uses_fixed_agent_team_and_attaches_result(self):
+        events: list[dict] = []
+
+        async def capture(event: dict) -> None:
+            events.append(event)
+
+        orchestrator = build_orchestrator()
+
+        response = await orchestrator.run(
+            ChatRequest(
+                message="사업계획서 초안 리포트를 만들어줘",
+                profile=StartupProfile(region="서울", interests=["카페"]),
+                context={
+                    "featureContext": {"featureKey": "PLAN"},
+                    "requestMetadata": {"reportGeneration": True},
+                },
+            ),
+            progress_callback=capture,
+        )
+
+        selected_event = next(event for event in events if event["eventType"] == "agents.selected")
+        selected_keys = [agent["agentKey"] for agent in selected_event["selectedAgents"]]
+        self.assertEqual(selected_keys, ["ProfileAgent", "IdeaAgent", "PolicyAgent", "PlanAgent"])
+        self.assertIsNotNone(response.result)
+        self.assertEqual(response.result["targetFeature"], "PLAN")
+        self.assertEqual(response.result["payload"]["featureId"], "plan")
+        self.assertIn("reportData", response.result["payload"])
+
+    async def test_feature_chat_without_update_intent_does_not_attach_result(self):
+        orchestrator = build_orchestrator()
+
+        response = await orchestrator.run(
+            ChatRequest(
+                message="이 리포트에서 손익분기 의미만 설명해줘",
+                profile=StartupProfile(region="서울", interests=["카페"]),
+                context={"featureContext": {"featureKey": "ITEM"}},
+            ),
+        )
+
+        self.assertIsNone(response.result)
 
 
 class RabbitMqProgressEnvelopeTest(unittest.TestCase):

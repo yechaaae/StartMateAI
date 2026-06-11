@@ -16,7 +16,8 @@ public class ChatCandidateAgentResolver {
             "PolicyAgent",
             "PlanAgent",
             "OperationAgent",
-            "MarketingAgent"
+            "MarketingAgent",
+            "SimulationAgent"
     );
 
     public List<String> resolve(String sessionType, ChatRoom room, List<String> requestedAgents) {
@@ -35,11 +36,11 @@ public class ChatCandidateAgentResolver {
         if ("FEATURE_CHAT".equals(normalizedSessionType)) {
             return switch (targetFeature) {
                 case "ITEM" -> List.of("IdeaAgent", "ProfileAgent", "FinanceAgent");
-                case "SIMULATOR" -> List.of("FinanceAgent", "IdeaAgent");
-                case "SUPPORT" -> List.of("PolicyAgent", "PlanAgent");
-                case "PLAN" -> List.of("PlanAgent", "IdeaAgent", "PolicyAgent");
-                case "OPERATION" -> List.of("OperationAgent", "FinanceAgent");
-                case "SNS" -> List.of("MarketingAgent", "ProfileAgent");
+                case "SIMULATOR" -> List.of("IdeaAgent", "FinanceAgent", "SimulationAgent");
+                case "SUPPORT" -> List.of("ProfileAgent", "IdeaAgent", "PolicyAgent");
+                case "PLAN" -> List.of("ProfileAgent", "IdeaAgent", "PolicyAgent", "PlanAgent");
+                case "OPERATION" -> List.of("OperationAgent", "FinanceAgent", "MarketingAgent");
+                case "SNS" -> List.of("MarketingAgent", "OperationAgent", "ProfileAgent");
                 default -> List.of("ProfileAgent");
             };
         }
