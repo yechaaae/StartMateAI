@@ -11,10 +11,10 @@ test('calculateChangePercent compares current value against previous value with 
   assert.equal(calculateChangePercent(1.8, 2.4), -25)
 })
 
-test('calculateChangePercent caps the change at 100 percent', () => {
-  assert.equal(calculateChangePercent(300, 100), 100)
+test('calculateChangePercent caps the change at 1000 percent', () => {
+  assert.equal(calculateChangePercent(1200, 100), 1000)
   assert.equal(calculateChangePercent(0, 100), -100)
-  assert.equal(calculateChangePercent(50, 0), 100)
+  assert.equal(calculateChangePercent(50, 0), 1000)
 })
 
 test('normalizeProductShares keeps total at 100 while reducing other products proportionally', () => {
@@ -38,4 +38,15 @@ test('normalizeProductShares allows one decimal and fixes rounding drift', () =>
   assert.equal(result[1].share, 44.4)
   assert.equal(Number(result.reduce((sum, item) => sum + item.share, 0).toFixed(1)), 100)
   assert.ok(result.every((item) => item.share >= 0 && item.share <= 100))
+})
+
+test('normalizeProductShares preserves manually locked product shares when another product changes', () => {
+  const result = normalizeProductShares([
+    { id: 'a', name: 'Americano', share: 50 },
+    { id: 'b', name: 'Cookie', share: 20 },
+    { id: 'c', name: 'Cake', share: 30 },
+  ], 1, 25, { lockedIndexes: new Set([0]) })
+
+  assert.deepEqual(result.map((item) => item.share), [50, 25, 25])
+  assert.equal(result.reduce((sum, item) => sum + item.share, 0), 100)
 })

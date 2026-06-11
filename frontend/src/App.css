@@ -3780,6 +3780,11 @@ details p {
   border-radius: 9px;
 }
 
+.operation-previous-value strong {
+  font-size: 14px;
+  font-weight: 900;
+}
+
 .operation-kpi-row em {
   justify-self: end;
   font-style: normal;
@@ -3811,14 +3816,35 @@ details p {
   font-weight: 800;
 }
 
-.operation-block-title button {
+.operation-block-actions {
+  display: flex;
+  gap: 8px;
   margin-left: auto;
-  padding: 7px 10px;
+}
+
+.operation-block-actions button {
+  padding: 7px 11px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.operation-submit-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.operation-submit-row .operation-primary-button {
+  min-width: 220px;
+  padding: 14px 22px;
+  border-radius: 11px;
+  font-size: 15px;
+  box-shadow: 0 10px 22px rgba(57, 121, 117, .18);
 }
 
 .operation-edit-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) 92px minmax(120px, 1.5fr) 58px;
+  grid-template-columns: minmax(120px, 1fr) 92px 38px minmax(120px, 1.4fr) 58px;
   align-items: center;
   gap: 10px;
   margin-top: 8px;
@@ -3828,8 +3854,61 @@ details p {
   min-width: 0;
 }
 
+.operation-edit-row .operation-share-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 10px 0 0;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.operation-edit-row .operation-share-input input {
+  border: 0;
+  padding-right: 2px;
+}
+
+.operation-edit-row .operation-share-input span {
+  color: var(--ink-4);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.operation-edit-row.locked .operation-share-input {
+  opacity: .62;
+}
+
+.operation-edit-row.locked .operation-share-input {
+  background: #f6f8f7;
+}
+
+.operation-edit-row .operation-share-number {
+  text-align: right;
+}
+
 .operation-edit-row button {
   padding: 9px 10px;
+}
+
+.operation-lock-button {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  color: var(--ink-4);
+}
+
+.operation-lock-button.locked {
+  border-color: rgba(57, 121, 117, .32);
+  background: var(--a-operation-t);
+  color: var(--a-operation);
+}
+
+.operation-delete-button {
   color: var(--bad);
 }
 
@@ -3842,6 +3921,11 @@ details p {
   .operation-kpi-row em,
   .operation-edit-row button {
     justify-self: start;
+  }
+
+  .operation-submit-row,
+  .operation-submit-row .operation-primary-button {
+    width: 100%;
   }
 }
 

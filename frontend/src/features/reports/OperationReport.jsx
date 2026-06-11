@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Card } from '../../shared/components/Card'
+import { Icon } from '../../shared/components/Icon'
 import {
   calculateChangePercent,
   normalizeProductShares,
@@ -7,7 +9,10 @@ import {
 } from './operationFeedbackLogic'
 
 const KPI_LIMITS = {
-  adConversionRate: { min: 0, max: 100, step: '0.1' },
+  totalSales: { min: 0, step: 10000 },
+  totalCost: { min: 0, step: 10000 },
+  orderCount: { min: 0, step: 5 },
+  adConversionRate: { min: 0, max: 100, step: 1 },
 }
 
 const formatValue = (value, unit) => {
@@ -28,9 +33,10 @@ const updateKpiValue = (setData, key, field, nextValue) => {
       if (item.key !== key) return item
       const limits = KPI_LIMITS[item.key]
       const parsed = parseNumberInput(nextValue)
-      const value = limits
-        ? roundOneDecimal(Math.min(limits.max, Math.max(limits.min, parsed)))
-        : parsed
+      const min = limits?.min ?? Number.NEGATIVE_INFINITY
+      const max = limits?.max ?? Number.POSITIVE_INFINITY
+      const limited = Math.min(max, Math.max(min, parsed))
+      const value = item.key === 'adConversionRate' ? roundOneDecimal(limited) : Math.round(limited)
       return { ...item, [field]: value }
     }),
   }))
@@ -45,14 +51,14 @@ const updateProductName = (setData, index, nextName) => {
   }))
 }
 
-const updateProductShare = (setData, index, nextShare) => {
+const updateProductShare = (setData, index, nextShare, lockedIndexes) => {
   setData((current) => ({
     ...current,
-    products: normalizeProductShares(current.products, index, nextShare),
+    products: normalizeProductShares(current.products, index, nextShare, { lockedIndexes }),
   }))
 }
 
-const addProduct = (setData) => {
+const addProduct = (setData, lockedIndexes) => {
   setData((current) => {
     const next = [
       ...current.products,
@@ -61,12 +67,12 @@ const addProduct = (setData) => {
     const lastIndex = next.length - 1
     return {
       ...current,
-      products: normalizeProductShares(next, lastIndex, 10),
+      products: normalizeProductShares(next, lastIndex, 10, { lockedIndexes }),
     }
   })
 }
 
-const removeProduct = (setData, index) => {
+const removeProduct = (setData, index, lockedIndexes) => {
   setData((current) => {
     if (current.products.length <= 1) {
       return current
@@ -74,9 +80,42 @@ const removeProduct = (setData, index) => {
     const next = current.products.filter((_, itemIndex) => itemIndex !== index)
     return {
       ...current,
-      products: normalizeProductShares(next, 0, next[0]?.share ?? 100),
+      products: normalizeProductShares(next, 0, next[0]?.share ?? 100, { lockedIndexes }),
     }
   })
+}
+
+const equalizeProductShares = (setData) => {
+  setData((current) => {
+    const products = current.products ?? []
+    if (!products.length) {
+      return current
+    }
+
+    const baseShare = roundOneDecimal(100 / products.length)
+    let allocated = 0
+    return {
+      ...current,
+      products: products.map((product, index) => {
+        const isLast = index === products.length - 1
+        const share = isLast ? roundOneDecimal(100 - allocated) : baseShare
+        allocated = roundOneDecimal(allocated + share)
+        return { ...product, share }
+      }),
+    }
+  })
+}
+
+const lockedIndexesAfterRemoval = (lockedIndexes, removedIndex) => {
+  const nextLockedIndexes = new Set()
+  lockedIndexes.forEach((lockedIndex) => {
+    if (lockedIndex < removedIndex) {
+      nextLockedIndexes.add(lockedIndex)
+    } else if (lockedIndex > removedIndex) {
+      nextLockedIndexes.add(lockedIndex - 1)
+    }
+  })
+  return nextLockedIndexes
 }
 
 const updateChannelValue = (setData, index, nextValue) => {
@@ -101,7 +140,38 @@ export const OperationReport = ({
   onRequestOperationFeedback,
   operationFeedbackSaving,
 }) => {
+  const [lockedProductIndexes, setLockedProductIndexes] = useState(new Set())
   const productTotal = roundOneDecimal((data.products ?? []).reduce((sum, item) => sum + parseNumberInput(item.share), 0))
+
+  const handleProductShareChange = (index, nextShare) => {
+    if (lockedProductIndexes.has(index)) {
+      return
+    }
+    updateProductShare(setData, index, nextShare, lockedProductIndexes)
+  }
+
+  const toggleProductLock = (index) => {
+    setLockedProductIndexes((current) => {
+      const next = new Set(current)
+      if (next.has(index)) {
+        next.delete(index)
+      } else {
+        next.add(index)
+      }
+      return next
+    })
+  }
+
+  const handleRemoveProduct = (index) => {
+    const nextLockedIndexes = lockedIndexesAfterRemoval(lockedProductIndexes, index)
+    setLockedProductIndexes(nextLockedIndexes)
+    removeProduct(setData, index, nextLockedIndexes)
+  }
+
+  const handleEqualizeProducts = () => {
+    setLockedProductIndexes(new Set())
+    equalizeProductShares(setData)
+  }
 
   return (
     <div className="report-stack">
@@ -111,14 +181,6 @@ export const OperationReport = ({
             <h3>운영 입력 정보</h3>
             <p>현재값과 기존값을 비교해 개선 우선순위를 계산합니다.</p>
           </div>
-          <button
-            type="button"
-            className="operation-primary-button"
-            onClick={onRequestOperationFeedback}
-            disabled={operationFeedbackSaving}
-          >
-            {operationFeedbackSaving ? '피드백 저장 중' : '입력값으로 피드백 받기'}
-          </button>
         </div>
 
         <div className="operation-meta-grid">
@@ -159,22 +221,15 @@ export const OperationReport = ({
                     type="number"
                     min={limits.min}
                     max={limits.max}
-                    step={limits.step ?? '1'}
+                    step={limits.step ?? 1}
                     value={item.current}
                     onChange={(event) => updateKpiValue(setData, item.key, 'current', event.target.value)}
                   />
                 </label>
-                <label>
-                  <span>기존값</span>
-                  <input
-                    type="number"
-                    min={limits.min}
-                    max={limits.max}
-                    step={limits.step ?? '1'}
-                    value={item.previous}
-                    onChange={(event) => updateKpiValue(setData, item.key, 'previous', event.target.value)}
-                  />
-                </label>
+                <div className="operation-previous-value">
+                  <span>이전 기준</span>
+                  <strong>{formatValue(item.previous, item.unit)}</strong>
+                </div>
                 <em className={good ? 'good' : 'bad'}>{change > 0 ? '+' : ''}{change}%</em>
               </div>
             )
@@ -185,28 +240,50 @@ export const OperationReport = ({
           <div className="operation-block-title">
             <small>상품 비중</small>
             <span>총합 {productTotal}%</span>
-            <button type="button" onClick={() => addProduct(setData)}>상품 추가</button>
-          </div>
-          {(data.products ?? []).map((product, index) => (
-            <div className="bar-row operation-edit-row" key={product.id ?? product.name}>
-              <input
-                value={product.name}
-                onChange={(event) => updateProductName(setData, index, event.target.value)}
-                aria-label="상품명"
-              />
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
-                value={product.share}
-                onChange={(event) => updateProductShare(setData, index, event.target.value)}
-                aria-label="상품 비중"
-              />
-              <i><em style={{ width: `${product.share}%`, background: 'var(--a-operation)' }} /></i>
-              <button type="button" onClick={() => removeProduct(setData, index)}>삭제</button>
+            <div className="operation-block-actions">
+              <button type="button" onClick={handleEqualizeProducts}>균등 배분</button>
+              <button type="button" onClick={() => addProduct(setData, lockedProductIndexes)}>상품 추가</button>
             </div>
-          ))}
+          </div>
+          {(data.products ?? []).map((product, index) => {
+            const share = parseNumberInput(product.share)
+            const locked = lockedProductIndexes.has(index)
+
+            return (
+              <div className={locked ? 'bar-row operation-edit-row locked' : 'bar-row operation-edit-row'} key={product.id ?? product.name}>
+                <input
+                  value={product.name}
+                  onChange={(event) => updateProductName(setData, index, event.target.value)}
+                  aria-label="상품명"
+                />
+                <label className="operation-share-input">
+                  <input
+                    className="operation-share-number"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={product.share}
+                    onChange={(event) => handleProductShareChange(index, event.target.value)}
+                    disabled={locked}
+                    aria-label="상품 비중"
+                  />
+                  <span>%</span>
+                </label>
+                <button
+                  type="button"
+                  className={locked ? 'operation-lock-button locked' : 'operation-lock-button'}
+                  onClick={() => toggleProductLock(index)}
+                  aria-label={`${product.name} 비중 ${locked ? '잠금 해제' : '잠금'}`}
+                  title={locked ? '비중 잠금 해제' : '비중 잠금'}
+                >
+                  <Icon name={locked ? 'lock' : 'unlock'} size={16} />
+                </button>
+                <i><em style={{ width: `${share}%`, background: 'var(--a-operation)' }} /></i>
+                <button type="button" className="operation-delete-button" onClick={() => handleRemoveProduct(index)}>삭제</button>
+              </div>
+            )
+          })}
         </div>
 
         <div className="operation-block">
@@ -222,6 +299,17 @@ export const OperationReport = ({
               </label>
             ))}
           </div>
+        </div>
+
+        <div className="operation-submit-row">
+          <button
+            type="button"
+            className="operation-primary-button"
+            onClick={onRequestOperationFeedback}
+            disabled={operationFeedbackSaving}
+          >
+            {operationFeedbackSaving ? '피드백 저장 중' : '입력값으로 피드백 받기'}
+          </button>
         </div>
       </Card>
 

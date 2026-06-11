@@ -21,13 +21,13 @@ export const calculateChangePercent = (currentValue, previousValue) => {
   const previous = parseNumberInput(previousValue)
 
   if (previous <= 0) {
-    return current > 0 ? 100 : 0
+    return current > 0 ? 1000 : 0
   }
 
-  return roundOneDecimal(Math.max(-100, Math.min(100, ((current - previous) / previous) * 100)))
+  return roundOneDecimal(Math.max(-1000, Math.min(1000, ((current - previous) / previous) * 100)))
 }
 
-export const normalizeProductShares = (products, changedIndex, nextShare) => {
+export const normalizeProductShares = (products, changedIndex, nextShare, options = {}) => {
   const list = products.map((product, index) => ({
     ...product,
     share: roundOneDecimal(clampPercent(index === changedIndex ? parseNumberInput(nextShare) : parseNumberInput(product.share))),
@@ -42,11 +42,19 @@ export const normalizeProductShares = (products, changedIndex, nextShare) => {
     return list
   }
 
-  const remainingTotal = roundOneDecimal(100 - changed.share)
-  const otherIndexes = list.map((_, index) => index).filter((index) => index !== changedIndex)
+  const lockedIndexes = new Set(options.lockedIndexes ?? [])
+  const otherLockedIndexes = list
+    .map((_, index) => index)
+    .filter((index) => index !== changedIndex && lockedIndexes.has(index))
+  const otherLockedTotal = roundOneDecimal(otherLockedIndexes.reduce((sum, index) => sum + list[index].share, 0))
+  changed.share = roundOneDecimal(clampPercent(Math.min(changed.share, 100 - otherLockedTotal)))
+
+  const fixedIndexes = new Set([changedIndex, ...otherLockedIndexes])
+  const remainingTotal = roundOneDecimal(100 - [...fixedIndexes].reduce((sum, index) => sum + list[index].share, 0))
+  const otherIndexes = list.map((_, index) => index).filter((index) => !fixedIndexes.has(index))
 
   if (!otherIndexes.length) {
-    changed.share = 100
+    changed.share = roundOneDecimal(clampPercent(100 - otherLockedTotal))
     return list
   }
 
