@@ -55,6 +55,7 @@ def response_to_envelope(request_envelope: dict[str, Any], response) -> dict[str
     return {
         "requestId": request_envelope.get("requestId"),
         "roomId": request_envelope.get("roomId"),
+        "type": "final",
         "intent": response.intent,
         "agent": response.agent,
         "summary": response.summary,
@@ -72,7 +73,9 @@ def response_to_envelope(request_envelope: dict[str, Any], response) -> dict[str
                 "message": response.summary,
                 "intent": response.intent,
                 "agent": response.agent,
+                "type": "final",
             },
+            "type": "final",
             "summary": response.summary,
             "intent": response.intent,
             "agent": response.agent,
@@ -87,13 +90,17 @@ def progress_event_to_envelope(
     event: dict[str, Any],
     sequence: int,
 ) -> dict[str, Any]:
+    view_type = str(event.get("type") or event.get("viewType") or _event_view_type(event))
     payload = {
         "eventType": event.get("eventType"),
+        "type": view_type,
+        "viewType": view_type,
         "orchestrator": event.get("orchestrator") or "OrchestratorAgent",
         "sequence": sequence,
         "message": event.get("message"),
         "agent": event.get("agent"),
         "selectedAgents": event.get("selectedAgents", []),
+        "detail": event.get("detail") or {},
     }
     status = str(event.get("status") or "PROCESSING")
     agent_payload = payload.get("agent") if isinstance(payload.get("agent"), dict) else {}
@@ -103,6 +110,7 @@ def progress_event_to_envelope(
     return {
         "requestId": request_envelope.get("requestId"),
         "roomId": request_envelope.get("roomId"),
+        "type": view_type,
         "intent": request_envelope.get("intent") or "auto",
         "agent": agent_name,
         "summary": message,
@@ -117,6 +125,29 @@ def progress_event_to_envelope(
         "status": status,
         "payload": payload,
     }
+
+
+def _event_view_type(event: dict[str, Any]) -> str:
+    event_type = str(event.get("eventType") or "")
+    agent = event.get("agent") if isinstance(event.get("agent"), dict) else {}
+    agent_status = str(agent.get("status") or "")
+    if event_type in {"orchestrator.started", "agents.selected", "agent.started", "orchestrator.completed"}:
+        return "status"
+    if event_type == "agent.completed":
+        return "result"
+    if event_type == "agent.argument":
+        return "argument"
+    if event_type == "agent.challenge":
+        return "challenge"
+    if event_type == "agent.revision":
+        return "revision"
+    if event_type == "orchestrator.consensus":
+        return "consensus"
+    if event_type == "orchestrator.synthesizing":
+        return "discussion"
+    if event_type == "agent.failed" or agent_status == "failed":
+        return "status"
+    return "discussion"
 
 
 def failed_response_envelope(request_envelope: dict[str, Any], error: Exception) -> dict[str, Any]:
