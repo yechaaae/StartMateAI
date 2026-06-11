@@ -6,6 +6,13 @@ import { AgentAvatar } from '../../../shared/components/AgentAvatar'
 import { Icon } from '../../../shared/components/Icon'
 import { ChatInput } from '../../chat/ChatInput'
 import { ChatRow } from '../../chat/ChatRow'
+import {
+  clearActiveProgressByRequest,
+  listActiveProgresses,
+  resolveTypingAgent,
+  upsertActiveProgress,
+} from '../../chat/chatProgressState'
+import { StatusProgressRow } from '../../chat/StatusProgressRow'
 import { TypingRow } from '../../chat/TypingRow'
 import { runSupportProgramSearch } from '../../reports/supportProgramSearch'
 import {
@@ -149,8 +156,7 @@ export const FeaturePage = ({
   const [creatingRoom, setCreatingRoom] = useState(false)
   const [connection, setConnection] = useState('idle')
   const [statusMap, setStatusMap] = useState({})
-  const [agentProgress, setAgentProgress] = useState(null)
-  const [participatingAgentKeys, setParticipatingAgentKeys] = useState([])
+  const [activeProgressMap, setActiveProgressMap] = useState(new Map())
   const [error, setError] = useState('')
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState(null)
@@ -158,9 +164,11 @@ export const FeaturePage = ({
   const [savingTitle, setSavingTitle] = useState(false)
   const [savingReport, setSavingReport] = useState(false)
   const [aiReportStatus, setAiReportStatus] = useState('idle')
+  const [streamVersion, setStreamVersion] = useState(0)
 
   const chatRef = useRef(null)
   const sessionMenuRef = useRef(null)
+  const reconnectTimeoutRef = useRef(null)
   const hiddenRequestIdsRef = useRef(new Set())
   const autoGenerationKeysRef = useRef(new Set())
 
@@ -168,7 +176,7 @@ export const FeaturePage = ({
     if (chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight
     }
-  }, [messages, agentProgress, statusMap])
+  }, [messages, activeProgressMap, statusMap])
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -261,6 +269,10 @@ export const FeaturePage = ({
   }, [targetFeature])
 
   useEffect(() => {
+    setStreamVersion(0)
+  }, [room?.roomId])
+
+  useEffect(() => {
     if (!room?.roomId) {
       return undefined
     }
@@ -268,15 +280,18 @@ export const FeaturePage = ({
     let active = true
     const eventSource = createChatEventSource(room.roomId)
 
-    const loadHistory = async () => {
+    const loadHistory = async ({ reset = false, showLoading = false } = {}) => {
       try {
-        setLoading(true)
+        if (showLoading) {
+          setLoading(true)
+        }
         setError('')
-        setMessages([])
-        setStatusMap({})
-        setAgentProgress(null)
-        setParticipatingAgentKeys([])
-        setConnection('connecting')
+        if (reset) {
+          setMessages([])
+          setStatusMap({})
+          setActiveProgressMap(new Map())
+          setConnection('connecting')
+        }
 
         const history = await getChatMessages(room.roomId)
         if (!active) {
@@ -290,19 +305,22 @@ export const FeaturePage = ({
         }
         setError(nextError.message ?? '이전 대화를 불러오지 못했습니다.')
       } finally {
-        if (active) {
+        if (active && showLoading) {
           setLoading(false)
         }
       }
     }
 
-    loadHistory()
+    loadHistory({ reset: true, showLoading: true })
 
     eventSource.addEventListener('chat-connected', () => {
       if (!active) {
         return
       }
       setConnection('connected')
+      if (streamVersion > 0) {
+        loadHistory()
+      }
     })
 
     eventSource.addEventListener('chat-message', (event) => {
@@ -318,7 +336,6 @@ export const FeaturePage = ({
       if (nextReport) {
         applyReportData(nextReport)
         setAiReportStatus('ready')
-        setAgentProgress(null)
       }
       setMessages((prev) => upsertMessage(prev, nextMessage))
     })
@@ -336,9 +353,15 @@ export const FeaturePage = ({
         if (nextStatus.status === 'FAILED') {
           setAiReportStatus('error')
         }
+        if (['COMPLETED', 'FAILED'].includes(nextStatus.status)) {
+          setActiveProgressMap((prev) => clearActiveProgressByRequest(prev, nextStatus.requestId))
+        }
         return
       }
       setStatusMap((prev) => ({ ...prev, [nextStatus.requestId]: nextStatus }))
+      if (['COMPLETED', 'FAILED'].includes(nextStatus.status)) {
+        setActiveProgressMap((prev) => clearActiveProgressByRequest(prev, nextStatus.requestId))
+      }
     })
 
     eventSource.addEventListener('agent-progress', (event) => {
@@ -350,20 +373,11 @@ export const FeaturePage = ({
         return
       }
       const nextProgress = normalizeAgentProgressEvent(payload.agentProgress)
+      setActiveProgressMap((prev) => upsertActiveProgress(prev, nextProgress))
       if (hiddenRequestIdsRef.current.has(nextProgress.requestId)) {
         return
       }
-      setAgentProgress(nextProgress)
-      if (nextProgress.selectedAgents.length) {
-        setParticipatingAgentKeys(
-          [...new Set(nextProgress.selectedAgents.map((candidate) => candidate.key).filter((key) => agents[key]))],
-        )
-      } else if (nextProgress.agent?.key && agents[nextProgress.agent.key] && nextProgress.agent.status === 'running') {
-        setParticipatingAgentKeys((prev) => (
-          prev.includes(nextProgress.agent.key) ? prev : [...prev, nextProgress.agent.key]
-        ))
-      }
-      if (nextProgress.agent && nextProgress.message) {
+      if (nextProgress.viewType !== 'status' && nextProgress.agent && nextProgress.message) {
         setMessages((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
       }
     })
@@ -372,28 +386,62 @@ export const FeaturePage = ({
       if (!active) {
         return
       }
-      setConnection('error')
+      setConnection('connecting')
+      if (reconnectTimeoutRef.current) {
+        return
+      }
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        reconnectTimeoutRef.current = null
+        if (!active) {
+          return
+        }
+        eventSource.close()
+        setStreamVersion((prev) => prev + 1)
+      }, 1200)
     }
 
     return () => {
       active = false
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
       eventSource.close()
     }
-  }, [room?.roomId])
+  }, [id, room?.roomId, streamVersion])
 
   const latestStatus = useMemo(() => Object.values(statusMap).at(-1) ?? null, [statusMap])
-  const agentIsRunning = agentProgress?.agent?.status?.toLowerCase() === 'running'
-  const typing = agentIsRunning && agents[agentProgress.agent.key]
-    ? agentProgress.agent.key
-    : null
-  const runningAgentKey = agentIsRunning
-    ? agentProgress.agent.key
-    : null
-  const visibleAgents = participatingAgentKeys.map((key) => ({ key, ...agents[key] }))
+  const activeProgresses = useMemo(() => listActiveProgresses(activeProgressMap), [activeProgressMap])
+  const statusProgresses = useMemo(
+    () => activeProgresses.filter((progress) => progress.viewType === 'status'),
+    [activeProgresses],
+  )
+  const typing = activeProgresses.length
+    ? resolveTypingAgent(
+        activeProgresses.filter((progress) => (
+          ['running', 'queued'].includes(String(progress.agent?.status ?? '').toLowerCase())
+          || progress.eventType === 'orchestrator.synthesizing'
+        )),
+        null,
+      )
+    : latestStatus && ['QUEUED', 'PROCESSING'].includes(latestStatus.status)
+      ? feature.agent
+      : null
+  const runningAgentKey = typing && agents[typing] ? typing : null
+  const visibleAgentKeys = useMemo(() => {
+    const ordered = []
+    for (const progress of activeProgresses) {
+      const key = progress.agent?.key
+      if (!key || !agents[key] || ordered.includes(key)) continue
+      ordered.push(key)
+    }
+    return ordered
+  }, [activeProgresses])
+  const visibleAgents = visibleAgentKeys.map((key) => ({ key, ...agents[key] }))
   const visibleAgentStatus = runningAgentKey && agents[runningAgentKey]
     ? '현재 답변을 준비하고 있어요.'
     : visibleAgents.length
-      ? '이번 답변에 참여한 전문가예요.'
+      ? '이번 답변에 참여 중인 전문가들이에요.'
       : helperText
 
   useEffect(() => {
@@ -484,7 +532,6 @@ export const FeaturePage = ({
     setError('')
 
     try {
-      setAgentProgress(null)
       const messageMetadata = { source: 'feature-page', featureId: id }
       if (hidden) {
         messageMetadata.hidden = true
@@ -706,7 +753,6 @@ export const FeaturePage = ({
       .catch(() => setAiReportStatus('error'))
   }
 
-
   return (
     <main className="feature-page" style={buildFeaturePageTheme(feature, agents)}>
       <section className="report-area">
@@ -927,10 +973,11 @@ export const FeaturePage = ({
           {messages
             .filter((message) => !message.metadata?.hidden)
             .map((message) => <ChatRow key={message.id} message={message} />)}
+          {statusProgresses.map((progress) => <StatusProgressRow key={progress.id} progress={progress} />)}
           {typing && <TypingRow agent={typing} />}
         </div>
 
-        {!!latestStatus && (
+        {!!latestStatus && latestStatus.status === 'FAILED' && (
           <div className={`chat-status-banner ${latestStatus.status?.toLowerCase()}`}>
             <b>{latestStatus.status}</b>
             {latestStatus.errorMessage ? <span>{latestStatus.errorMessage}</span> : <span>요청 ID {latestStatus.requestId}</span>}

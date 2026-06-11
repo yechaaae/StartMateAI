@@ -120,19 +120,43 @@ export const normalizeAgentProgressEvent = (agentProgress) => {
     }
   }
 
+  const fallbackAgent = agentProgress.agent ?? (
+    agentProgress.orchestrator
+      ? {
+          agentKey: agentProgress.orchestrator,
+          label: 'Orchestrator',
+          role: 'Agent 의견 조율',
+          status: agentProgress.status ?? 'running',
+        }
+      : null
+  )
+
   const selectedAgents = Array.isArray(agentProgress.selectedAgents)
     ? agentProgress.selectedAgents.map(normalizeAgent).filter(Boolean)
     : []
+
+  const inferViewType = () => {
+    const explicitViewType = agentProgress.viewType ?? agentProgress.type ?? ''
+    if (explicitViewType) {
+      return String(explicitViewType).toLowerCase()
+    }
+
+    const eventType = String(agentProgress.eventType ?? '').toLowerCase()
+    if (eventType === 'agent.completed') return 'result'
+    if (eventType === 'orchestrator.synthesizing') return 'discussion'
+    return 'status'
+  }
 
   return {
     requestId: agentProgress.requestId,
     status: agentProgress.status ?? 'PROCESSING',
     targetFeature: agentProgress.targetFeature ?? '',
     eventType: agentProgress.eventType ?? '',
+    viewType: inferViewType(),
     orchestrator: agentProgress.orchestrator ?? '',
     sequence: agentProgress.sequence ?? 0,
     message: agentProgress.message ?? '',
-    agent: normalizeAgent(agentProgress.agent),
+    agent: normalizeAgent(fallbackAgent),
     selectedAgents,
   }
 }

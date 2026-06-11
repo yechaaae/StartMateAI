@@ -2537,6 +2537,28 @@
   animation-delay: .36s;
 }
 
+.chat-progress-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 2px 0 14px;
+  padding-left: 2px;
+  color: #98a1b2;
+  font-size: 12px;
+  line-height: 1.5;
+  animation: fadeUp .24s ease both;
+}
+
+.chat-progress-status-agent {
+  color: #7f8899;
+  font-weight: 800;
+}
+
+.chat-progress-status-message {
+  color: #98a1b2;
+}
+
 .chat-input {
   padding-top: 14px;
   background: linear-gradient(180deg, rgba(243, 244, 247, 0), var(--bg) 28%);
