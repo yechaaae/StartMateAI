@@ -51,7 +51,7 @@ export const HomePage = ({ go, workspace }) => {
     ['경력', profile.career],
     ['관심 분야', profile.interestField],
     ['거주 지역', profile.residenceRegion],
-    ['초기 자금', profile.initialBudget ? `${profile.initialBudget}만 원` : '-'],
+    ['초기 자금', profile.initialBudget ? `${(profile.initialBudget / 10000).toFixed(0)}만 원` : '-'],
     ['팀 구성', profile.teamStatusLabel],
     ['창업 형태', profile.preferredBusinessTypeLabel],
   ]
