@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/seeds")
+@RequestMapping("/seeds")
 public class SeedController {
 
     private final SeedKnowledgeService seedKnowledgeService;

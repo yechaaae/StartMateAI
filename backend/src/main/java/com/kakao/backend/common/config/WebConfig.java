@@ -21,6 +21,7 @@ public class WebConfig implements WebMvcConfigurer {
                         "/auth/**",
                         "/api/auth/**",
                         "/api/internal/ai-tools/**",
+                        "/rent-references/**",
                         "/api/rent-references/**",
                         "/api/sns/**",
                         "/favicon.ico"

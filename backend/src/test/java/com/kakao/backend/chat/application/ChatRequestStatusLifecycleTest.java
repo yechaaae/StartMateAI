@@ -78,6 +78,8 @@ class ChatRequestStatusLifecycleTest {
         when(startupProfileRepository.findByUserId(2L)).thenReturn(Optional.of(StartupProfile.create()));
         when(chatMessageRepository.findTop20ByChatRoomIdOrderByIdDesc(10L)).thenReturn(List.of());
         when(chatMessageRepository.save(any(ChatMessage.class))).thenReturn(savedMessage);
+        when(chatCandidateAgentResolver.resolve("FREE_CHAT", room, List.of()))
+                .thenReturn(List.of("ProfileAgent", "IdeaAgent", "FinanceAgent"));
         when(aiChatReferenceContextService.resolve(any(AiChatDispatchCommand.class))).thenReturn(Map.of());
         when(aiChatExternalReferenceDataService.resolve(any(AiChatDispatchCommand.class))).thenReturn(Map.of());
         when(aiChatDispatchService.dispatch(any(AiChatDispatchCommand.class)))
