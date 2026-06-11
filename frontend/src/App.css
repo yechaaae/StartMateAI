@@ -1545,6 +1545,12 @@
   color: var(--brand);
 }
 
+.sidebar nav > button.sidebar-feature-link.on,
+.sidebar nav > button.sidebar-feature-link:hover {
+  background: var(--nav-tint);
+  color: var(--nav-accent);
+}
+
 .user-box {
   display: grid;
   grid-template-columns: 34px 1fr;

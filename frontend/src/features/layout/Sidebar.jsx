@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { features, featureOrder } from '../../shared/data/features'
+import { agents } from '../../shared/data/agents'
 import { profile } from '../../shared/data/profile'
 import { workspaces } from '../../shared/data/workspaces'
 import { Icon } from '../../shared/components/Icon'
 import { StartMateLogo } from '../../shared/components/StartMateLogo'
+import { buildFeatureNavTheme } from './sidebarFeatureNav'
 
 export const Sidebar = ({ route, go, workspace, setWorkspace, user, onLogout }) => {
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
@@ -79,8 +81,14 @@ export const Sidebar = ({ route, go, workspace, setWorkspace, user, onLogout }) 
         <p>AI 기능</p>
         {featureOrder.map((id) => {
           const feature = features[id]
+          const navTheme = buildFeatureNavTheme(feature, agents)
           return (
-            <button key={id} className={route === id ? 'on' : ''} onClick={() => go(id)}>
+            <button
+              key={id}
+              className={route === id ? 'sidebar-feature-link on' : 'sidebar-feature-link'}
+              style={navTheme}
+              onClick={() => go(id)}
+            >
               <Icon name={feature.icon} />{feature.title}
             </button>
           )
