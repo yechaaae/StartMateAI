@@ -8,23 +8,7 @@ import {
   getVisibleAuthFieldNames,
   isAuthStepValueReady,
 } from './authStepFlow'
-
-const loginFields = [
-  {
-    name: 'email',
-    label: '이메일',
-    type: 'email',
-    placeholder: 'startmate@example.com',
-    autoComplete: 'email',
-  },
-  {
-    name: 'password',
-    label: '비밀번호',
-    type: 'password',
-    placeholder: '비밀번호',
-    autoComplete: 'current-password',
-  },
-]
+import { loginFields } from './authFormFields'
 
 export const LoginPage = ({ go, onLogin }) => {
   const [form, setForm] = useState({ email: '', password: '' })
@@ -99,9 +83,14 @@ export const LoginPage = ({ go, onLogin }) => {
           <BrandMark /><b>StartMate AI</b>
         </button>
         <h1>다시 만나서 반가워요</h1>
-        <p>이메일을 입력하면 비밀번호 입력칸이 자연스럽게 이어집니다.</p>
+        <p>이메일을 입력하면 비밀번호 입력창이 자연스럽게 이어집니다.</p>
 
-        <form className="auth-form auth-form-expand" onSubmit={submit}>
+        <form
+          className="auth-form auth-form-expand"
+          onSubmit={submit}
+          autoComplete="off"
+          data-form-type="other"
+        >
           {loginFields.map((field) => {
             if (!visibleFieldNames.includes(field.name)) {
               return null
@@ -125,6 +114,9 @@ export const LoginPage = ({ go, onLogin }) => {
                     onKeyDown={completeField}
                     placeholder={field.placeholder}
                     autoComplete={field.autoComplete}
+                    data-lpignore={field.ignorePasswordManagers ? 'true' : undefined}
+                    data-1p-ignore={field.ignorePasswordManagers ? 'true' : undefined}
+                    data-form-type={field.ignorePasswordManagers ? 'other' : undefined}
                     required
                   />
                 </span>

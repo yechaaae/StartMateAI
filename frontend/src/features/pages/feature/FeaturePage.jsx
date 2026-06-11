@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { savedResultApi } from '../../shared/api/client'
-import { agents } from '../../shared/data/agents'
-import { features } from '../../shared/data/features'
-import { AgentAvatar } from '../../shared/components/AgentAvatar'
-import { AgentBadge } from '../../shared/components/AgentBadge'
-import { Icon } from '../../shared/components/Icon'
-import { ChatInput } from '../chat/ChatInput'
-import { ChatRow } from '../chat/ChatRow'
-import { TypingRow } from '../chat/TypingRow'
-import { runSupportProgramSearch } from '../reports/supportProgramSearch'
+import { savedResultApi } from '../../../shared/api/client'
+import { agents } from '../../../shared/data/agents'
+import { features } from '../../../shared/data/features'
+import { AgentAvatar } from '../../../shared/components/AgentAvatar'
+import { Icon } from '../../../shared/components/Icon'
+import { ChatInput } from '../../chat/ChatInput'
+import { ChatRow } from '../../chat/ChatRow'
+import { TypingRow } from '../../chat/TypingRow'
+import { runSupportProgramSearch } from '../../reports/supportProgramSearch'
 import {
   mergeSupportProgramHistory,
   readSupportProgramHistory,
   removeSupportProgramHistoryItem,
   writeSupportProgramHistory,
-} from '../reports/supportProgramStorage'
+} from '../../reports/supportProgramStorage'
 import {
   createChatEventSource,
   createFeatureChatRoom,
@@ -23,17 +22,19 @@ import {
   getFeatureChatRooms,
   sendChatMessage,
   updateFeatureChatRoomTitle,
-} from '../chat/chatApi'
+} from '../../chat/chatApi'
 import {
   normalizeAgentProgressEvent,
   normalizeAgentProgressMessage,
   normalizeChatMessage,
   normalizeStatusEvent,
   upsertMessage,
-} from '../chat/chatMappers'
-import { Report } from '../reports/Report'
-import { buildFeatureSavedReport } from '../reports/savedReportPayload'
-import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from './featureChatContext'
+} from '../../chat/chatMappers'
+import { Report } from '../../reports/Report'
+import { buildFeatureSavedReport } from '../../reports/savedReportPayload'
+import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from '../featureChatContext'
+import { buildFeaturePageTheme } from './featurePageTheme'
+import './FeaturePage.css'
 
 const FEATURE_TARGETS = {
   item: 'ITEM',
@@ -548,9 +549,9 @@ export const FeaturePage = ({
             : '홍보 초안과 운영 맥락을 함께 보고 카피를 다듬을 수 있어요.'
 
   return (
-    <main className="feature-page">
+    <main className="feature-page" style={buildFeaturePageTheme(feature, agents)}>
       <section className="report-area">
-        <div className="page-title">
+        <div className="feature-page-header">
           <div>
             <h1>{feature.title}</h1>
             <p>{feature.sub}</p>
@@ -567,7 +568,6 @@ export const FeaturePage = ({
                 <span>{savingReport ? '저장 중' : '리포트 저장'}</span>
               </button>
             )}
-            <AgentBadge id={feature.agent} />
           </div>
         </div>
         <Report
