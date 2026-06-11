@@ -61,7 +61,7 @@ public class OperationFeedbackService {
                     return workspaceRepository.save(created);
                 });
 
-        OperationFeedback feedback = new OperationFeedback();
+        OperationFeedback feedback = OperationFeedback.create();
         feedback.setWorkspace(workspace);
         applyPeriod(feedback, request.period());
         applyKpis(feedback, request.kpis());

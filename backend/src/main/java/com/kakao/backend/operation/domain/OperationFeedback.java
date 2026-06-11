@@ -74,4 +74,8 @@ public class OperationFeedback extends BaseTimeEntity {
 
     @OneToMany(mappedBy = "operationFeedback", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OperationMetric> metrics = new ArrayList<>();
+
+    public static OperationFeedback create() {
+        return new OperationFeedback();
+    }
 }
