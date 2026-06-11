@@ -183,11 +183,47 @@ export const normalizeAgentProgressMessage = (agentProgress) => ({
   createdAt: null,
 })
 
+const getRequestId = (message) => message?.metadata?.requestId ?? null
+const isProgressMessage = (message) => message?.metadata?.progressMessage === true
+const getSequence = (message) => {
+  const sequence = message?.metadata?.sequence
+  return typeof sequence === 'number' && Number.isFinite(sequence) ? sequence : 0
+}
+
+const messagePhase = (message) => {
+  if (message?.role === 'user') return 0
+  if (isProgressMessage(message)) return 1
+  return 2
+}
+
+const orderMessages = (messages) => (
+  messages
+    .map((message, index) => ({ message, index }))
+    .sort((left, right) => {
+      const leftRequestId = getRequestId(left.message)
+      const rightRequestId = getRequestId(right.message)
+      if (!leftRequestId || leftRequestId !== rightRequestId) {
+        return left.index - right.index
+      }
+
+      const phaseGap = messagePhase(left.message) - messagePhase(right.message)
+      if (phaseGap !== 0) return phaseGap
+
+      if (isProgressMessage(left.message) && isProgressMessage(right.message)) {
+        const sequenceGap = getSequence(left.message) - getSequence(right.message)
+        if (sequenceGap !== 0) return sequenceGap
+      }
+
+      return left.index - right.index
+    })
+    .map(({ message }) => message)
+)
+
 export const upsertMessage = (messages, nextMessage) => {
   const existingIndex = messages.findIndex((message) => message.id === nextMessage.id)
-  if (existingIndex < 0) return [...messages, nextMessage]
+  if (existingIndex < 0) return orderMessages([...messages, nextMessage])
 
   const copy = [...messages]
   copy[existingIndex] = { ...copy[existingIndex], ...nextMessage }
-  return copy
+  return orderMessages(copy)
 }
