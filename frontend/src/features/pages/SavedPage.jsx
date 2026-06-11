@@ -18,6 +18,16 @@ const formatDate = (value) => {
   return value.replace('T', ' ').slice(0, 16)
 }
 
+const operationKpiLabel = (item) => Array.isArray(item) ? item[0] : item.label
+const operationKpiValue = (item) => {
+  if (Array.isArray(item)) return item[1]
+  if (item.unit === '원') return `${Number(item.current ?? 0).toLocaleString('ko-KR')}원`
+  return `${item.current ?? 0}${item.unit ?? ''}`
+}
+const operationKpiDelta = (item) => Array.isArray(item) ? item[2] : `기존 ${item.previous ?? 0}${item.unit ?? ''}`
+const operationSuggestionTitle = (item) => Array.isArray(item) ? item[0] : item.title
+const operationSuggestionBody = (item) => Array.isArray(item) ? item[1] : item.body
+
 const renderPreview = (detail) => {
   const payload = detail?.payload?.reportData ?? detail?.payload ?? {}
   const feature = detail?.sourceFeature
@@ -91,21 +101,21 @@ const renderPreview = (detail) => {
     return (
       <div className="saved-preview-stack">
         <section className="saved-preview-metrics">
-          {(payload.kpis ?? []).slice(0, 4).map(([label, value, delta]) => (
-            <div key={label}>
-              <small>{label}</small>
-              <b>{value}</b>
-              <span>{delta}</span>
+          {(payload.kpis ?? []).slice(0, 4).map((item) => (
+            <div key={operationKpiLabel(item)}>
+              <small>{operationKpiLabel(item)}</small>
+              <b>{operationKpiValue(item)}</b>
+              <span>{operationKpiDelta(item)}</span>
             </div>
           ))}
         </section>
         <section className="saved-preview-section">
           <h4>개선 제안</h4>
           <ul>
-            {(payload.suggestions ?? []).slice(0, 4).map(([title, body]) => (
-              <li key={title}>
-                <b>{title}</b>
-                <span>{body}</span>
+            {(payload.suggestions ?? []).slice(0, 4).map((item) => (
+              <li key={operationSuggestionTitle(item)}>
+                <b>{operationSuggestionTitle(item)}</b>
+                <span>{operationSuggestionBody(item)}</span>
               </li>
             ))}
           </ul>

@@ -14,8 +14,16 @@ const buildPlanSections = (data) => (
   (data.sections ?? []).map(([title, body]) => ({ title, body }))
 )
 
+const operationSuggestionTitle = (suggestion) => (
+  Array.isArray(suggestion) ? suggestion[0] : suggestion?.title
+)
+
 const buildOperationSuggestionObjects = (data) => (
-  (data.suggestions ?? []).map(([title, body, link]) => ({ title, body, link: link ?? null }))
+  (data.suggestions ?? []).map((suggestion) => (
+    Array.isArray(suggestion)
+      ? { title: suggestion[0], body: suggestion[1], link: suggestion[2] ?? null }
+      : { title: suggestion.title, body: suggestion.body, link: suggestion.link ?? null }
+  ))
 )
 
 export const buildFeatureSeed = (featureId, workspaceContext = {}) => {
@@ -44,7 +52,7 @@ export const buildFeatureSeed = (featureId, workspaceContext = {}) => {
     selectedSupportTitle: workspaceContext.selectedSupportProgram?.title ?? data.list?.[0]?.title ?? null,
     selectedOperationSuggestionTitle:
       workspaceContext.operationContext?.selectedSuggestion?.title
-      ?? data.suggestions?.[0]?.[0]
+      ?? operationSuggestionTitle(data.suggestions?.[0])
       ?? null,
     supportSearchMode: workspaceContext.supportSearchMode ?? 'PROFILE_IDEA',
     supportUserGoal: workspaceContext.supportUserGoal ?? 'HIGH_MATCH',

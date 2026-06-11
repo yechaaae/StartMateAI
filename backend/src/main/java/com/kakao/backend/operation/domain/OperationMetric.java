@@ -46,4 +46,22 @@ public class OperationMetric {
     @Lob
     @Column(name = "description", columnDefinition = "text")
     private String description;
+
+    public static OperationMetric create(
+            OperationFeedback operationFeedback,
+            String metricType,
+            String metricName,
+            BigDecimal metricValue,
+            String unit,
+            String description
+    ) {
+        OperationMetric metric = new OperationMetric();
+        metric.setOperationFeedback(operationFeedback);
+        metric.setMetricType(metricType);
+        metric.setMetricName(metricName);
+        metric.setMetricValue(metricValue);
+        metric.setUnit(unit);
+        metric.setDescription(description);
+        return metric;
+    }
 }

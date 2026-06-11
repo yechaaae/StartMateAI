@@ -10,6 +10,8 @@ const trimSummary = (value) => {
   return value.length > 180 ? `${value.slice(0, 177)}...` : value
 }
 
+const suggestionTitle = (suggestion) => Array.isArray(suggestion) ? suggestion[0] : suggestion?.title
+
 export const FEATURE_RESULT_TYPES = {
   item: 'IDEA_REPORT',
   simulator: 'SIMULATION_REPORT',
@@ -30,14 +32,16 @@ export const buildFeatureSavedReport = ({
   supportUserGoal,
   focusedSectionTitle,
   planGoal,
+  operationFeedbackId = null,
 }) => {
   const selectedIdea = (data.items ?? []).find((item) => item.rank === selectedIdeaRank) ?? data.items?.[0] ?? null
   const selectedSupport = (data.list ?? []).find((item) => item.title === selectedSupportTitle) ?? data.list?.[0] ?? null
-  const selectedSuggestion = (data.suggestions ?? []).find((item) => item[0] === selectedOperationSuggestionTitle) ?? data.suggestions?.[0] ?? null
+  const selectedSuggestion = (data.suggestions ?? [])
+    .find((item) => suggestionTitle(item) === selectedOperationSuggestionTitle) ?? data.suggestions?.[0] ?? null
   const focusedSection = (data.sections ?? []).find((section) => section[0] === focusedSectionTitle) ?? data.sections?.[0] ?? null
 
   let title = '저장한 리포트'
-  let summary = '리포트 스냅샷입니다.'
+  let summary = '리포트 초안입니다.'
 
   if (featureId === 'item') {
     title = selectedIdea ? `${selectedIdea.title} 추천 리포트` : '창업 아이템 추천 리포트'
@@ -55,22 +59,23 @@ export const buildFeatureSavedReport = ({
   } else if (featureId === 'operation') {
     title = data.period ? `${data.period} 운영 피드백 리포트` : '운영 피드백 리포트'
     summary = selectedSuggestion
-      ? `${selectedSuggestion[0]} 제안을 포함한 운영 피드백입니다.`
+      ? `${suggestionTitle(selectedSuggestion)} 제안을 포함한 운영 피드백입니다.`
       : '운영 피드백 결과를 저장했습니다.'
   } else if (featureId === 'sns') {
     title = data.topic ? `${data.topic} SNS 초안` : 'SNS 홍보 초안'
-    summary = `${data.channel ?? 'SNS'} 채널용 캠페인 초안을 저장했습니다.`
+    summary = `${data.channel ?? 'SNS'} 채널 캠페인 초안을 저장했습니다.`
   }
 
   return {
     sourceFeature: featureId,
     resultType: FEATURE_RESULT_TYPES[featureId] ?? 'FEATURE_REPORT',
-    referenceId: null,
+    referenceId: operationFeedbackId,
     title,
     summary: trimSummary(summary),
     payload: {
       featureId,
       reportData: data,
+      operationFeedbackId,
       currentResult,
       viewState: {
         selectedIdeaRank,
@@ -102,7 +107,7 @@ export const buildSimulationSavedReport = ({
     title: `${ideaTitle} 시뮬레이션 리포트`,
     summary: trimSummary(
       formattedProfit
-        ? `${location?.label ?? location?.address ?? '선택 위치'} 기준 예상 순이익 ${formattedProfit}원 시뮬레이션입니다.`
+        ? `${location?.label ?? location?.address ?? '선택 위치'} 기준 예상 수익 ${formattedProfit}원 시뮬레이션입니다.`
         : '창업 시뮬레이션 결과를 저장했습니다.',
     ),
     payload: {
