@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kakao.backend.agent.domain.Agent;
 import com.kakao.backend.agent.infrastructure.AgentRepository;
@@ -17,9 +18,11 @@ import com.kakao.backend.chat.infrastructure.ChatMessageRepository;
 import com.kakao.backend.chat.infrastructure.ChatRoomRepository;
 import com.kakao.backend.user.model.User;
 import com.kakao.backend.workspace.domain.Workspace;
+import com.kakao.backend.workspace.application.SavedResultService;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -40,17 +43,23 @@ class ChatAiResponseCommandServiceTest {
     @Spy
     private AiChatResponsePayloadReader responsePayloadReader = new AiChatResponsePayloadReader(new ObjectMapper());
 
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
+
     @Mock
     private ChatSseService chatSseService;
 
     @Mock
     private ChatRequestStatusService chatRequestStatusService;
 
+    @Mock
+    private SavedResultService savedResultService;
+
     @InjectMocks
     private ChatAiResponseCommandService chatAiResponseCommandService;
 
     @Test
-    void savesAiResponseAsAgentMessage() {
+    void savesAiResponseAsAgentMessage() throws Exception {
         User user = User.create("test@example.com", "tester", "USER");
         user.setId(2L);
 
@@ -84,7 +93,18 @@ class ChatAiResponseCommandServiceTest {
                 "COMPLETED",
                 java.util.Map.of(
                         "common", java.util.Map.of("message", "summary"),
-                        "result", java.util.Map.of("resultType", "BUSINESS_IDEA_RESULT")
+                        "requestMetadata", java.util.Map.of("hidden", true, "reportGeneration", true),
+                        "result", java.util.Map.of(
+                                "targetFeature", "ITEM",
+                                "resultType", "BUSINESS_IDEA_RESULT",
+                                "resultTitle", "아이템 리포트",
+                                "shouldCreateResult", true,
+                                "routeKey", "item-report",
+                                "payload", java.util.Map.of(
+                                        "featureId", "item",
+                                        "reportData", java.util.Map.of("location", "서울")
+                                )
+                        )
                 )
         );
 
@@ -102,6 +122,18 @@ class ChatAiResponseCommandServiceTest {
         assertThat(savedMessage.getAgent()).isEqualTo(agent);
         assertThat(savedMessage.getSenderType()).isEqualTo("AGENT");
         assertThat(savedMessage.getContent()).isEqualTo("summary");
+        ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository).save(messageCaptor.capture());
+        java.util.Map<String, Object> metadata = objectMapper.readValue(
+                messageCaptor.getValue().getMetadata(),
+                new TypeReference<>() {
+                }
+        );
+        assertThat(metadata.get("hidden")).isEqualTo(true);
+        assertThat(metadata.get("reportGeneration")).isEqualTo(true);
+        assertThat(metadata.get("resultType")).isEqualTo("BUSINESS_IDEA_RESULT");
+        assertThat(metadata.get("result")).isInstanceOf(java.util.Map.class);
+        verify(savedResultService).saveAiResult(any(), any(), any(), any());
         verify(chatSseService).publish(persisted);
     }
 
@@ -156,4 +188,3 @@ class ChatAiResponseCommandServiceTest {
                 .hasMessage("Chat room not found.");
     }
 }
-

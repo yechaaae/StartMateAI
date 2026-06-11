@@ -87,6 +87,26 @@ class ReferenceDataIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("reference", chat_request.context)
         self.assertIn("supportPrograms", chat_request.context["reference"]["externalData"])
 
+    def test_rabbitmq_envelope_preserves_request_metadata(self):
+        chat_request = request_from_envelope(
+            {
+                "requestId": "req-2",
+                "roomId": 11,
+                "targetFeature": "ITEM",
+                "payload": {
+                    "common": {
+                        "message": "현재 리포트를 만들어줘",
+                        "metadata": '{"hidden": true, "reportGeneration": true}',
+                    },
+                    "profile": {},
+                    "featureContext": {"featureKey": "ITEM"},
+                },
+            }
+        )
+
+        self.assertEqual(chat_request.context["requestMetadata"]["hidden"], True)
+        self.assertEqual(chat_request.context["requestMetadata"]["reportGeneration"], True)
+
     async def test_policy_agent_prefers_backend_support_program_reference(self):
         agent = PolicyAgent(FakeLlm(), SupportProgramRetriever([]))
 

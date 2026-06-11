@@ -13,6 +13,7 @@ from app.agents.marketing import MarketingAgent
 from app.agents.commercial_area import CommercialAreaAgent
 from app.agents.operation import OperationAgent
 from app.agents.orchestrator import OrchestratorAgent
+from app.agents.plan import PlanAgent
 from app.agents.policy import PolicyAgent
 from app.agents.profile import ProfileAgent
 from app.agents.simulation import SimulationAgent
@@ -33,6 +34,7 @@ from app.schemas import (
     LLMChatRequest,
     MarketingRequest,
     OperationRequest,
+    PlanRequest,
     PolicyRequest,
     ProfileRequest,
     SimulationChoiceRequest,
@@ -70,6 +72,7 @@ policy_agent = PolicyAgent(llm, retriever, backend_tools)
 legal_agent = LegalAgent(llm, legal_retriever)
 finance_agent = FinanceAgent(llm)
 operation_agent = OperationAgent(llm)
+plan_agent = PlanAgent(llm)
 marketing_agent = MarketingAgent(llm)
 commercial_area_agent = CommercialAreaAgent(llm, backend_tools)
 simulation_agent = SimulationAgent(llm)
@@ -83,6 +86,7 @@ orchestrator = OrchestratorAgent(
     legal_agent=legal_agent,
     finance_agent=finance_agent,
     operation_agent=operation_agent,
+    plan_agent=plan_agent,
     marketing_agent=marketing_agent,
     commercial_area_agent=commercial_area_agent,
     simulation_agent=simulation_agent,

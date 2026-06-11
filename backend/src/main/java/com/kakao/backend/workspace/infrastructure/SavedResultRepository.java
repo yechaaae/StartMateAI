@@ -10,4 +10,9 @@ public interface SavedResultRepository extends JpaRepository<SavedResult, Long> 
     List<SavedResult> findByWorkspaceUserIdOrderByCreatedAtDesc(Long userId);
 
     Optional<SavedResult> findByIdAndWorkspaceUserId(Long id, Long userId);
+
+    Optional<SavedResult> findFirstByWorkspaceUserIdAndSourceFeatureIgnoreCaseOrderByCreatedAtDesc(
+            Long userId,
+            String sourceFeature
+    );
 }

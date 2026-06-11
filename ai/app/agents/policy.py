@@ -194,8 +194,22 @@ class PolicyAgent(BaseAgent):
         for item in matches:
             adjusted = dict(item)
             base_score = int(adjusted.get("eligibility_score") or 0)
+            score_breakdown = adjusted.get("score_breakdown") or {}
             haystack = self._match_text(adjusted)
             location_score = self._location_score(haystack, region_terms)
+
+            if "backend_match_score" in score_breakdown:
+                adjusted["score_breakdown"] = {
+                    **score_breakdown,
+                    "location_fit": location_score,
+                }
+                adjusted["why_matched"] = self._unique([
+                    *(adjusted.get("why_matched") or []),
+                    self._location_reason(location_score, region_terms),
+                ])
+                reranked.append(adjusted)
+                continue
+
             final_score = base_score + location_score
 
             if location_score <= 0 and self._has_other_specific_region(haystack, region_terms):
@@ -210,7 +224,7 @@ class PolicyAgent(BaseAgent):
             adjusted["eligibility_score"] = max(0, min(100, final_score))
             adjusted["fit_level"] = self._fit_level(int(adjusted["eligibility_score"]))
             adjusted["score_breakdown"] = {
-                **(adjusted.get("score_breakdown") or {}),
+                **score_breakdown,
                 "location_fit": location_score,
             }
             adjusted["why_matched"] = self._unique([
@@ -577,5 +591,4 @@ class PolicyAgent(BaseAgent):
                     seen.add(document)
                     documents.append(document)
         return documents
-
 

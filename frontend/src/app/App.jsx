@@ -167,7 +167,7 @@ export default function App() {
   } else if (guardedRoute === 'saved') {
     page = <SavedPage go={setRoute} />
   } else if (guardedRoute === 'simulator') {
-    page = <SimulatorPage go={setRoute} workspace={workspace} />
+    page = <SimulatorPage go={setRoute} workspace={workspace} user={user} startupProfile={startupProfile} />
   } else if (features[guardedRoute]) {
     page = (
       <FeaturePage
