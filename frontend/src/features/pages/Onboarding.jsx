@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AgentAvatar } from '../../shared/components/AgentAvatar'
-import { BrandMark } from '../../shared/components/BrandMark'
+import { StartMateLogo } from '../../shared/components/StartMateLogo'
 import { Icon } from '../../shared/components/Icon'
 import { startupProfileApi } from '../../shared/api/client'
 import {
@@ -212,7 +212,7 @@ export const Onboarding = ({ onComplete }) => {
           onClick={moveBack}
           disabled={stepIndex === 0 || saved}
         >
-          <BrandMark /><b>StartMate AI</b>
+          <StartMateLogo /><b>StartMate AI</b>
         </button>
 
         <div className="onboarding-progress">

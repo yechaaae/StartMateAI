@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BrandMark } from '../../shared/components/BrandMark'
+import { StartMateLogo } from '../../shared/components/StartMateLogo'
 import { Icon } from '../../shared/components/Icon'
 import { authApi } from '../../shared/api/client'
 import {
@@ -80,7 +80,7 @@ export const LoginPage = ({ go, onLogin }) => {
     <main className="auth-page">
       <section className="auth-panel">
         <button type="button" className="auth-brand-link" onClick={() => go('landing')}>
-          <BrandMark /><b>StartMate AI</b>
+          <StartMateLogo /><b>StartMate AI</b>
         </button>
         <h1>다시 만나서 반가워요</h1>
         <p>이메일을 입력하면 비밀번호 입력창이 자연스럽게 이어집니다.</p>

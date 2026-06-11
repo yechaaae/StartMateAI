@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BrandMark } from '../../shared/components/BrandMark'
+import { StartMateLogo } from '../../shared/components/StartMateLogo'
 import { Icon } from '../../shared/components/Icon'
 import { authApi } from '../../shared/api/client'
 import {
@@ -98,7 +98,7 @@ export const SignupPage = ({ go, onSignup }) => {
     <main className="auth-page">
       <section className="auth-panel">
         <button type="button" className="auth-brand-link" onClick={() => go('landing')}>
-          <BrandMark /><b>StartMate AI</b>
+          <StartMateLogo /><b>StartMate AI</b>
         </button>
         <h1>창업 작업공간을 만들어볼까요?</h1>
         <p>필요한 정보가 준비되는 순서대로 아래 입력창이 이어집니다.</p>
