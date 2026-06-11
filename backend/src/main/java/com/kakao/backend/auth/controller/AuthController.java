@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/auth")
+@RequestMapping("/api/auth")
 @RequiredArgsConstructor
 // 회원가입, 로그인, 로그아웃처럼 인증과 직접 연결된 API를 담당합니다.
 public class AuthController {
