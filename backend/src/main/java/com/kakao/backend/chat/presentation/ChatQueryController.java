@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/chat")
+@RequestMapping("/chat")
 public class ChatQueryController {
 
     private final ChatRoomQueryService chatRoomQueryService;

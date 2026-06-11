@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
-@RequestMapping("/api/chat/rooms")
+@RequestMapping("/chat/rooms")
 public class ChatStreamController {
 
     private final ChatSseService chatSseService;
