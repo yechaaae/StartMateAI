@@ -2544,19 +2544,31 @@
 
 .suggestions {
   display: flex;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  padding: 0 4px;
+  margin-bottom: 12px;
 }
 
 .suggestions button {
-  padding: 7px 13px;
-  border: 1px solid var(--line);
+  padding: 10px 16px;
+  border: 1px solid var(--line-2);
   border-radius: 999px;
   background: #fff;
   color: var(--ink-2);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 13px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+}
+
+.suggestions button:hover:not(:disabled) {
+  background: #f8f9fc;
+  border-color: #dbe1fb;
+  color: var(--ink);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
 }
 
 .input-shell {
@@ -2634,6 +2646,44 @@
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
   background: #fff;
+}
+
+.feature-chat-agent-header {
+  min-height: 63px;
+  transition: color .2s ease;
+}
+
+.feature-chat-agent-placeholder {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 9px;
+  background: var(--feature-accent-tint, var(--brand-tint));
+  color: var(--feature-accent, var(--brand));
+}
+
+.feature-chat-agent-stack {
+  display: flex;
+  flex: 0 0 auto;
+  padding-left: 4px;
+}
+
+.feature-chat-agent-stack .agent-avatar {
+  margin-left: -4px;
+  border: 2px solid #fff;
+}
+
+.chat-agent-placeholder {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 9px;
+  background: var(--brand-tint);
+  color: var(--brand);
 }
 
 .feature-chat header b,

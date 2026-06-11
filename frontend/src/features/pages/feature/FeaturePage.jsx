@@ -113,6 +113,17 @@ export const FeaturePage = ({
   const targetFeature = FEATURE_TARGETS[id] ?? id.toUpperCase()
   const currentResultType = RESULT_TYPES[id] ?? 'FEATURE_REPORT'
   const featureSeed = buildFeatureSeed(id, workspaceContext)
+  const helperText = id === 'item'
+    ? '오른쪽 리포트에서 고른 아이템을 기준으로 바로 대화할 수 있어요.'
+    : id === 'support'
+      ? '프로필, 아이템, 현재 보고 있는 지원사업을 함께 보고 대화해요.'
+      : id === 'plan'
+        ? '초안, 연결된 지원사업, 선택한 문단을 같이 넘겨서 보완할 수 있어요.'
+        : id === 'simulator'
+          ? '아이템과 시뮬레이션 수치를 함께 보고 수익성을 같이 점검해요.'
+          : id === 'operation'
+            ? '운영 지표와 개선 제안을 바탕으로 다음 액션을 정리할 수 있어요.'
+            : '홍보 초안과 운영 맥락을 함께 보고 카피를 다듬을 수 있어요.'
 
   const [data, setData] = useState(featureSeed.data)
   const [selectedIdeaRank, setSelectedIdeaRank] = useState(featureSeed.selectedIdeaRank)
@@ -139,6 +150,7 @@ export const FeaturePage = ({
   const [connection, setConnection] = useState('idle')
   const [statusMap, setStatusMap] = useState({})
   const [agentProgress, setAgentProgress] = useState(null)
+  const [participatingAgentKeys, setParticipatingAgentKeys] = useState([])
   const [error, setError] = useState('')
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState(null)
@@ -263,6 +275,7 @@ export const FeaturePage = ({
         setMessages([])
         setStatusMap({})
         setAgentProgress(null)
+        setParticipatingAgentKeys([])
         setConnection('connecting')
 
         const history = await getChatMessages(room.roomId)
@@ -341,6 +354,15 @@ export const FeaturePage = ({
         return
       }
       setAgentProgress(nextProgress)
+      if (nextProgress.selectedAgents.length) {
+        setParticipatingAgentKeys(
+          [...new Set(nextProgress.selectedAgents.map((candidate) => candidate.key).filter((key) => agents[key]))],
+        )
+      } else if (nextProgress.agent?.key && agents[nextProgress.agent.key] && nextProgress.agent.status === 'running') {
+        setParticipatingAgentKeys((prev) => (
+          prev.includes(nextProgress.agent.key) ? prev : [...prev, nextProgress.agent.key]
+        ))
+      }
       if (nextProgress.agent && nextProgress.message) {
         setMessages((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
       }
@@ -360,11 +382,19 @@ export const FeaturePage = ({
   }, [room?.roomId])
 
   const latestStatus = useMemo(() => Object.values(statusMap).at(-1) ?? null, [statusMap])
-  const typing = agentProgress?.agent?.status === 'running'
+  const agentIsRunning = agentProgress?.agent?.status?.toLowerCase() === 'running'
+  const typing = agentIsRunning && agents[agentProgress.agent.key]
     ? agentProgress.agent.key
-    : latestStatus && ['QUEUED', 'PROCESSING'].includes(latestStatus.status)
-      ? feature.agent
-      : null
+    : null
+  const runningAgentKey = agentIsRunning
+    ? agentProgress.agent.key
+    : null
+  const visibleAgents = participatingAgentKeys.map((key) => ({ key, ...agents[key] }))
+  const visibleAgentStatus = runningAgentKey && agents[runningAgentKey]
+    ? '현재 답변을 준비하고 있어요.'
+    : visibleAgents.length
+      ? '이번 답변에 참여한 전문가예요.'
+      : helperText
 
   useEffect(() => {
     onWorkspaceContextChange?.(buildWorkspacePatch({
@@ -676,17 +706,6 @@ export const FeaturePage = ({
       .catch(() => setAiReportStatus('error'))
   }
 
-  const helperText = id === 'item'
-    ? '오른쪽 리포트에서 고른 아이템을 기준으로 바로 대화할 수 있어요.'
-    : id === 'support'
-      ? '프로필, 아이템, 현재 보고 있는 지원사업을 함께 보고 대화해요.'
-      : id === 'plan'
-        ? '초안, 연결된 지원사업, 선택한 문단을 같이 넘겨서 보완할 수 있어요.'
-        : id === 'simulator'
-          ? '아이템과 시뮬레이션 수치를 함께 보고 수익성을 같이 점검해요.'
-          : id === 'operation'
-            ? '운영 지표와 개선 제안을 바탕으로 다음 액션을 정리할 수 있어요.'
-            : '홍보 초안과 운영 맥락을 함께 보고 카피를 다듬을 수 있어요.'
 
   return (
     <main className="feature-page" style={buildFeaturePageTheme(feature, agents)}>
@@ -783,20 +802,36 @@ export const FeaturePage = ({
       </section>
 
       <aside className="feature-chat">
-        <header style={{ color: agent.color }}>
-          <AgentAvatar id={feature.agent} />
+        <header
+          className={visibleAgents.length ? 'feature-chat-agent-header active' : 'feature-chat-agent-header'}
+          style={{ color: runningAgentKey && agents[runningAgentKey] ? agents[runningAgentKey].color : agent.color }}
+        >
+          {visibleAgents.length ? (
+            <div className="feature-chat-agent-stack">
+              {visibleAgents.map((visibleAgent) => (
+                <AgentAvatar
+                  key={visibleAgent.key}
+                  id={visibleAgent.key}
+                  active={visibleAgent.key === runningAgentKey}
+                />
+              ))}
+            </div>
+          ) : (
+            <span className="feature-chat-agent-placeholder">
+              <Icon name="discuss" size={18} />
+            </span>
+          )}
           <div>
-            <b>{agent.name}</b>
-            <small>{helperText}</small>
+            <b>
+              {visibleAgents.length
+                ? visibleAgents.map((visibleAgent) => visibleAgent.name).join(' · ')
+                : 'AI 전문가 채팅'}
+            </b>
+            <small>{visibleAgentStatus}</small>
           </div>
         </header>
 
         <div className="feature-session-toolbar">
-          <button className="chat-session-new" onClick={createSession} disabled={creatingRoom || busy}>
-            <Icon name="plus" size={16} />
-            <span>{creatingRoom ? '만드는 중' : '새 세션'}</span>
-          </button>
-
           <div className="chat-session-picker" ref={sessionMenuRef}>
             <button
               className={sessionMenuOpen ? 'chat-session-trigger on' : 'chat-session-trigger'}
@@ -873,6 +908,11 @@ export const FeaturePage = ({
               </div>
             )}
           </div>
+
+          <button className="chat-session-new" onClick={createSession} disabled={creatingRoom || busy}>
+            <Icon name="plus" size={16} />
+            <span>{creatingRoom ? '만드는 중' : '새 세션'}</span>
+          </button>
         </div>
 
         <div className="feature-chat-body" ref={chatRef}>
@@ -902,7 +942,7 @@ export const FeaturePage = ({
           onSend={handleSend}
           disabled={busy || loading || connection === 'error' || !room?.roomId}
           placeholder="이 리포트를 바탕으로 더 물어보세요."
-          accent={agent.color}
+          accent={runningAgentKey && agents[runningAgentKey] ? agents[runningAgentKey].color : agent.color}
           suggestions={FEATURE_SUGGESTIONS[id] ?? []}
         />
       </aside>

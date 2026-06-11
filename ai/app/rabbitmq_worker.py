@@ -297,22 +297,18 @@ def _profile_from_payload(profile: dict[str, Any]) -> StartupProfile:
 
 def _intent_from_envelope(envelope: dict[str, Any], message: str, reference: dict[str, Any]) -> str:
     external_data = reference.get("externalData") if isinstance(reference, dict) else {}
-    target_feature = str(envelope.get("targetFeature") or "").upper()
     text = message.lower()
+    requested_intent = str(envelope.get("intent") or "auto").strip().lower()
 
-    if target_feature == "SUPPORT":
-        return "policy"
-    if target_feature == "ITEM":
-        return "idea"
-    if target_feature == "OPERATION":
-        return "operation"
+    if requested_intent not in {"", "auto"}:
+        return requested_intent
     if isinstance(external_data, dict) and external_data.get("commercialArea"):
         if external_data.get("supportPrograms") or any(keyword in text for keyword in ["지원사업", "공고", "정책"]):
             return "auto"
         return "commercial_area"
     if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "주변 점포", "주변 가게", "연남동", "마포구", "구미", "인동동"]):
         return "commercial_area"
-    return str(envelope.get("intent") or "auto")
+    return "auto"
 
 
 if __name__ == "__main__":
