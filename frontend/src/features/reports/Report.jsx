@@ -33,6 +33,8 @@ export const Report = ({
   onFocusSection,
   planGoal,
   onChangePlanGoal,
+  onRequestOperationFeedback,
+  operationFeedbackSaving,
 }) => {
   if (id === 'item') {
     return (
@@ -87,6 +89,8 @@ export const Report = ({
         go={go}
         selectedOperationSuggestionTitle={selectedOperationSuggestionTitle}
         onSelectOperationSuggestion={onSelectOperationSuggestion}
+        onRequestOperationFeedback={onRequestOperationFeedback}
+        operationFeedbackSaving={operationFeedbackSaving}
       />
     )
   }

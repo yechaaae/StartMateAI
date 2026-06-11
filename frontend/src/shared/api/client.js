@@ -66,6 +66,13 @@ export const savedResultApi = {
   }),
 }
 
+export const operationFeedbackApi = {
+  save: (payload) => request('/operation-feedback', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+}
+
 export const threadsApi = {
   account: () => request('/sns/threads/account'),
   connectUrl: () => request('/sns/threads/connect-url'),

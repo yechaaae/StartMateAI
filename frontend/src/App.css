@@ -3539,21 +3539,147 @@ details p {
   resize: vertical;
 }
 
+.operation-card-head {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.operation-card-head p {
+  margin: 5px 0 0;
+  color: var(--ink-4);
+  font-size: 13px;
+}
+
+.operation-primary-button,
+.operation-block-title button,
+.operation-edit-row button {
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--a-operation);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.operation-primary-button {
+  padding: 10px 14px;
+  background: var(--a-operation);
+  color: #fff;
+}
+
+.operation-primary-button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
 .operation-kpi-grid {
   margin-top: 16px;
+}
+
+.operation-kpi-table {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.operation-kpi-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(110px, 140px) minmax(110px, 140px) 76px;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.operation-kpi-row > div,
+.operation-kpi-row label {
+  display: grid;
+  gap: 5px;
+}
+
+.operation-kpi-row small,
+.operation-kpi-row span {
+  color: var(--ink-4);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.operation-kpi-row b {
+  font-size: 15px;
+}
+
+.operation-kpi-row input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+}
+
+.operation-kpi-row em {
+  justify-self: end;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.operation-kpi-row em.good {
+  color: var(--good);
+}
+
+.operation-kpi-row em.bad {
+  color: var(--bad);
 }
 
 .operation-block {
   margin-top: 18px;
 }
 
-.operation-edit-row {
+.operation-block-title {
+  display: flex;
   align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.operation-block-title span {
+  color: var(--ink-4);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.operation-block-title button {
+  margin-left: auto;
+  padding: 7px 10px;
+}
+
+.operation-edit-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 92px minmax(120px, 1.5fr) 58px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
 }
 
 .operation-edit-row input {
-  width: 92px;
-  justify-self: end;
+  min-width: 0;
+}
+
+.operation-edit-row button {
+  padding: 9px 10px;
+  color: var(--bad);
+}
+
+@media (max-width: 760px) {
+  .operation-kpi-row,
+  .operation-edit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .operation-kpi-row em,
+  .operation-edit-row button {
+    justify-self: start;
+  }
 }
 
 .sns-report-stack {
