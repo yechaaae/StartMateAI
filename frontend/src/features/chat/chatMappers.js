@@ -84,8 +84,44 @@ const resolveAgentKey = (...values) => {
   return null
 }
 
+const normalizeAgentDescriptor = (agent) => {
+  if (!agent) return null
+  return {
+    key: resolveAgentKey(agent.agentKey, agent.label),
+    agentKey: agent.agentKey ?? '',
+    label: agent.label ?? '',
+    role: agent.role ?? '',
+    status: agent.status ?? '',
+  }
+}
+
+const inferProgressViewType = (metadata) => {
+  const explicit = metadata.viewType ?? metadata.type ?? metadata.progressType ?? ''
+  if (explicit) return String(explicit).toLowerCase()
+
+  const eventType = String(metadata.eventType ?? '').toLowerCase()
+  if (eventType === 'agent.completed') return 'result'
+  if (eventType === 'orchestrator.synthesizing') return 'discussion'
+  return ''
+}
+
+const inferEventViewType = (agentProgress) => {
+  const explicit = agentProgress.viewType ?? agentProgress.type ?? ''
+  if (explicit) {
+    return String(explicit).toLowerCase()
+  }
+
+  const eventType = String(agentProgress.eventType ?? '').toLowerCase()
+  if (eventType === 'agent.completed') return 'result'
+  if (eventType === 'orchestrator.synthesizing') return 'discussion'
+  return 'status'
+}
+
 export const normalizeChatMessage = (message) => {
   const metadata = parseMetadata(message.metadata)
+  const selectedAgents = Array.isArray(metadata.selectedAgents)
+    ? metadata.selectedAgents.map(normalizeAgentDescriptor).filter(Boolean)
+    : []
 
   return {
     id: message.messageId,
@@ -93,9 +129,29 @@ export const normalizeChatMessage = (message) => {
     senderType: message.senderType,
     userId: message.userId ?? null,
     agentId: message.agentId ?? null,
-    agent: resolveAgentKey(metadata.agent),
+    agent: resolveAgentKey(metadata.agentKey, metadata.agentLabel, metadata.agent),
+    agentLabel: metadata.agentLabel ?? metadata.agent ?? '',
     text: message.content,
     metadata,
+    progressMessage: metadata.progressMessage === true,
+    progressType: inferProgressViewType(metadata),
+    progressStatus: metadata.progressStatus ?? '',
+    progressRole: metadata.progressRole ?? '',
+    requestId: metadata.requestId ?? '',
+    sequence: metadata.sequence ?? null,
+    orchestrator: metadata.orchestrator ?? '',
+    selectedAgents,
+    progressDetail: metadata.detail ?? null,
+    progressSourceAgent: resolveAgentKey(
+      metadata.detail?.sourceAgentKey,
+      metadata.detail?.source_intent,
+      metadata.detail?.sourceAgent,
+    ),
+    progressTargetAgent: resolveAgentKey(
+      metadata.detail?.targetAgentKey,
+      metadata.detail?.target_intent,
+      metadata.detail?.targetAgent,
+    ),
     createdAt: message.createdAt ?? null,
   }
 }
@@ -109,79 +165,88 @@ export const normalizeStatusEvent = (status) => ({
 })
 
 export const normalizeAgentProgressEvent = (agentProgress) => {
-  const normalizeAgent = (agent) => {
-    if (!agent) return null
-    return {
-      key: resolveAgentKey(agent.agentKey, agent.label),
-      agentKey: agent.agentKey ?? '',
-      label: agent.label ?? '',
-      role: agent.role ?? '',
-      status: agent.status ?? '',
-    }
-  }
-
   const fallbackAgent = agentProgress.agent ?? (
     agentProgress.orchestrator
       ? {
           agentKey: agentProgress.orchestrator,
           label: 'Orchestrator',
-          role: 'Agent 의견 조율',
+          role: 'Agent coordination',
           status: agentProgress.status ?? 'running',
         }
       : null
   )
 
   const selectedAgents = Array.isArray(agentProgress.selectedAgents)
-    ? agentProgress.selectedAgents.map(normalizeAgent).filter(Boolean)
+    ? agentProgress.selectedAgents.map(normalizeAgentDescriptor).filter(Boolean)
     : []
-
-  const inferViewType = () => {
-    const explicitViewType = agentProgress.viewType ?? agentProgress.type ?? ''
-    if (explicitViewType) {
-      return String(explicitViewType).toLowerCase()
-    }
-
-    const eventType = String(agentProgress.eventType ?? '').toLowerCase()
-    if (eventType === 'agent.completed') return 'result'
-    if (eventType === 'orchestrator.synthesizing') return 'discussion'
-    return 'status'
-  }
 
   return {
     requestId: agentProgress.requestId,
     status: agentProgress.status ?? 'PROCESSING',
     targetFeature: agentProgress.targetFeature ?? '',
     eventType: agentProgress.eventType ?? '',
-    viewType: inferViewType(),
+    type: (agentProgress.type ?? '').toLowerCase(),
+    viewType: inferEventViewType(agentProgress),
     orchestrator: agentProgress.orchestrator ?? '',
     sequence: agentProgress.sequence ?? 0,
     message: agentProgress.message ?? '',
-    agent: normalizeAgent(fallbackAgent),
+    agent: normalizeAgentDescriptor(fallbackAgent),
     selectedAgents,
+    detail: agentProgress.detail ?? {},
   }
 }
 
-export const normalizeAgentProgressMessage = (agentProgress) => ({
-  id: `progress-${agentProgress.requestId}-${agentProgress.sequence}`,
-  role: 'agent',
-  senderType: 'AGENT',
-  userId: null,
-  agentId: null,
-  agent: agentProgress.agent?.key ?? null,
-  text: agentProgress.message || '에이전트가 작업 중입니다.',
-  metadata: {
-    agent: agentProgress.agent?.label ?? '',
+export const normalizeAgentProgressMessage = (agentProgress) => {
+  const metadata = {
+    agent: agentProgress.agent?.agentKey ?? '',
     agentKey: agentProgress.agent?.agentKey ?? '',
+    agentLabel: agentProgress.agent?.label ?? '',
+    eventType: agentProgress.eventType ?? '',
+    type: agentProgress.type ?? agentProgress.viewType ?? '',
+    viewType: agentProgress.viewType ?? agentProgress.type ?? '',
     progressType: agentProgress.eventType ?? '',
     progressStatus: agentProgress.agent?.status ?? agentProgress.status ?? '',
     progressRole: agentProgress.agent?.role ?? '',
     requestId: agentProgress.requestId,
     sequence: agentProgress.sequence,
     orchestrator: agentProgress.orchestrator ?? '',
+    selectedAgents: agentProgress.selectedAgents ?? [],
+    detail: agentProgress.detail ?? {},
     progressMessage: true,
-  },
-  createdAt: null,
-})
+  }
+
+  return {
+    id: `progress-${agentProgress.requestId}-${agentProgress.sequence}`,
+    role: 'agent',
+    senderType: 'AGENT',
+    userId: null,
+    agentId: null,
+    agent: agentProgress.agent?.key ?? null,
+    agentLabel: agentProgress.agent?.label ?? '',
+    text: agentProgress.message || 'Agent is working on the request.',
+    metadata,
+    progressMessage: true,
+    progressType: inferProgressViewType(metadata),
+    progressStatus: metadata.progressStatus,
+    progressRole: metadata.progressRole,
+    requestId: metadata.requestId,
+    sequence: metadata.sequence,
+    orchestrator: metadata.orchestrator,
+    selectedAgents: agentProgress.selectedAgents ?? [],
+    progressDetail: metadata.detail,
+    progressSourceAgent: resolveAgentKey(
+      metadata.detail?.sourceAgentKey,
+      metadata.detail?.source_intent,
+      metadata.detail?.sourceAgent,
+    ),
+    progressTargetAgent: resolveAgentKey(
+      metadata.detail?.targetAgentKey,
+      metadata.detail?.target_intent,
+      metadata.detail?.targetAgent,
+    ),
+    createdAt: null,
+  }
+}
 
 export const upsertMessage = (messages, nextMessage) => {
   const existingIndex = messages.findIndex((message) => message.id === nextMessage.id)

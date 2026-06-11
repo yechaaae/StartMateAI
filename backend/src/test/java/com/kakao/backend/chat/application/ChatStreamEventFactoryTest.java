@@ -79,11 +79,14 @@ class ChatStreamEventFactoryTest {
                 "PROCESSING",
                 "IDEA",
                 "AGENT_STARTED",
+                "status",
+                "status",
                 "FreeDiscussionOrchestrator",
                 2,
                 "Policy agent is analyzing support programs.",
                 new ChatAgentDescriptorPayload("policy_agent", "Policy Agent", "Support program discovery", "running"),
-                java.util.List.of()
+                java.util.List.of(),
+                java.util.Map.of()
         );
 
         ChatStreamEventResponse response = chatStreamEventFactory.agentProgressEvent(10L, payload);
@@ -92,6 +95,7 @@ class ChatStreamEventFactoryTest {
         assertThat(response.roomId()).isEqualTo(10L);
         assertThat(response.agentProgress()).isNotNull();
         assertThat(response.agentProgress().eventType()).isEqualTo("AGENT_STARTED");
+        assertThat(response.agentProgress().viewType()).isEqualTo("status");
         assertThat(response.message()).isNull();
         assertThat(response.status()).isNull();
     }
