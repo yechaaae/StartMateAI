@@ -2484,6 +2484,97 @@
   white-space: pre-wrap;
 }
 
+.chat-row-progress {
+  align-items: flex-start;
+}
+
+.chat-progress-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.chat-progress-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chat-progress-head strong {
+  margin-bottom: 0;
+}
+
+.chat-progress-head span {
+  color: #8b93a7;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chat-row-progress .chat-copy p {
+  background: #f7f8fc;
+}
+
+.chat-row-progress-discussion .chat-copy p,
+.chat-row-progress-argument .chat-copy p,
+.chat-row-progress-revision .chat-copy p {
+  border: 1px solid #eceef6;
+}
+
+.chat-row-progress-result .chat-copy p,
+.chat-row-progress-consensus .chat-copy p {
+  border: 1px solid #e4e7f8;
+  background: #f8f9ff;
+}
+
+.chat-row-progress-challenge .chat-copy p {
+  border: 1px solid #f1dcc8;
+  background: #fff8f1;
+}
+
+.chat-progress-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-progress-agents span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eef1f8;
+  color: #667085;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.chat-progress-highlights {
+  display: grid;
+  gap: 8px;
+}
+
+.chat-progress-highlights div {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f9fafc;
+  border: 1px solid #edf0f6;
+}
+
+.chat-progress-highlights b,
+.chat-progress-highlights span {
+  display: block;
+}
+
+.chat-progress-highlights b {
+  margin-bottom: 4px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.chat-progress-highlights span {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
 .router-row {
   display: flex;
   gap: 12px;
