@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kakao.backend.commercialarea.domain.Store;
 import java.text.Normalizer;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.stereotype.Component;
@@ -19,7 +20,7 @@ public class StoreNormalizer {
 
     public Store normalizeCsvRow(Map<String, String> row) {
         Store store = Store.create();
-        store.setSource("sbiz_csv");
+        store.setSource(defaultIfBlank(first(row, "source", "소스"), "sbiz_csv"));
         store.setSourceStoreId(defaultSourceStoreId(row));
         store.setStoreName(first(row, "상호명", "store_name", "상가업소명"));
         store.setCategoryLarge(first(row, "상권업종대분류명", "category_large", "대분류명"));
@@ -34,6 +35,31 @@ public class StoreNormalizer {
         store.setJibunAddress(first(row, "지번주소", "jibun_address"));
         store.setLongitude(parseDouble(first(row, "경도", "longitude")));
         store.setLatitude(parseDouble(first(row, "위도", "latitude")));
+        store.setRawPayload(toJson(row));
+        return store;
+    }
+
+    public Store normalizeApiRow(Map<String, Object> raw) {
+        Map<String, String> row = stringify(raw);
+        Store store = Store.create();
+        store.setSource("sbiz_api");
+        store.setSourceStoreId(first(row, "bizesId", "상가업소번호", "상가업소ID", "source_store_id", "id"));
+        if (store.getSourceStoreId() == null || store.getSourceStoreId().isBlank()) {
+            store.setSourceStoreId(defaultSourceStoreId(row));
+        }
+        store.setStoreName(first(row, "bizesNm", "상호명", "store_name", "상가업소명"));
+        store.setCategoryLarge(first(row, "indsLclsNm", "상권업종대분류명", "category_large", "대분류명"));
+        store.setCategoryMedium(first(row, "indsMclsNm", "상권업종중분류명", "category_medium", "중분류명"));
+        store.setCategorySmall(first(row, "indsSclsNm", "상권업종소분류명", "category_small", "소분류명"));
+        store.setIndustryCode(first(row, "ksicCd", "표준산업분류코드", "industry_code"));
+        store.setIndustryName(first(row, "ksicNm", "표준산업분류명", "industry_name"));
+        store.setSido(normalizeSido(first(row, "ctprvnNm", "시도명", "sido")));
+        store.setSigungu(first(row, "signguNm", "시군구명", "sigungu"));
+        store.setDong(first(row, "adongNm", "ldongNm", "행정동명", "법정동명", "dong"));
+        store.setRoadAddress(first(row, "rdnmAdr", "도로명주소", "road_address"));
+        store.setJibunAddress(first(row, "lnoAdr", "지번주소", "jibun_address"));
+        store.setLongitude(parseDouble(first(row, "lon", "경도", "longitude")));
+        store.setLatitude(parseDouble(first(row, "lat", "위도", "latitude")));
         store.setRawPayload(toJson(row));
         return store;
     }
@@ -56,12 +82,12 @@ public class StoreNormalizer {
     }
 
     private String defaultSourceStoreId(Map<String, String> row) {
-        String explicit = first(row, "상가업소번호", "상가업소ID", "source_store_id", "id");
+        String explicit = first(row, "상가업소번호", "상가업소ID", "bizesId", "source_store_id", "id");
         if (explicit != null && !explicit.isBlank()) {
             return explicit;
         }
-        String basis = Objects.toString(first(row, "상호명"), "") + "|"
-                + Objects.toString(first(row, "도로명주소", "지번주소"), "");
+        String basis = Objects.toString(first(row, "상호명", "bizesNm"), "") + "|"
+                + Objects.toString(first(row, "도로명주소", "지번주소", "rdnmAdr", "lnoAdr"), "");
         return "generated-" + Integer.toUnsignedString(basis.hashCode());
     }
 
@@ -73,6 +99,10 @@ public class StoreNormalizer {
             }
         }
         return null;
+    }
+
+    private String defaultIfBlank(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private Double parseDouble(String value) {
@@ -111,6 +141,12 @@ public class StoreNormalizer {
             case "제주특별자치도" -> "제주";
             default -> normalized;
         };
+    }
+
+    private Map<String, String> stringify(Map<String, Object> raw) {
+        Map<String, String> row = new LinkedHashMap<>();
+        raw.forEach((key, value) -> row.put(key, value == null ? "" : String.valueOf(value).trim()));
+        return row;
     }
 
     private String toJson(Map<String, String> row) {

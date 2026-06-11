@@ -4,3 +4,4 @@
 .env.*.local
 .env.*
 !.env.example
+backend/data/raw/

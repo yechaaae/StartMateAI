@@ -112,6 +112,9 @@ services:
       BIZINFO_API_KEY: ${BIZINFO_API_KEY:-}
       YOUTH_CENTER_API_KEY: ${YOUTH_CENTER_API_KEY:-}
       STARTMATE_INTERNAL_TOOL_TOKEN: ${STARTMATE_INTERNAL_TOOL_TOKEN:-startmate-local-internal-token}
+      STARTMATE_COMMERCIAL_AREA_CSV_PATH: ${STARTMATE_COMMERCIAL_AREA_CSV_PATH:-/data/commercial-area/commercial_area.zip}
+    volumes:
+      - ${STARTMATE_COMMERCIAL_AREA_DATA_DIR:-./backend/data/raw}:/data/commercial-area:ro
     ports:
       - "8080:8080"
 
