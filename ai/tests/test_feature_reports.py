@@ -61,6 +61,9 @@ class FeatureReportsTest(unittest.TestCase):
                 "storyboard_15s": ["0-3초: 출근길 문제 제시"],
             }),
             "simulation": _response("simulation", {"state": "ready"}),
+            "commercial_area": _response("commercial_area", {
+                "payload": {"competition_level": "low", "direct_competitors": 4},
+            }),
         }
 
         expected_keys = {
@@ -87,7 +90,57 @@ class FeatureReportsTest(unittest.TestCase):
 
     def test_fixed_agent_team_contract_includes_all_report_features(self):
         self.assertEqual(set(FEATURE_REPORT_TEAMS), {"ITEM", "SIMULATOR", "SUPPORT", "PLAN", "OPERATION", "SNS"})
-        self.assertEqual(FEATURE_REPORT_TEAMS["PLAN"], ["profile", "idea", "policy", "plan"])
+        self.assertEqual(FEATURE_REPORT_TEAMS["ITEM"], ["profile", "idea", "finance", "policy", "commercial_area"])
+        self.assertEqual(FEATURE_REPORT_TEAMS["SUPPORT"], ["profile", "idea", "policy", "finance"])
+        self.assertEqual(FEATURE_REPORT_TEAMS["PLAN"], ["profile", "idea", "policy", "plan", "finance", "commercial_area"])
+
+    def test_reviewed_report_features_include_agent_review_payload(self):
+        request = ChatRequest(
+            message="기능 리포트를 만들어줘",
+            profile=StartupProfile(region="서울", interests=["카페"], budget_krw=5_000_000),
+            context={"featureContext": {"featureKey": "ITEM"}},
+        )
+        response = _response("selective_collaboration", {})
+        results = {
+            "profile": _response("profile", {"score": 85}),
+            "idea": _response("idea", {
+                "recommendations": [{"title": "테이크아웃 커피", "match_score": 91, "reason": "입지와 예산에 맞습니다."}],
+            }),
+            "finance": _response("finance", {"initial_cash_needed_krw": 3_000_000}),
+            "policy": _response("policy", {
+                "matches": [{"title": "청년창업 지원", "eligibility_score": 88, "region": "서울"}],
+            }),
+            "plan": _response("plan", {
+                "target": "청년창업 지원",
+                "sections": [{"title": "1. 사업 개요", "body": "테이크아웃 커피 사업입니다."}],
+            }),
+            "commercial_area": _response("commercial_area", {
+                "payload": {"competition_level": "low", "direct_competitors": 4},
+            }),
+        }
+        agent_review = {
+            "summary": "상권, 재무, 정책 조건을 재검토해 추천 우선순위를 조정했습니다.",
+            "checks": ["지역 적합성", "예산 현실성", "지원조건 부합성"],
+            "revisions": ["경쟁도 리스크 반영", "초기비용 기준으로 후보 재정렬"],
+            "rounds": [{"round": 1, "type": "draft"}],
+            "challenges": [{"issue": "상권 확인 필요"}],
+            "revisionMessages": [{"message": "수정"}],
+            "consensus": {"decision": "conditional_consensus"},
+        }
+
+        for feature_key in ("ITEM", "SUPPORT", "PLAN"):
+            with self.subTest(feature_key=feature_key):
+                request.context["featureContext"]["featureKey"] = feature_key
+                result = build_feature_result(
+                    request=request,
+                    response=response,
+                    results=results,
+                    agent_review=agent_review,
+                )
+
+                report_data = result["payload"]["reportData"]
+                self.assertEqual(report_data["agentReview"]["summary"], agent_review["summary"])
+                self.assertIn("agentDiscussion", result["payload"])
 
 
 if __name__ == "__main__":

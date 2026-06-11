@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Card } from '../../shared/components/Card'
 import { Icon } from '../../shared/components/Icon'
+import { AgentReview } from './AgentReview'
 
 const KAKAO_APP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY || '2acaefd1805b94c10aa12a18f7680cbe'
 const KAKAO_SCRIPT_ID = 'kakao-map-script'
@@ -125,6 +126,8 @@ export const ItemReport = ({
 
   return (
     <div className="report-stack">
+      <AgentReview review={data.agentReview} />
+
       <Card className="item-region-card">
         <RegionMap location={data.location} analysis={data.analysis} />
         <h3>{data.location} 상권 분석</h3>

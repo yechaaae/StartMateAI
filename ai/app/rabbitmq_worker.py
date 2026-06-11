@@ -299,9 +299,12 @@ def _intent_from_envelope(envelope: dict[str, Any], message: str, reference: dic
     external_data = reference.get("externalData") if isinstance(reference, dict) else {}
     text = message.lower()
     requested_intent = str(envelope.get("intent") or "auto").strip().lower()
+    feature_intent = _intent_from_target_feature(envelope.get("targetFeature"))
 
     if requested_intent not in {"", "auto"}:
         return requested_intent
+    if feature_intent:
+        return feature_intent
     if isinstance(external_data, dict) and external_data.get("commercialArea"):
         if external_data.get("supportPrograms") or any(keyword in text for keyword in ["지원사업", "공고", "정책"]):
             return "auto"
@@ -309,6 +312,19 @@ def _intent_from_envelope(envelope: dict[str, Any], message: str, reference: dic
     if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "주변 점포", "주변 가게", "연남동", "마포구", "구미", "인동동"]):
         return "commercial_area"
     return "auto"
+
+
+def _intent_from_target_feature(target_feature: Any) -> str:
+    feature = str(target_feature or "").strip().upper()
+    return {
+        "ITEM": "idea",
+        "SIMULATOR": "simulation",
+        "SUPPORT": "policy",
+        "PLAN": "plan",
+        "OPERATION": "operation",
+        "SNS": "marketing",
+        "COMMERCIAL_AREA": "commercial_area",
+    }.get(feature, "")
 
 
 if __name__ == "__main__":

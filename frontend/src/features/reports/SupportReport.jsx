@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Card } from '../../shared/components/Card'
+import { AgentReview } from './AgentReview'
 
 const SEARCH_MODES = [
   ['PROFILE_IDEA', '프로필 + 아이템'],
@@ -122,6 +123,8 @@ export const SupportReport = ({
 
   return (
     <div className="support-report-stack">
+      <AgentReview review={data.agentReview} />
+
       <Card className="support-condition-card">
         <div className="support-condition-head">
           <div>
