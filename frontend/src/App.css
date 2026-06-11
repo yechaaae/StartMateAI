@@ -2080,6 +2080,13 @@
   font-size: 12px;
 }
 
+.feature-chat header .sim-ai-refresh {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
 .feature-session-toolbar {
   display: flex;
   gap: 10px;
@@ -2122,6 +2129,38 @@
 .report-stack {
   display: grid;
   gap: 16px;
+}
+
+.ai-report-state {
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  min-height: 420px;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 52px 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+.ai-report-state h2 {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.ai-report-state p {
+  max-width: 430px;
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.65;
 }
 
 .map-box {

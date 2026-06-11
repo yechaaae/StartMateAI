@@ -86,6 +86,17 @@ const FEATURE_SUGGESTIONS = {
   ],
 }
 
+const GENERATE_REPORT_PROMPT = '현재 기능 페이지에 표시할 최종 리포트를 각 Agent가 함께 검토해서 생성해줘.'
+
+const reportDataFromMessage = (message, featureId) => {
+  const result = message?.metadata?.result
+  if (result?.shouldCreateResult !== true) return null
+  const payload = result?.payload
+  if (!payload?.reportData) return null
+  if (payload.featureId && payload.featureId !== featureId) return null
+  return payload.reportData
+}
+
 export const FeaturePage = ({
   id,
   go,
@@ -133,9 +144,12 @@ export const FeaturePage = ({
   const [titleDraft, setTitleDraft] = useState('')
   const [savingTitle, setSavingTitle] = useState(false)
   const [savingReport, setSavingReport] = useState(false)
+  const [aiReportStatus, setAiReportStatus] = useState('idle')
 
   const chatRef = useRef(null)
   const sessionMenuRef = useRef(null)
+  const hiddenRequestIdsRef = useRef(new Set())
+  const autoGenerationKeysRef = useRef(new Set())
 
   useEffect(() => {
     if (chatRef.current) {
@@ -154,6 +168,39 @@ export const FeaturePage = ({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  useEffect(() => {
+    let active = true
+
+    const loadLatestReport = async () => {
+      try {
+        setAiReportStatus('loading')
+        const latest = await savedResultApi.latest(targetFeature)
+        if (!active) {
+          return
+        }
+        const reportData = latest?.payload?.reportData
+        if (reportData) {
+          applyReportData(reportData)
+          setAiReportStatus('ready')
+        } else {
+          setAiReportStatus('empty')
+        }
+      } catch (nextError) {
+        if (!active) {
+          return
+        }
+        setError(nextError.message ?? '최신 리포트를 불러오지 못했습니다.')
+        setAiReportStatus('error')
+      }
+    }
+
+    loadLatestReport()
+
+    return () => {
+      active = false
+    }
+  }, [targetFeature])
 
   useEffect(() => {
     let active = true
@@ -221,7 +268,8 @@ export const FeaturePage = ({
         if (!active) {
           return
         }
-        setMessages(history.messages.map(normalizeChatMessage))
+        const nextMessages = history.messages.map(normalizeChatMessage)
+        setMessages(nextMessages)
       } catch (nextError) {
         if (!active) {
           return
@@ -251,7 +299,14 @@ export const FeaturePage = ({
       if (!payload.message) {
         return
       }
-      setMessages((prev) => upsertMessage(prev, normalizeChatMessage(payload.message)))
+      const nextMessage = normalizeChatMessage(payload.message)
+      const nextReport = reportDataFromMessage(nextMessage, id)
+      if (nextReport) {
+        applyReportData(nextReport)
+        setAiReportStatus('ready')
+        setAgentProgress(null)
+      }
+      setMessages((prev) => upsertMessage(prev, nextMessage))
     })
 
     eventSource.addEventListener('chat-status', (event) => {
@@ -263,6 +318,12 @@ export const FeaturePage = ({
         return
       }
       const nextStatus = normalizeStatusEvent(payload.status)
+      if (hiddenRequestIdsRef.current.has(nextStatus.requestId)) {
+        if (nextStatus.status === 'FAILED') {
+          setAiReportStatus('error')
+        }
+        return
+      }
       setStatusMap((prev) => ({ ...prev, [nextStatus.requestId]: nextStatus }))
     })
 
@@ -275,6 +336,9 @@ export const FeaturePage = ({
         return
       }
       const nextProgress = normalizeAgentProgressEvent(payload.agentProgress)
+      if (hiddenRequestIdsRef.current.has(nextProgress.requestId)) {
+        return
+      }
       setAgentProgress(nextProgress)
       if (nextProgress.agent && nextProgress.message) {
         setMessages((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
@@ -360,6 +424,113 @@ export const FeaturePage = ({
   )
   const resolvedIdeaId = workspaceContext?.selectedIdea?.rank ?? selectedIdeaRank ?? null
 
+  function applyReportData(reportData) {
+    setData(reportData)
+    if (id === 'item') {
+      setSelectedIdeaRank(reportData.items?.[0]?.rank ?? null)
+    }
+    if (id === 'support') {
+      setSelectedSupportTitle(reportData.list?.[0]?.title ?? null)
+      if (reportData.list?.length) {
+        setSupportHasSearched(true)
+      }
+    }
+    if (id === 'plan') {
+      setFocusedSectionTitle(reportData.sections?.[0]?.[0] ?? null)
+    }
+    if (id === 'operation') {
+      setSelectedOperationSuggestionTitle(reportData.suggestions?.[0]?.[0] ?? null)
+    }
+  }
+
+  const sendFeatureMessage = async (text, { hidden = false } = {}) => {
+    if (!room?.roomId) {
+      return null
+    }
+    if (!hidden) {
+      setBusy(true)
+    }
+    setError('')
+
+    try {
+      setAgentProgress(null)
+      const messageMetadata = { source: 'feature-page', featureId: id }
+      if (hidden) {
+        messageMetadata.hidden = true
+        messageMetadata.reportGeneration = true
+      }
+      const response = await sendChatMessage(room.roomId, {
+        userId: user?.id ?? null,
+        content: text,
+        metadata: JSON.stringify(messageMetadata),
+        intent: 'auto',
+        sessionType: 'FEATURE_CHAT',
+        currentResultType,
+        currentResultId: null,
+        selectedIdeaId: resolvedIdeaId,
+        candidateAgents: [],
+        currentResult,
+      })
+
+      if (hidden) {
+        hiddenRequestIdsRef.current.add(response.requestId)
+        setStatusMap((prev) => {
+          const next = { ...prev }
+          delete next[response.requestId]
+          return next
+        })
+      } else {
+        setMessages((prev) => upsertMessage(prev, {
+          id: response.messageId,
+          role: 'user',
+          senderType: response.senderType,
+          userId: user?.id ?? null,
+          agentId: null,
+          agent: null,
+          text: response.content,
+          metadata: messageMetadata,
+          createdAt: null,
+        }))
+
+        setStatusMap((prev) => ({
+          ...prev,
+          [response.requestId]: {
+            requestId: response.requestId,
+            messageId: response.messageId,
+            status: 'QUEUED',
+            errorMessage: '',
+            updatedAt: null,
+          },
+        }))
+      }
+
+      return response
+    } catch (nextError) {
+      setError(nextError.message ?? '메시지를 보내지 못했습니다.')
+      throw nextError
+    } finally {
+      if (!hidden) {
+        setBusy(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (aiReportStatus !== 'empty' || !room?.roomId) {
+      return
+    }
+
+    const generationKey = `${targetFeature}:${room.roomId}`
+    if (autoGenerationKeysRef.current.has(generationKey)) {
+      return
+    }
+
+    autoGenerationKeysRef.current.add(generationKey)
+    setAiReportStatus('loading')
+    sendFeatureMessage(GENERATE_REPORT_PROMPT, { hidden: true })
+      .catch(() => setAiReportStatus('error'))
+  }, [aiReportStatus, room?.roomId, targetFeature])
+
   const updateRoomState = (updatedRoom) => {
     setRooms((prev) => prev.map((candidate) => (
       candidate.roomId === updatedRoom.roomId ? updatedRoom : candidate
@@ -368,7 +539,7 @@ export const FeaturePage = ({
   }
 
   const handleSaveReport = async () => {
-    if (savingReport || id !== 'operation') {
+    if (savingReport || aiReportStatus !== 'ready') {
       return
     }
 
@@ -399,50 +570,10 @@ export const FeaturePage = ({
     if (busy || !room?.roomId) {
       return
     }
-    setBusy(true)
-    setError('')
-
     try {
-      setAgentProgress(null)
-      const response = await sendChatMessage(room.roomId, {
-        userId: user?.id ?? null,
-        content: text,
-        metadata: JSON.stringify({ source: 'feature-page', featureId: id }),
-        intent: 'auto',
-        sessionType: 'FEATURE_CHAT',
-        currentResultType,
-        currentResultId: null,
-        selectedIdeaId: resolvedIdeaId,
-        candidateAgents: [],
-        currentResult,
-      })
-
-      setMessages((prev) => upsertMessage(prev, {
-        id: response.messageId,
-        role: 'user',
-        senderType: response.senderType,
-        userId: user?.id ?? null,
-        agentId: null,
-        agent: null,
-        text: response.content,
-        metadata: { source: 'feature-page', featureId: id },
-        createdAt: null,
-      }))
-
-      setStatusMap((prev) => ({
-        ...prev,
-        [response.requestId]: {
-          requestId: response.requestId,
-          messageId: response.messageId,
-          status: 'QUEUED',
-          errorMessage: '',
-          updatedAt: null,
-        },
-      }))
+      await sendFeatureMessage(text)
     } catch (nextError) {
       setError(nextError.message ?? '메시지를 보내지 못했습니다.')
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -535,6 +666,15 @@ export const FeaturePage = ({
     setSavedSupportPrograms(nextSavedPrograms)
   }
 
+  const handleRegenerateReport = () => {
+    if (!room?.roomId || aiReportStatus === 'loading') {
+      return
+    }
+    setAiReportStatus('loading')
+    sendFeatureMessage(GENERATE_REPORT_PROMPT, { hidden: true })
+      .catch(() => setAiReportStatus('error'))
+  }
+
   const helperText = id === 'item'
     ? '오른쪽 리포트에서 고른 아이템을 기준으로 바로 대화할 수 있어요.'
     : id === 'support'
@@ -556,12 +696,27 @@ export const FeaturePage = ({
             <p>{feature.sub}</p>
           </div>
           <div className="report-title-actions">
-            {id === 'operation' && (
+            <button
+              type="button"
+              className="secondary-chip"
+              onClick={handleRegenerateReport}
+              disabled={aiReportStatus === 'loading' || loading || !room?.roomId}
+            >
+              <Icon name="refresh" size={15} />
+              <span>
+                {aiReportStatus === 'loading'
+                  ? 'AI 생성 중'
+                  : aiReportStatus === 'empty'
+                    ? 'AI 리포트 생성'
+                    : 'AI 리포트 갱신'}
+              </span>
+            </button>
+            {aiReportStatus === 'ready' && (
               <button
                 type="button"
                 className="secondary-chip"
                 onClick={handleSaveReport}
-                disabled={savingReport}
+                disabled={savingReport || aiReportStatus !== 'ready'}
               >
                 <Icon name="bookmark" size={15} />
                 <span>{savingReport ? '저장 중' : '리포트 저장'}</span>
@@ -570,35 +725,61 @@ export const FeaturePage = ({
             <AgentBadge id={feature.agent} />
           </div>
         </div>
-        <Report
-          id={id}
-          data={data}
-          setData={setData}
-          go={go}
-          workspace={workspace}
-          setWorkspace={setWorkspace}
-          selectedIdeaRank={selectedIdeaRank}
-          onSelectIdea={setSelectedIdeaRank}
-          selectedSupportTitle={selectedSupportTitle}
-          onSelectSupport={setSelectedSupportTitle}
-          selectedOperationSuggestionTitle={selectedOperationSuggestionTitle}
-          onSelectOperationSuggestion={setSelectedOperationSuggestionTitle}
-          supportSearchMode={supportSearchMode}
-          onChangeSupportSearchMode={setSupportSearchMode}
-          supportUserGoal={supportUserGoal}
-          onChangeSupportUserGoal={setSupportUserGoal}
-          supportRegionBasis={supportRegionBasis}
-          onChangeSupportRegionBasis={setSupportRegionBasis}
-          supportSearchLoading={supportSearchLoading}
-          supportHasSearched={supportHasSearched}
-          onRunSupportSearch={handleSupportProgramSearch}
-          savedSupportPrograms={savedSupportPrograms}
-          onDeleteSavedSupportProgram={handleDeleteSavedSupportProgram}
-          focusedSectionTitle={focusedSectionTitle}
-          onFocusSection={setFocusedSectionTitle}
-          planGoal={planGoal}
-          onChangePlanGoal={setPlanGoal}
-        />
+        {aiReportStatus === 'ready' ? (
+          <Report
+            id={id}
+            data={data}
+            setData={setData}
+            go={go}
+            workspace={workspace}
+            setWorkspace={setWorkspace}
+            selectedIdeaRank={selectedIdeaRank}
+            onSelectIdea={setSelectedIdeaRank}
+            selectedSupportTitle={selectedSupportTitle}
+            onSelectSupport={setSelectedSupportTitle}
+            selectedOperationSuggestionTitle={selectedOperationSuggestionTitle}
+            onSelectOperationSuggestion={setSelectedOperationSuggestionTitle}
+            supportSearchMode={supportSearchMode}
+            onChangeSupportSearchMode={setSupportSearchMode}
+            supportUserGoal={supportUserGoal}
+            onChangeSupportUserGoal={setSupportUserGoal}
+            supportRegionBasis={supportRegionBasis}
+            onChangeSupportRegionBasis={setSupportRegionBasis}
+            supportSearchLoading={supportSearchLoading}
+            supportHasSearched={supportHasSearched}
+            onRunSupportSearch={handleSupportProgramSearch}
+            savedSupportPrograms={savedSupportPrograms}
+            onDeleteSavedSupportProgram={handleDeleteSavedSupportProgram}
+            focusedSectionTitle={focusedSectionTitle}
+            onFocusSection={setFocusedSectionTitle}
+            planGoal={planGoal}
+            onChangePlanGoal={setPlanGoal}
+          />
+        ) : (
+          <div className="ai-report-state">
+            <AgentAvatar id={feature.agent} size={56} active={aiReportStatus === 'loading'} />
+            <h2>
+              {aiReportStatus === 'loading'
+                ? 'AI 리포트를 준비하고 있어요'
+                : aiReportStatus === 'error'
+                  ? 'AI 리포트를 만들지 못했어요'
+                  : '아직 생성된 AI 리포트가 없어요'}
+            </h2>
+            <p>
+              {aiReportStatus === 'loading'
+                ? '저장된 최신 리포트를 확인하거나 새 리포트를 생성하는 중입니다.'
+                : aiReportStatus === 'error'
+                  ? '잠시 후 다시 생성하거나 채팅으로 요청을 보내주세요.'
+                  : '저장된 리포트가 없어 Agent들이 현재 프로필과 작업 맥락으로 새 리포트를 준비합니다.'}
+            </p>
+            {aiReportStatus !== 'loading' && (
+              <button type="button" className="secondary-chip" onClick={handleRegenerateReport}>
+                <Icon name="refresh" size={15} />
+                {aiReportStatus === 'empty' ? 'AI 리포트 생성' : '다시 생성'}
+              </button>
+            )}
+          </div>
+        )}
       </section>
 
       <aside className="feature-chat">
@@ -703,7 +884,9 @@ export const FeaturePage = ({
               <p>지금 보고 있는 결과를 기준으로 방향 수정, 비교, 다음 단계 질문을 이어갈 수 있어요.</p>
             </div>
           )}
-          {messages.map((message) => <ChatRow key={message.id} message={message} />)}
+          {messages
+            .filter((message) => !message.metadata?.hidden)
+            .map((message) => <ChatRow key={message.id} message={message} />)}
           {typing && <TypingRow agent={typing} />}
         </div>
 
