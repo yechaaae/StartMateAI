@@ -29,7 +29,7 @@ import {
   upsertMessage,
 } from '../chat/chatMappers'
 
-export const DiscussPage = ({ user }) => {
+export const DiscussPage = ({ user, go }) => {
   const [items, setItems] = useState([])
   const [rooms, setRooms] = useState([])
   const [room, setRoom] = useState(null)
@@ -428,7 +428,7 @@ export const DiscussPage = ({ user }) => {
             <p>첫 질문을 보내면 자유 상담실 대화가 시작돼요.</p>
           </div>
         )}
-        {items.map((item) => <ChatRow key={item.id} message={item} />)}
+        {items.map((item) => <ChatRow key={item.id} message={item} onOpenReport={go} />)}
         {statusProgresses.map((progress) => <StatusProgressRow key={progress.id} progress={progress} />)}
         {typing && <TypingRow agent={typing} />}
       </div>
