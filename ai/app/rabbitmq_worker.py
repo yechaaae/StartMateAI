@@ -27,6 +27,7 @@ def request_from_envelope(envelope: dict[str, Any]) -> ChatRequest:
     feature_context = payload.get("featureContext") or {}
     conversation = payload.get("conversation") or {}
     result_context = payload.get("resultContext") or {}
+    request_metadata = _request_metadata(envelope)
 
     message = str(common.get("message") or "")
     context = {
@@ -34,6 +35,7 @@ def request_from_envelope(envelope: dict[str, Any]) -> ChatRequest:
         "featureContext": feature_context,
         "conversation": conversation,
         "resultContext": result_context,
+        "requestMetadata": request_metadata,
         "rabbitmq": {
             "requestId": envelope.get("requestId"),
             "roomId": envelope.get("roomId"),
@@ -52,6 +54,8 @@ def request_from_envelope(envelope: dict[str, Any]) -> ChatRequest:
 
 
 def response_to_envelope(request_envelope: dict[str, Any], response) -> dict[str, Any]:
+    request_metadata = _request_metadata(request_envelope)
+    result = response.result
     return {
         "requestId": request_envelope.get("requestId"),
         "roomId": request_envelope.get("roomId"),
@@ -61,7 +65,7 @@ def response_to_envelope(request_envelope: dict[str, Any], response) -> dict[str
         "data": response.data,
         "nextActions": response.next_actions,
         "warnings": response.warnings,
-        "result": None,
+        "result": result,
         "version": "v1",
         "messageType": "CHAT_RESPONSE",
         "userId": request_envelope.get("userId"),
@@ -78,8 +82,25 @@ def response_to_envelope(request_envelope: dict[str, Any], response) -> dict[str
             "agent": response.agent,
             "data": response.data,
             "sources": [source.model_dump() for source in response.sources],
+            "result": result,
+            "requestMetadata": request_metadata,
         },
     }
+
+
+def _request_metadata(request_envelope: dict[str, Any]) -> dict[str, Any]:
+    payload = request_envelope.get("payload") or {}
+    common = payload.get("common") or {}
+    metadata = common.get("metadata")
+    if isinstance(metadata, dict):
+        return metadata
+    if isinstance(metadata, str) and metadata.strip():
+        try:
+            parsed = json.loads(metadata)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
 
 
 def progress_event_to_envelope(

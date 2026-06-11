@@ -56,6 +56,7 @@ class AgentResponse(BaseModel):
     next_actions: list[str] = Field(default_factory=list)
     sources: list[Source] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    result: dict[str, Any] | None = None
 
 
 class ChatRequest(BaseModel):
@@ -87,6 +88,16 @@ class PolicyRequest(BaseModel):
     profile: StartupProfile
     query: str | None = None
     limit: int = Field(default=5, ge=1, le=10)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanRequest(BaseModel):
+    profile: StartupProfile = Field(default_factory=StartupProfile)
+    target: str = "창업 지원사업"
+    idea_name: str | None = None
+    support_program: dict[str, Any] = Field(default_factory=dict)
+    focused_section: dict[str, Any] = Field(default_factory=dict)
+    goal: str = "ALIGN_SUPPORT"
     context: dict[str, Any] = Field(default_factory=dict)
 
 
