@@ -17,6 +17,7 @@ FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
 COPY --from=build /app/build/libs/*.jar /app/app.jar
+COPY data ./data
 
 EXPOSE 8080
 

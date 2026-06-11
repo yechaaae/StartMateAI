@@ -258,7 +258,7 @@ def _intent_from_envelope(envelope: dict[str, Any], message: str, reference: dic
         if external_data.get("supportPrograms") or any(keyword in text for keyword in ["지원사업", "공고", "정책"]):
             return "auto"
         return "commercial_area"
-    if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "연남동", "마포구"]):
+    if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "주변 점포", "주변 가게", "연남동", "마포구", "구미", "인동동"]):
         return "commercial_area"
     return str(envelope.get("intent") or "auto")
 
