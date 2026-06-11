@@ -288,11 +288,6 @@ export const DiscussPage = ({ user }) => {
       </div>
 
       <div className="chat-session-bar">
-        <button className="chat-session-new" onClick={createSession} disabled={creatingRoom || sending}>
-          <Icon name="plus" size={16} />
-          <span>{creatingRoom ? '만드는 중' : '새 상담 시작'}</span>
-        </button>
-
         <div className="chat-session-picker" ref={sessionMenuRef}>
           <button
             className={sessionMenuOpen ? 'chat-session-trigger on' : 'chat-session-trigger'}
@@ -369,6 +364,11 @@ export const DiscussPage = ({ user }) => {
             </div>
           )}
         </div>
+
+        <button className="chat-session-new" onClick={createSession} disabled={creatingRoom || sending}>
+          <Icon name="plus" size={16} />
+          <span>{creatingRoom ? '만드는 중' : '새 상담 시작'}</span>
+        </button>
       </div>
 
       <div className="chat-panel" ref={scroll}>

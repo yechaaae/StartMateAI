@@ -72,11 +72,6 @@
   border-bottom-color: color-mix(in srgb, var(--feature-accent) 18%, var(--line));
 }
 
-.feature-page .feature-chat header .agent-avatar {
-  color: var(--feature-accent);
-  background: var(--feature-accent-tint);
-}
-
 .feature-page .feature-chat {
   border-left-color: color-mix(in srgb, var(--feature-accent) 16%, var(--line));
 }
