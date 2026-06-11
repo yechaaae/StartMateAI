@@ -59,6 +59,7 @@ export const SimulatorPage = ({ go, workspace }) => {
   const [typing, setTyping] = useState(null)
   const chatRef = useRef(null)
   const agent = agents.finance
+  const agentDisplayName = `${agent.label} 에이전트`
   const idea = workspace?.selectedIdea
   const showChat = step === 3 && report
 
@@ -212,7 +213,7 @@ export const SimulatorPage = ({ go, workspace }) => {
           <header style={{ color: agent.color }}>
             <AgentAvatar id="finance" />
             <div>
-              <b>{agent.name}</b>
+              <b>{agentDisplayName}</b>
               <small>월세와 손익을 함께 봅니다</small>
             </div>
           </header>
