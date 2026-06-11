@@ -340,7 +340,7 @@ class CommercialAreaAgent(BaseAgent):
         if self._contains_any(text, ["카페", "커피", "음료", "디저트", "쿠키", "베이커리", "제과"]):
             if self._contains_any(text, ["디저트", "쿠키", "베이커리", "제과", "빵"]):
                 return {"large": "음식", "medium": "제과", "small": "제과"}
-            return {"large": "음식", "medium": "커피", "small": "카페"}
+            return {"large": "음식", "medium": None, "small": "카페"}
         if self._contains_any(text, ["한식", "백반", "국밥", "식당", "요식", "음식점"]):
             return {"large": "음식", "medium": "한식", "small": None}
         if self._contains_any(text, ["분식", "떡볶이", "김밥"]):
