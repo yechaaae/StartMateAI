@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kakao.backend.aichat.application.AiChatDispatchCommand;
 import com.kakao.backend.aichat.application.AiChatDispatchService;
 import com.kakao.backend.aichat.application.AiChatExternalReferenceDataService;
@@ -20,6 +21,7 @@ import com.kakao.backend.user.model.User;
 import com.kakao.backend.startupProfile.repository.StartupProfileRepository;
 import com.kakao.backend.user.repository.UserRepository;
 import com.kakao.backend.workspace.domain.Workspace;
+import com.kakao.backend.workspace.application.SavedResultService;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -59,6 +62,10 @@ class ChatRequestStatusLifecycleTest {
     private com.kakao.backend.agent.infrastructure.AgentRepository agentRepository;
     @Mock
     private AiChatResponsePayloadReader aiChatResponsePayloadReader;
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
+    @Mock
+    private SavedResultService savedResultService;
     @InjectMocks
     private ChatAiResponseCommandService chatAiResponseCommandService;
 
