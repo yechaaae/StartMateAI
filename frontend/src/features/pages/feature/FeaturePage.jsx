@@ -38,7 +38,7 @@ import {
   upsertMessage,
 } from '../../chat/chatMappers'
 import { Report } from '../../reports/Report'
-import { buildMockOperationSuggestions } from '../../reports/operationFeedbackLogic'
+import { buildOperationFeedbackPayload } from '../../reports/operationFeedbackLogic'
 import { buildFeatureSavedReport } from '../../reports/savedReportPayload'
 import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from '../featureChatContext'
 import { buildFeaturePageTheme } from './featurePageTheme'
@@ -226,8 +226,6 @@ export const FeaturePage = ({
         const reportData = latest?.payload?.reportData
         if (reportData) {
           applyReportData(reportData)
-          setAiReportStatus('ready')
-        } else if (id === 'operation') {
           setAiReportStatus('ready')
         } else {
           setAiReportStatus('empty')
@@ -601,7 +599,7 @@ export const FeaturePage = ({
   }
 
   useEffect(() => {
-    if (id === 'operation' || aiReportStatus !== 'empty' || !room?.roomId) {
+    if (aiReportStatus !== 'empty' || !room?.roomId) {
       return
     }
 
@@ -628,29 +626,12 @@ export const FeaturePage = ({
       return
     }
 
-    const suggestions = buildMockOperationSuggestions({
-      kpis: data.kpis ?? [],
-      products: data.products ?? [],
-      notes: data.notes ?? '',
-    })
-    const nextData = { ...data, suggestions }
-    const nextSelectedTitle = suggestions[0]?.title ?? null
-
     try {
       setSavingReport(true)
       setError('')
-      setData(nextData)
-      setSelectedOperationSuggestionTitle(nextSelectedTitle)
-
-      await operationFeedbackApi.save({
-        period: nextData.period,
-        kpis: nextData.kpis,
-        products: nextData.products,
-        channels: nextData.channels,
-        notes: nextData.notes,
-        suggestions,
-        selectedSuggestionTitle: nextSelectedTitle,
-      })
+      await operationFeedbackApi.save(
+        buildOperationFeedbackPayload(data, selectedOperationSuggestionTitle),
+      )
     } catch (nextError) {
       setError(nextError.message ?? '운영 피드백을 저장하지 못했습니다.')
     } finally {

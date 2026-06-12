@@ -79,6 +79,154 @@ export const normalizeProductShares = (products, changedIndex, nextShare, option
   return list
 }
 
+export const parseDisplayNumber = (value) => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0
+  }
+
+  const normalized = String(value ?? '').replace(/[^0-9.-]/g, '')
+  if (!normalized || normalized === '-' || normalized === '.') {
+    return 0
+  }
+
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const toText = (value, fallback = '') => {
+  if (value === null || value === undefined) {
+    return fallback
+  }
+  const text = String(value).trim()
+  return text || fallback
+}
+
+const formatKpiValue = (value, unit) => {
+  const parsed = parseNumberInput(value)
+  if (unit === '원') {
+    return `${parsed.toLocaleString('ko-KR')}원`
+  }
+  if (unit === '%') {
+    return `${roundOneDecimal(parsed)}%`
+  }
+  return `${parsed.toLocaleString('ko-KR')}${unit ?? ''}`
+}
+
+const normalizeKpi = (item) => {
+  if (Array.isArray(item)) {
+    return { label: toText(item[0]), value: toText(item[1]), delta: toText(item[2]), good: item[3] ?? null }
+  }
+  if (item && typeof item === 'object') {
+    // 사용자 입력 형태: { key, label, unit, current, previous }
+    if ('current' in item || 'previous' in item) {
+      const change = calculateChangePercent(item.current, item.previous)
+      const good = item.key === 'totalCost' ? change <= 0 : change >= 0
+      return {
+        label: toText(item.label, toText(item.key)),
+        value: formatKpiValue(item.current, item.unit),
+        delta: `${change > 0 ? '+' : ''}${change}%`,
+        good,
+      }
+    }
+    // 표시 형태: { label, value, delta, good }
+    return {
+      label: toText(item.label),
+      value: toText(item.value),
+      delta: toText(item.delta),
+      good: item.good ?? null,
+    }
+  }
+  return { label: '', value: toText(item), delta: '', good: null }
+}
+
+const normalizeProduct = (item) => {
+  if (Array.isArray(item)) {
+    return { name: toText(item[0]), pct: roundOneDecimal(clampPercent(parseNumberInput(item[1]))) }
+  }
+  const pctSource = item?.pct ?? item?.share ?? 0
+  return { name: toText(item?.name), pct: roundOneDecimal(clampPercent(parseNumberInput(pctSource))) }
+}
+
+const normalizeChannel = (item) => {
+  if (Array.isArray(item)) {
+    return { name: toText(item[0]), summary: toText(item[1]) }
+  }
+  if (item && typeof item === 'object') {
+    return { name: toText(item.name), summary: toText(item.summary ?? item.note) }
+  }
+  return { name: '', summary: toText(item) }
+}
+
+const normalizeSuggestion = (item) => {
+  const base = Array.isArray(item)
+    ? { title: toText(item[0]), body: toText(item[1]), link: item[2] ?? null }
+    : { title: toText(item?.title), body: toText(item?.body), link: item?.link ?? null }
+  return { ...base, linkLabel: base.link ? 'SNS 홍보 초안으로' : null }
+}
+
+export const normalizeOperationReport = (data) => ({
+  period: toText(data?.period),
+  notes: toText(data?.notes),
+  kpis: (data?.kpis ?? []).map(normalizeKpi),
+  products: (data?.products ?? []).map(normalizeProduct),
+  channels: (data?.channels ?? []).map(normalizeChannel).filter((channel) => channel.name || channel.summary),
+  suggestions: (data?.suggestions ?? []).map(normalizeSuggestion).filter((suggestion) => suggestion.title),
+})
+
+export const scaleSharesTo100 = (products) => {
+  const list = products.map((product) => ({
+    name: product.name,
+    pct: roundOneDecimal(clampPercent(parseNumberInput(product.pct ?? product.share))),
+  }))
+  if (!list.length) {
+    return list
+  }
+
+  const total = list.reduce((sum, product) => sum + product.pct, 0)
+  let allocated = 0
+  return list.map((product, index) => {
+    const isLast = index === list.length - 1
+    const ratio = total > 0 ? product.pct / total : 1 / list.length
+    const pct = isLast ? roundOneDecimal(100 - allocated) : roundOneDecimal(100 * ratio)
+    allocated = roundOneDecimal(allocated + pct)
+    return { ...product, pct: clampPercent(pct) }
+  })
+}
+
+export const buildOperationFeedbackPayload = (data, selectedSuggestionTitle) => {
+  const report = normalizeOperationReport(data)
+  const period = /^\d{4}-\d{2}$/.test(report.period) ? report.period : null
+  const products = scaleSharesTo100(report.products)
+
+  const kpis = (data?.kpis ?? []).map((item) => {
+    if (item && !Array.isArray(item) && item.key) {
+      return {
+        key: item.key,
+        label: toText(item.label, toText(item.key)),
+        unit: toText(item.unit),
+        current: parseNumberInput(item.current),
+        previous: item.previous === null || item.previous === undefined ? null : parseNumberInput(item.previous),
+      }
+    }
+    const kpi = normalizeKpi(item)
+    return { key: null, label: kpi.label, unit: '', current: parseDisplayNumber(kpi.value), previous: null }
+  })
+
+  return {
+    period,
+    kpis,
+    products: products.map((product) => ({ name: product.name, share: product.pct })),
+    channels: report.channels.map((channel) => [channel.name, channel.summary]),
+    notes: report.notes,
+    suggestions: report.suggestions.map((suggestion) => ({
+      title: suggestion.title,
+      body: suggestion.body,
+      link: suggestion.link ?? null,
+    })),
+    selectedSuggestionTitle: selectedSuggestionTitle ?? report.suggestions[0]?.title ?? null,
+  }
+}
+
 export const buildMockOperationSuggestions = ({ kpis, products, notes }) => {
   const conversion = kpis.find((item) => item.key === 'adConversionRate')
   const sales = kpis.find((item) => item.key === 'totalSales')
