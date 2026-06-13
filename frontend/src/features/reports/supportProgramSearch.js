@@ -1,73 +1,199 @@
-const MOCK_SUPPORT_PROGRAMS = [
-  {
-    id: 'youth-pre-startup-2026',
-    title: '2026 청년 예비창업 패키지',
-    region: '전국',
-    dDay: 'D-12',
-    score: 88,
-    requiredDocs: ['사업계획서', '신분증', '졸업 증명서'],
-    reason: '예비창업 단계와 브랜딩 기반 아이템이 잘 맞고, 초기 사업화 자금 활용도가 높습니다.',
-    amount: 100000000,
-    tags: ['예비창업', '청년', '사업화'],
-    deadlineDate: '2026-06-22',
-    prepEase: 76,
-  },
-  {
-    id: 'busan-local-creator-2026',
-    title: '부산 로컬크리에이터 육성',
-    region: '부산',
-    dDay: 'D-23',
-    score: 81,
-    requiredDocs: ['사업계획서', '지역 활용 증빙', '대표자 주민등록등본'],
-    reason: '지역 자원과 스토리텔링을 연결하기 좋아 로컬 브랜드형 창업 아이템에 유리합니다.',
-    amount: 50000000,
-    tags: ['로컬', '지역특화', '브랜딩'],
-    deadlineDate: '2026-07-03',
-    prepEase: 68,
-  },
-  {
-    id: 'one-person-media-contents-2026',
-    title: '1인 미디어 콘텐츠 창업 지원',
-    region: '전국',
-    dDay: 'D-31',
-    score: 74,
-    requiredDocs: ['포트폴리오', '사업계획서'],
-    reason: 'SNS 운영 경험과 콘텐츠 제작 역량을 증빙하기 쉬워 서류 준비 부담이 낮습니다.',
-    amount: 30000000,
-    tags: ['콘텐츠', '미디어', '마케팅'],
-    deadlineDate: '2026-07-11',
-    prepEase: 91,
-  },
-  {
-    id: 'seoul-small-business-startup-2026',
-    title: '서울 소상공인 창업 성장 지원',
-    region: '서울',
-    dDay: 'D-7',
-    score: 83,
-    requiredDocs: ['사업계획서', '주민등록등본', '창업 예정지 확인서'],
-    reason: '상권 기반 실행 계획을 제시하기 좋고, 마감이 가까워 빠른 검토 가치가 있습니다.',
-    amount: 40000000,
-    tags: ['소상공인', '상권', '창업성장'],
-    deadlineDate: '2026-06-17',
-    prepEase: 72,
-  },
+import { supportProgramApi } from '../../shared/api/client.js'
+
+const SIDO_ALIASES = [
+  ['서울', ['서울', '서울특별시']],
+  ['부산', ['부산', '부산광역시']],
+  ['대구', ['대구', '대구광역시']],
+  ['인천', ['인천', '인천광역시']],
+  ['광주', ['광주', '광주광역시']],
+  ['대전', ['대전', '대전광역시']],
+  ['울산', ['울산', '울산광역시']],
+  ['세종', ['세종', '세종특별자치시']],
+  ['경기', ['경기', '경기도']],
+  ['강원', ['강원', '강원도', '강원특별자치도']],
+  ['충북', ['충북', '충청북도']],
+  ['충남', ['충남', '충청남도']],
+  ['전북', ['전북', '전라북도', '전북특별자치도']],
+  ['전남', ['전남', '전라남도']],
+  ['경북', ['경북', '경상북도']],
+  ['경남', ['경남', '경상남도']],
+  ['제주', ['제주', '제주도', '제주특별자치도']],
 ]
 
 const sorters = {
   HIGH_MATCH: (a, b) => b.score - a.score,
-  EASY_PREP: (a, b) => b.prepEase - a.prepEase,
-  LARGE_SUPPORT: (a, b) => b.amount - a.amount,
-  FAST_DEADLINE: (a, b) => new Date(a.deadlineDate) - new Date(b.deadlineDate),
+  EASY_PREP: (a, b) => b.score - a.score,
+  LARGE_SUPPORT: (a, b) => amountRank(b.amount) - amountRank(a.amount) || b.score - a.score,
+  FAST_DEADLINE: (a, b) => deadlineTime(a.deadlineDate) - deadlineTime(b.deadlineDate),
 }
 
-const wait = (ms) => new Promise((resolve) => {
-  globalThis.setTimeout(resolve, ms)
-})
+const text = (value) => String(value ?? '').trim()
 
-export const runSupportProgramSearch = async (filters) => {
-  await wait(filters.delayMs ?? 520)
+const firstNonBlank = (...values) => values.map(text).find(Boolean) ?? ''
 
+const sidoFrom = (raw) => {
+  const value = text(raw)
+  if (!value) {
+    return null
+  }
+  const found = SIDO_ALIASES.find(([, aliases]) => aliases.some((alias) => value.includes(alias)))
+  return found?.[0] ?? null
+}
+
+const sigunguFrom = (raw) => {
+  const value = text(raw)
+  const token = value.split(/[\s,/]/).find((item) => /[구군]$/.test(item))
+  return token ?? null
+}
+
+const interestText = (filters) => firstNonBlank(
+  filters.selectedIdea?.title,
+  filters.selectedIdea?.industry,
+  filters.startupProfile?.interestField,
+  filters.startupProfile?.preferredBusinessTypeLabel,
+)
+
+const industryFields = (raw) => {
+  const value = text(raw)
+  if (/(카페|커피|디저트|음식|식당|베이커리)/.test(value)) {
+    return {
+      industryLarge: '음식점업',
+      industryMedium: /(카페|커피)/.test(value) ? '커피점/카페' : null,
+      industrySmall: /(카페|커피)/.test(value) ? '카페' : null,
+    }
+  }
+  return {
+    industryLarge: null,
+    industryMedium: null,
+    industrySmall: null,
+  }
+}
+
+const desiredRegion = (filters) => {
+  if (filters.regionBasis === 'RESIDENCE') {
+    return filters.startupProfile?.residenceRegion
+  }
+  return firstNonBlank(
+    filters.startupProfile?.businessRegion,
+    filters.selectedIdea?.region,
+    filters.selectedIdea?.location,
+    filters.startupProfile?.residenceRegion,
+  )
+}
+
+const supportTypes = (priority) => {
+  if (priority === 'LARGE_SUPPORT') {
+    return ['grant', 'loan']
+  }
+  if (priority === 'EASY_PREP') {
+    return ['education', 'mentoring']
+  }
+  return ['grant', 'education', 'mentoring', 'space']
+}
+
+const amountFrom = (value) => {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? number : null
+}
+
+const amountRank = (value) => {
+  const raw = text(value).replace(/,/g, '')
+  const number = Number(raw.match(/\d+(?:\.\d+)?/)?.[0] ?? 0)
+  if (!number) {
+    return 0
+  }
+  if (raw.includes('억')) {
+    return number * 100000000
+  }
+  if (raw.includes('천') && raw.includes('만원')) {
+    return number * 10000000
+  }
+  if (raw.includes('만원')) {
+    return number * 10000
+  }
+  return number
+}
+
+export const buildSupportProgramRecommendationPayload = (filters = {}) => {
+  const region = desiredRegion(filters)
+  return {
+    age: amountFrom(filters.startupProfile?.age),
+    residenceSido: sidoFrom(filters.startupProfile?.residenceRegion),
+    desiredSido: sidoFrom(region),
+    desiredSigungu: sigunguFrom(region),
+    founderType: 'pre_founder',
+    businessRegistered: false,
+    businessStartDate: null,
+    businessStage: 'idea',
+    ...industryFields(interestText(filters)),
+    requiredFundingAmount: amountFrom(filters.startupProfile?.initialBudget),
+    interestedSupportTypes: supportTypes(filters.priority),
+  }
+}
+
+const dDayFrom = (dateString) => {
+  if (!dateString) {
+    return ''
+  }
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const deadline = new Date(dateString)
+  if (Number.isNaN(deadline.getTime())) {
+    return ''
+  }
+  const diffDays = Math.ceil((deadline - today) / 86400000)
+  return diffDays >= 0 ? `D-${diffDays}` : '마감'
+}
+
+const deadlineTime = (dateString) => {
+  const time = new Date(dateString).getTime()
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time
+}
+
+const splitDocuments = (raw) => {
+  if (Array.isArray(raw)) {
+    return raw.map(text).filter(Boolean)
+  }
+  return text(raw).split(/[,/|]/).map(text).filter(Boolean)
+}
+
+const normalizeProgram = (item) => {
+  const title = text(item.title)
+  if (!title) {
+    return null
+  }
+  const deadlineDate = item.applicationEndDate ?? null
+  const matchReasons = Array.isArray(item.matchReasons) ? item.matchReasons.filter(Boolean) : []
+  const cautionReasons = Array.isArray(item.cautionReasons) ? item.cautionReasons.filter(Boolean) : []
+  return {
+    id: item.programId ? `support-program-${item.programId}` : title,
+    programId: item.programId ?? null,
+    title,
+    source: item.source ?? '',
+    region: item.regionCondition ?? '',
+    due: dDayFrom(deadlineDate),
+    dDay: dDayFrom(deadlineDate),
+    score: Number(item.matchScore ?? 0),
+    reason: firstNonBlank(matchReasons[0], item.summary),
+    summary: item.summary ?? '',
+    requiredDocs: splitDocuments(item.requiredDocuments),
+    docs: splitDocuments(item.requiredDocuments),
+    tags: [item.organization, item.supportType, item.status].map(text).filter(Boolean),
+    amount: item.supportAmount ?? '',
+    deadlineDate,
+    applyUrl: item.applyUrl ?? '',
+    url: item.applyUrl ?? '',
+    matchReasons,
+    cautionReasons,
+  }
+}
+
+export const runSupportProgramSearch = async (filters = {}) => {
+  const payload = buildSupportProgramRecommendationPayload(filters)
+  const programs = await supportProgramApi.recommend(payload)
   const sorter = sorters[filters.priority] ?? sorters.HIGH_MATCH
-  return [...MOCK_SUPPORT_PROGRAMS]
+  return (Array.isArray(programs) ? programs : [])
+    .map(normalizeProgram)
+    .filter(Boolean)
     .sort(sorter)
 }

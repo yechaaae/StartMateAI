@@ -39,7 +39,7 @@ class PolicyAgent(BaseAgent):
         )
         matches = self._rerank_for_query(matches, request)
         matches = matches[: request.limit]
-        using_reference_data = bool(tool_matches or reference_matches)
+        using_reference_data = bool(tool_matches or reference_matches or retrieval_matches)
         reference_sources = []
         if tool_matches:
             reference_sources.append("backend.tool.support_programs")
@@ -59,7 +59,7 @@ class PolicyAgent(BaseAgent):
         ]
         risks = list(tool_warnings)
         if not using_reference_data:
-            risks.append("현재 데이터는 샘플입니다. 실제 최신 공고 RAG 인덱스로 교체해야 합니다.")
+            risks.append("지원사업 원천 데이터가 없어 실제 공고 후보를 생성하지 않았습니다.")
         if top and top.get("eligibility_gaps"):
             risks.extend(top["eligibility_gaps"][:2])
         missing_inputs = []
@@ -86,7 +86,7 @@ class PolicyAgent(BaseAgent):
             score=int(top.get("eligibility_score", 0)) if top else 0,
             risks=risks,
             assumptions=[
-                "백엔드 정규화 추천 결과를 우선 사용했습니다." if using_reference_data else "지원사업 데이터는 샘플 JSON 기준입니다.",
+                self._data_source_assumption(tool_matches, reference_matches, retrieval_matches),
                 "마감일과 자격 요건은 실제 공고에서 재확인해야 합니다.",
             ],
             missing_inputs=missing_inputs,
@@ -156,6 +156,13 @@ class PolicyAgent(BaseAgent):
             "title": item.get("title") or "지원사업 후보",
             "url": item.get("applyUrl"),
             "summary": item.get("summary"),
+            "region_condition": item.get("regionCondition") or item.get("region_condition"),
+            "support_amount": item.get("supportAmount") or item.get("support_amount"),
+            "required_documents": self._document_list(item.get("requiredDocuments") or item.get("required_documents")),
+            "organization": item.get("organization"),
+            "support_type": item.get("supportType") or item.get("support_type"),
+            "status": item.get("status"),
+            "application_end_date": item.get("applicationEndDate") or item.get("application_end_date"),
             "source_note": source_note,
             "eligibility_score": score,
             "fit_level": self._fit_level(score),
@@ -163,7 +170,6 @@ class PolicyAgent(BaseAgent):
             "matched_keywords": [],
             "why_matched": match_reasons,
             "eligibility_gaps": caution_reasons,
-            "required_documents": [],
             "application_strategy": [
                 "백엔드 추천 점수와 주의사항을 기준으로 실제 공고 원문을 확인하세요.",
                 "마감일과 신청 URL을 먼저 확인한 뒤 제출 서류를 정리하세요.",
@@ -171,6 +177,27 @@ class PolicyAgent(BaseAgent):
             "retrieval": {"source": "backend_reference"},
             "source_chunks": [item.get("summary")] if item.get("summary") else [],
         }
+
+    def _data_source_assumption(
+        self,
+        tool_matches: list[dict[str, Any]],
+        reference_matches: list[dict[str, Any]],
+        retrieval_matches: list[dict[str, Any]],
+    ) -> str:
+        if tool_matches:
+            return "백엔드 지원사업 도구 추천 결과를 우선 사용했습니다."
+        if reference_matches:
+            return "백엔드 정규화 추천 결과를 우선 사용했습니다."
+        if retrieval_matches:
+            return "지원사업 RAG 인덱스 검색 결과를 사용했습니다."
+        return "지원사업 원천 데이터가 없어 후보를 만들지 않았습니다."
+
+    def _document_list(self, raw: Any) -> list[str]:
+        if isinstance(raw, list):
+            return [str(item).strip() for item in raw if str(item).strip()]
+        if not raw:
+            return []
+        return [item.strip() for item in re.split(r"[,/|]", str(raw)) if item.strip()]
 
     def _merge_matches(self, *, primary: list[dict], secondary: list[dict], limit: int) -> list[dict]:
         merged: dict[str, dict] = {}
@@ -470,7 +497,7 @@ class PolicyAgent(BaseAgent):
         region = request.profile.region or query
         industry_text = " ".join([*request.profile.interests, query])
         return {
-            "age": request.profile.age or self._age_from(query) or 27,
+            "age": request.profile.age or self._age_from(query),
             "residenceSido": self._sido_from(request.profile.region),
             "desiredSido": self._sido_from(region),
             "desiredSigungu": self._sigungu_from(region),
