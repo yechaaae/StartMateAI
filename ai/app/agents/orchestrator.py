@@ -284,7 +284,7 @@ class OrchestratorAgent:
         message = self._discussion_prefix(response.agent, summary)
         evidence_lines = self._agent_evidence_lines(response)
         if evidence_lines:
-            message += "\n\n판단 근거\n" + "\n".join(f"- {line}" for line in evidence_lines[:5])
+            message += "\n\n**판단 근거**\n" + "\n".join(f"- {line}" for line in evidence_lines[:5])
         return message
 
     def _agent_short_position(self, response: AgentResponse) -> str:
@@ -1635,10 +1635,10 @@ class OrchestratorAgent:
             "basis": basis,
             "proposal": proposal,
             "message": (
-                f"{source_label} -> {target_label}: 잠깐, 이 부분은 그대로 가면 조금 위험해 보여요.\n"
-                f"걸리는 점: {issue}\n"
-                f"제가 본 근거: {basis or '근거를 조금 더 확인해야 합니다'}\n"
-                f"그래서 제안은 이거예요: {proposal}"
+                f"**{source_label} → {target_label}**: 잠깐, 이 부분은 그대로 가면 조금 위험해 보여요.\n\n"
+                f"- **걸리는 점**: {issue}\n"
+                f"- **근거**: {basis or '근거를 조금 더 확인해야 합니다'}\n"
+                f"- **제안**: {proposal}"
             ),
         }
 
@@ -1696,13 +1696,13 @@ class OrchestratorAgent:
         revisions: list[dict[str, Any]],
     ) -> dict[str, Any]:
         if not challenges:
-            message = "Plan Agent: 크게 부딪히는 부분은 없네요. 각 Agent 의견을 한 실행 흐름으로 묶어도 괜찮겠습니다."
+            message = "**Plan Agent**: 크게 부딪히는 부분은 없네요. 각 Agent 의견을 한 실행 흐름으로 묶어도 괜찮겠습니다."
             decision = "agent_agreement"
         else:
             main_issues = self._unique([str(item.get("issue")) for item in challenges if item.get("issue")])
             message = (
-                "Plan Agent: 좋아요, 이 충돌은 최종 답변에 조건으로 반영할게요.\n"
-                f"체크할 부분: {' / '.join(main_issues[:3])}\n"
+                "**Plan Agent**: 좋아요, 이 충돌은 최종 답변에 조건으로 반영할게요.\n\n"
+                f"- **체크할 부분**: {' / '.join(main_issues[:3])}\n\n"
                 "그래서 결론은 '바로 확정'이 아니라, 아이템 방향은 살리되 필요한 정보 확인과 30일 검증을 먼저 두는 쪽으로 정리하겠습니다."
             )
             decision = "conditional_consensus"
