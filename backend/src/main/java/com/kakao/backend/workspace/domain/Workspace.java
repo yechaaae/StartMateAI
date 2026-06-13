@@ -53,6 +53,19 @@ public class Workspace extends BaseTimeEntity {
     @JoinColumn(name = "selected_idea_id")
     private BusinessIdeaOption selectedIdea;
 
+    // 사용자가 확정한 추천 아이템 스냅샷 (BusinessIdeaOption 영속 여부와 무관하게 표시용으로 저장)
+    @Column(name = "selected_idea_title")
+    private String selectedIdeaTitle;
+
+    @Column(name = "selected_idea_category")
+    private String selectedIdeaCategory;
+
+    @Column(name = "selected_idea_score")
+    private Integer selectedIdeaScore;
+
+    @Column(name = "selected_idea_reason", columnDefinition = "text")
+    private String selectedIdeaReason;
+
     @OneToMany(mappedBy = "workspace", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<BusinessIdeaResult> businessIdeaResults = new ArrayList<>();
 
@@ -82,5 +95,16 @@ public class Workspace extends BaseTimeEntity {
         workspace.setTitle(title);
         workspace.setStatus(status);
         return workspace;
+    }
+
+    // 확정한 아이템으로 워크스페이스 이름과 스냅샷을 갱신한다.
+    public void applySelectedIdea(String ideaTitle, String category, Integer score, String reason) {
+        if (ideaTitle != null && !ideaTitle.isBlank()) {
+            this.title = ideaTitle.trim();
+            this.selectedIdeaTitle = ideaTitle.trim();
+        }
+        this.selectedIdeaCategory = category;
+        this.selectedIdeaScore = score;
+        this.selectedIdeaReason = reason;
     }
 }

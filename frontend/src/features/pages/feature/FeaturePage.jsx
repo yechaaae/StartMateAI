@@ -35,6 +35,7 @@ import {
   normalizeAgentProgressMessage,
   normalizeChatMessage,
   normalizeStatusEvent,
+  reportDataFromMessage,
   upsertMessage,
 } from '../../chat/chatMappers'
 import { Report } from '../../reports/Report'
@@ -96,15 +97,6 @@ const FEATURE_SUGGESTIONS = {
 }
 
 const GENERATE_REPORT_PROMPT = '현재 기능 페이지에 표시할 최종 리포트를 각 Agent가 함께 검토해서 생성해줘.'
-
-const reportDataFromMessage = (message, featureId) => {
-  const result = message?.metadata?.result
-  if (result?.shouldCreateResult !== true) return null
-  const payload = result?.payload
-  if (!payload?.reportData) return null
-  if (payload.featureId && payload.featureId !== featureId) return null
-  return payload.reportData
-}
 
 export const FeaturePage = ({
   id,

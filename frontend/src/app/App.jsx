@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import '../App.css'
 import { features } from '../shared/data/features'
-import { workspaces } from '../shared/data/workspaces'
-import { authApi, startupProfileApi } from '../shared/api/client'
+import { authApi, startupProfileApi, workspaceApi } from '../shared/api/client'
 import { Sidebar } from '../features/layout/Sidebar'
 import { DiscussPage } from '../features/pages/DiscussPage'
 import { FeaturePage } from '../features/pages/feature/FeaturePage'
+import { GeneratingPage } from '../features/pages/GeneratingPage'
 import { HomePage } from '../features/pages/HomePage'
 import { Landing } from '../features/pages/Landing'
 import { LoginPage } from '../features/pages/LoginPage'
@@ -25,7 +25,8 @@ export default function App() {
     || localStorage.getItem('sm_route')
     || 'landing'
   ))
-  const [workspace, setWorkspace] = useState(workspaces[0])
+  const [workspace, setWorkspace] = useState(null)
+  const [workspaceList, setWorkspaceList] = useState([])
   const [user, setUser] = useState(null)
   const [profileStatus, setProfileStatus] = useState(null)
   const [startupProfile, setStartupProfile] = useState(null)
@@ -46,6 +47,33 @@ export default function App() {
     }
   }, [])
 
+  const refreshWorkspaces = useCallback(async () => {
+    try {
+      const list = await workspaceApi.list()
+      setWorkspaceList(list)
+      setWorkspace((prev) => (
+        prev
+          ? (list.find((item) => item.id === prev.id) ?? list[0] ?? null)
+          : (list[0] ?? null)
+      ))
+      return list
+    } catch {
+      return []
+    }
+  }, [])
+
+  const handleCreateWorkspace = useCallback(async () => {
+    try {
+      const created = await workspaceApi.create({})
+      await refreshWorkspaces()
+      setWorkspace(created)
+      setFeatureWorkspace({})
+      setRoute('home')
+    } catch {
+      // 생성 실패는 무시 (사용자가 다시 시도)
+    }
+  }, [refreshWorkspaces])
+
   useEffect(() => {
     localStorage.setItem('sm_route', route)
     const nextPath = routeToPath(route, featureIds)
@@ -65,6 +93,13 @@ export default function App() {
     return () => window.removeEventListener('popstate', syncRouteFromUrl)
   }, [])
 
+  // 홈 진입 시 워크스페이스 목록을 최신화 (확정/생성 직후 반영)
+  useEffect(() => {
+    if (user && route === 'home') {
+      refreshWorkspaces()
+    }
+  }, [user, route, refreshWorkspaces])
+
   const moveByProfileStatus = async (nextRoute = route) => {
     const status = await startupProfileApi.status()
     setProfileStatus(status)
@@ -76,6 +111,7 @@ export default function App() {
     }
 
     await refreshStartupProfile()
+    await refreshWorkspaces()
 
     setRoute(nextRoute === 'onboarding' || publicRoutes.has(nextRoute) ? 'home' : nextRoute)
 
@@ -93,7 +129,8 @@ export default function App() {
     const status = await startupProfileApi.status()
     setProfileStatus(status)
     setStartupProfile(nextProfile ?? await refreshStartupProfile())
-    setRoute('home')
+    // 온보딩 직후 아이템 추천을 미리 생성하는 "생성 중" 화면으로 보낸다.
+    setRoute('generating')
   }
 
   const handleLogout = async () => {
@@ -104,6 +141,8 @@ export default function App() {
       setProfileStatus(null)
       setStartupProfile(null)
       setFeatureWorkspace({})
+      setWorkspace(null)
+      setWorkspaceList([])
       localStorage.removeItem(LOGIN_HINT_KEY)
       setRoute('landing')
     }
@@ -149,7 +188,7 @@ export default function App() {
   }, [])
 
   const guardedRoute = !user && !publicRoutes.has(route) ? 'landing' : route
-  const full = publicRoutes.has(guardedRoute) || guardedRoute === 'onboarding'
+  const full = publicRoutes.has(guardedRoute) || guardedRoute === 'onboarding' || guardedRoute === 'generating'
 
   let page
   if (checkingSession) {
@@ -160,6 +199,8 @@ export default function App() {
     page = <LoginPage go={setRoute} onLogin={handleAuthSuccess} />
   } else if (guardedRoute === 'signup') {
     page = <SignupPage go={setRoute} onSignup={handleAuthSuccess} />
+  } else if (guardedRoute === 'generating') {
+    page = <GeneratingPage go={setRoute} user={user} startupProfile={startupProfile} />
   } else if (guardedRoute === 'onboarding' || profileStatus?.requiresOnboarding) {
     page = <Onboarding onComplete={handleOnboardingComplete} />
   } else if (guardedRoute === 'discuss') {
@@ -196,7 +237,9 @@ export default function App() {
         route={guardedRoute}
         go={setRoute}
         workspace={workspace}
+        workspaces={workspaceList}
         setWorkspace={setWorkspace}
+        onCreateWorkspace={handleCreateWorkspace}
         user={user}
         onLogout={handleLogout}
       />

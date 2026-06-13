@@ -772,6 +772,23 @@
   color: var(--ink-3);
 }
 
+.generating-progress {
+  width: min(360px, 80%);
+  height: 8px;
+  margin-top: 24px;
+  border-radius: 999px;
+  background: #e7ebf4;
+  overflow: hidden;
+}
+
+.generating-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+  transition: width .5s ease;
+}
+
 .onboarding-card {
   width: min(560px, 100%);
   padding: 28px;
@@ -1775,6 +1792,25 @@
   color: var(--ink-3);
   font-size: 11px;
   font-weight: 700;
+}
+
+.workspace-empty {
+  margin: 4px 6px 8px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace-modal-list .workspace-create {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--brand-strong);
+  font-weight: 800;
+  font-size: 13px;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
 }
 
 .sidebar nav > button {
@@ -6335,6 +6371,35 @@ button:disabled {
   font-size: 12px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.idea-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.idea-option .idea-confirm {
+  justify-content: center;
+  padding: 9px 14px;
+  background: var(--a-idea);
+  color: #fff;
+  font-size: 13px;
+}
+
+.idea-option .idea-confirm:disabled {
+  opacity: .65;
+  cursor: wait;
+}
+
+.idea-option .idea-sim {
+  justify-content: center;
+  padding: 6px 10px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .sim-primary-btn {

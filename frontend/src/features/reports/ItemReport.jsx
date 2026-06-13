@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Card } from '../../shared/components/Card'
 import { Icon } from '../../shared/components/Icon'
+import { workspaceApi } from '../../shared/api/client'
 import { AgentReview } from './AgentReview'
 
 const KAKAO_APP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY ?? ''
@@ -111,21 +112,51 @@ export const ItemReport = ({
   selectedIdeaRank,
   onSelectIdea,
 }) => {
-  const selectIdea = (item) => {
+  const [confirmingRank, setConfirmingRank] = useState(null)
+
+  const ideaSnapshot = (item) => ({
+    id: item.rank,
+    rank: item.rank,
+    title: item.title,
+    score: item.score,
+    reason: item.reason,
+    category: item.category || '추천 아이템',
+    estimatedInitialCost: item.estimatedInitialCost,
+  })
+
+  // 시뮬레이터에서 먼저 검증 (메모리 상태만 반영)
+  const exploreInSimulator = (item) => {
     onSelectIdea?.(item.rank)
-    setWorkspace?.({
-      ...workspace,
-      selectedIdea: {
-        id: item.rank,
-        rank: item.rank,
-        title: item.title,
-        score: item.score,
-        reason: item.reason,
-        category: item.category || '추천 아이템',
-        estimatedInitialCost: item.estimatedInitialCost,
-      },
-    })
+    setWorkspace?.({ ...workspace, selectedIdea: ideaSnapshot(item) })
     go('simulator')
+  }
+
+  // 이 아이템으로 확정 → 현재 워크스페이스를 그 아이템으로 만들고 홈으로
+  const confirmIdea = async (item) => {
+    if (confirmingRank) return
+    onSelectIdea?.(item.rank)
+    setConfirmingRank(item.rank)
+    const selectedIdea = {
+      title: item.title,
+      category: item.category || '추천 아이템',
+      score: item.score,
+      reason: item.reason,
+    }
+    try {
+      let target = workspace
+      if (!target?.id) {
+        const list = await workspaceApi.list()
+        target = list[list.length - 1] ?? await workspaceApi.create({ title: item.title })
+      }
+      const updated = await workspaceApi.update(target.id, { title: item.title, selectedIdea })
+      setWorkspace?.(updated)
+      go?.('home')
+    } catch {
+      setWorkspace?.({ ...workspace, title: item.title, selectedIdeaTitle: item.title, selectedIdea: ideaSnapshot(item) })
+      go?.('home')
+    } finally {
+      setConfirmingRank(null)
+    }
   }
 
   return (
@@ -157,12 +188,24 @@ export const ItemReport = ({
                 <p>{item.reason}</p>
               </div>
               <em>적합도 {item.score}</em>
-              <button
-                type="button"
-                onClick={() => selectIdea(item)}
-              >
-                시뮬레이터 <Icon name="arrow" size={15} />
-              </button>
+              <div className="idea-actions">
+                <button
+                  type="button"
+                  className="idea-confirm"
+                  onClick={() => confirmIdea(item)}
+                  disabled={confirmingRank === item.rank}
+                >
+                  {confirmingRank === item.rank ? '확정 중…' : '이 아이템으로 시작'}
+                  {confirmingRank !== item.rank && <Icon name="check" size={15} />}
+                </button>
+                <button
+                  type="button"
+                  className="idea-sim"
+                  onClick={() => exploreInSimulator(item)}
+                >
+                  시뮬레이터로 검증 <Icon name="arrow" size={14} />
+                </button>
+              </div>
             </div>
           )
         })}

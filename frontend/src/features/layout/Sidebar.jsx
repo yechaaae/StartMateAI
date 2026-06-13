@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { features, featureOrder } from '../../shared/data/features'
 import { agents } from '../../shared/data/agents'
 import { profile } from '../../shared/data/profile'
-import { workspaces } from '../../shared/data/workspaces'
 import { Icon } from '../../shared/components/Icon'
 import { StartMateLogo } from '../../shared/components/StartMateLogo'
 import { buildFeatureNavTheme } from './sidebarFeatureNav'
 
-export const Sidebar = ({ route, go, workspace, setWorkspace, user, onLogout }) => {
+export const Sidebar = ({ route, go, workspace, workspaces = [], setWorkspace, onCreateWorkspace, user, onLogout }) => {
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const switcherRef = useRef(null)
   const displayName = user?.nickname || profile.name
@@ -53,9 +52,12 @@ export const Sidebar = ({ route, go, workspace, setWorkspace, user, onLogout }) 
           {workspaceOpen && (
             <div className="workspace-modal">
               <div className="workspace-modal-list">
+                {workspaces.length === 0 && (
+                  <p className="workspace-empty">아직 워크스페이스가 없어요.<br />아이템을 확정하면 만들어져요.</p>
+                )}
                 {workspaces.map((nextWorkspace) => (
                   <button
-                    className={workspace.id === nextWorkspace.id ? 'on' : ''}
+                    className={workspace?.id === nextWorkspace.id ? 'on' : ''}
                     key={nextWorkspace.id}
                     onClick={() => {
                       setWorkspace(nextWorkspace)
@@ -64,18 +66,30 @@ export const Sidebar = ({ route, go, workspace, setWorkspace, user, onLogout }) 
                     }}
                   >
                     <div>
-                      <b>{nextWorkspace.name}</b>
-                      <small>{nextWorkspace.desc}</small>
+                      <b>{nextWorkspace.title}</b>
+                      <small>{nextWorkspace.selectedIdeaTitle ? (nextWorkspace.selectedIdeaCategory ?? '확정 아이템') : '작업공간'}</small>
                     </div>
                   </button>
                 ))}
+                {onCreateWorkspace && (
+                  <button
+                    className="workspace-create"
+                    type="button"
+                    onClick={() => {
+                      setWorkspaceOpen(false)
+                      onCreateWorkspace()
+                    }}
+                  >
+                    <Icon name="plus" size={15} /> 새 워크스페이스
+                  </button>
+                )}
               </div>
             </div>
           )}
         </div>
 
         <button className={route === 'home' ? 'on' : ''} onClick={() => go('home')}>
-          {workspace.name}
+          {workspace?.title ?? '내 작업공간'}
         </button>
 
         <p>AI 기능</p>

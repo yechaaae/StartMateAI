@@ -3,6 +3,7 @@ const staticRoutePaths = {
   login: '/login',
   signup: '/signup',
   onboarding: '/onboarding',
+  generating: '/generating',
   home: '/home',
   discuss: '/discuss',
   saved: '/saved',
