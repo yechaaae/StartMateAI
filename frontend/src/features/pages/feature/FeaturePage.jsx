@@ -803,6 +803,15 @@ export const FeaturePage = ({
       .catch(() => setAiReportStatus('error'))
   }
 
+  // 지원사업 카드의 '이 공고로 사업계획서 작성': 선택 공고를 부모 워크스페이스에 즉시 커밋한 뒤 plan으로 이동.
+  // (support 페이지는 곧 언마운트돼 effect 기반 패치가 실행되지 않으므로, 부모 상태를 직접 갱신해야 plan이 그 공고를 받는다.)
+  const handleWritePlanFromProgram = (program) => {
+    if (program) {
+      onWorkspaceContextChange?.({ selectedSupportProgram: program })
+    }
+    go('plan')
+  }
+
   // 사업계획서: 붙여넣은 공고문에 맞춰 초안을 재생성한다.
   // setState 직후의 stale memo를 피하려고, 입력값으로 만든 currentResult를 직접 넘긴다.
   const handleSubmitAnnouncement = (text) => {
@@ -992,6 +1001,7 @@ export const FeaturePage = ({
             onSelectIdea={setSelectedIdeaRank}
             selectedSupportTitle={selectedSupportTitle}
             onSelectSupport={setSelectedSupportTitle}
+            onWritePlanFromProgram={handleWritePlanFromProgram}
             selectedOperationSuggestionTitle={selectedOperationSuggestionTitle}
             onSelectOperationSuggestion={setSelectedOperationSuggestionTitle}
             supportSearchMode={supportSearchMode}

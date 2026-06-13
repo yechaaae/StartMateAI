@@ -17,6 +17,7 @@ export const Report = ({
   onSelectIdea,
   selectedSupportTitle,
   onSelectSupport,
+  onWritePlanFromProgram,
   selectedOperationSuggestionTitle,
   onSelectOperationSuggestion,
   supportSearchMode,
@@ -64,6 +65,7 @@ export const Report = ({
         go={go}
         selectedSupportTitle={selectedSupportTitle}
         onSelectSupport={onSelectSupport}
+        onWritePlanFromProgram={onWritePlanFromProgram}
         supportSearchMode={supportSearchMode}
         onChangeSupportSearchMode={onChangeSupportSearchMode}
         supportUserGoal={supportUserGoal}

@@ -116,7 +116,7 @@ const SupportProgramCard = ({
   )
 }
 
-const ResultBox = ({ title, description, programs, selectedSupportTitle, onSelectSupport, onSaveSupportProgram, go }) => (
+const ResultBox = ({ title, description, programs, selectedSupportTitle, onSelectSupport, onSaveSupportProgram, onWritePlanFromProgram, go }) => (
   <Card className="support-results-card">
     <div className="support-results-head">
       <div>
@@ -140,7 +140,11 @@ const ResultBox = ({ title, description, programs, selectedSupportTitle, onSelec
             actionLabel="이 공고로 사업계획서 작성"
             onAction={() => {
               onSelectSupport?.(program.title)
-              go('plan')
+              if (onWritePlanFromProgram) {
+                onWritePlanFromProgram(program)
+              } else {
+                go('plan')
+              }
             }}
             onSave={onSaveSupportProgram}
           />
@@ -167,6 +171,7 @@ export const SupportReport = ({
   savedSupportPrograms = [],
   onSaveSupportProgram,
   onDeleteSavedSupportProgram,
+  onWritePlanFromProgram,
 }) => {
   const [savedPage, setSavedPage] = useState(1)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -304,7 +309,11 @@ export const SupportReport = ({
                       actionLabel="이 공고로 사업계획서 작성"
                       onAction={() => {
                         onSelectSupport?.(program.title)
-                        go('plan')
+                        if (onWritePlanFromProgram) {
+                          onWritePlanFromProgram(program)
+                        } else {
+                          go('plan')
+                        }
                       }}
                       onDelete={setDeleteTarget}
                     />
@@ -361,6 +370,7 @@ export const SupportReport = ({
                 selectedSupportTitle={selectedSupportTitle}
                 onSelectSupport={onSelectSupport}
                 onSaveSupportProgram={onSaveSupportProgram}
+                onWritePlanFromProgram={onWritePlanFromProgram}
                 go={go}
               />
               <ResultBox
@@ -370,6 +380,7 @@ export const SupportReport = ({
                 selectedSupportTitle={selectedSupportTitle}
                 onSelectSupport={onSelectSupport}
                 onSaveSupportProgram={onSaveSupportProgram}
+                onWritePlanFromProgram={onWritePlanFromProgram}
                 go={go}
               />
             </>
