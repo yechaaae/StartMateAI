@@ -1,5 +1,14 @@
 import { cloneReport } from '../../shared/data/reports.js'
-import { withPinnedGyeongbukSocialProgram } from '../reports/supportProgramSearch.js'
+import {
+  PINNED_GYEONGBUK_ANNOUNCEMENT,
+  PINNED_GYEONGBUK_SOCIAL_PROGRAM_TITLE,
+  withPinnedGyeongbukSocialProgram,
+} from '../reports/supportProgramSearch.js'
+
+// 경북 사회적경제 창업학교 공고로 plan에 진입했는지 판별한다(고정 공고문 자동 주입용).
+const isPinnedGyeongbukProgram = (program) => (
+  program?.title === PINNED_GYEONGBUK_SOCIAL_PROGRAM_TITLE
+)
 
 const clone = (value) => JSON.parse(JSON.stringify(value))
 
@@ -61,6 +70,10 @@ export const buildFeatureSeed = (featureId, workspaceContext = {}) => {
     supportRegionBasis: workspaceContext.supportRegionBasis ?? 'BUSINESS_REGISTRATION',
     focusedSectionTitle: workspaceContext.focusedSection?.title ?? data.sections?.[0]?.[0] ?? null,
     planGoal: workspaceContext.planGoal ?? 'ALIGN_SUPPORT',
+    // 경북 사회적경제 창업학교 공고로 plan에 진입하면 고정 공고문을 기본값으로 채운다.
+    announcement: featureId === 'plan' && isPinnedGyeongbukProgram(workspaceContext.selectedSupportProgram)
+      ? PINNED_GYEONGBUK_ANNOUNCEMENT
+      : '',
   }
 }
 

@@ -151,7 +151,8 @@ export const FeaturePage = ({
   const [focusedSectionTitle, setFocusedSectionTitle] = useState(featureSeed.focusedSectionTitle)
   const [planGoal, setPlanGoal] = useState(featureSeed.planGoal)
   // 사업계획서 기능에서 사용자가 붙여넣는 공고문(있으면 그 내용에 맞춰 초안을 재생성한다).
-  const [announcement, setAnnouncement] = useState('')
+  // 경북 사회적경제 창업학교 공고로 진입하면 고정 공고문이 기본값으로 들어온다.
+  const [announcement, setAnnouncement] = useState(featureSeed.announcement ?? '')
   const {
     messages,
     pushImmediate,

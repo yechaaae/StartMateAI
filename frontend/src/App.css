@@ -5000,6 +5000,22 @@ summary {
   margin-top: 10px;
 }
 
+.plan-copy-btn {
+  margin-top: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brand, #2d6cdf);
+  background: transparent;
+  border: 1px solid var(--line, #e6e8ec);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.plan-copy-btn:hover {
+  background: var(--surface-2, #f7f8fa);
+}
+
 details p {
   color: var(--ink-2);
   line-height: 1.75;

@@ -88,6 +88,13 @@ export const PlanReport = ({
                 </button>
               </summary>
               <p>{body}</p>
+              <button
+                type="button"
+                className="plan-copy-btn"
+                onClick={() => navigator.clipboard?.writeText(body)}
+              >
+                답변 복사
+              </button>
             </details>
           )
         })}
