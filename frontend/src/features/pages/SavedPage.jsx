@@ -18,6 +18,12 @@ const formatDate = (value) => {
   return value.replace('T', ' ').slice(0, 16)
 }
 
+const formatWon = (value) => (
+  typeof value === 'number' && Number.isFinite(value)
+    ? `${value.toLocaleString('ko-KR')}원`
+    : '-'
+)
+
 const operationKpiLabel = (item) => Array.isArray(item) ? item[0] : item.label
 const operationKpiValue = (item) => {
   if (Array.isArray(item)) return item[1]
@@ -56,10 +62,10 @@ const renderPreview = (detail) => {
     return (
       <div className="saved-preview-stack">
         <section className="saved-preview-metrics">
-          <div><small>총매출</small><b>{summary.totalRevenue?.toLocaleString?.() ?? '-'}</b></div>
-          <div><small>총비용</small><b>{summary.totalCost?.toLocaleString?.() ?? '-'}</b></div>
-          <div><small>예상순이익</small><b>{summary.totalProfit?.toLocaleString?.() ?? '-'}</b></div>
-          <div><small>BEP</small><b>{summary.bepDay ? `${summary.bepDay}일` : '-'}</b></div>
+          <div><small>예상 매출</small><b>{formatWon(summary.totalRevenue)}</b></div>
+          <div><small>예상 비용</small><b>{formatWon(summary.totalCost)}</b></div>
+          <div><small>남는 돈</small><b>{formatWon(summary.totalProfit)}</b></div>
+          <div><small>손익분기 건수</small><b>{summary.breakEvenCount ? `${summary.breakEvenCount}건` : '-'}</b></div>
         </section>
       </div>
     )
