@@ -53,6 +53,43 @@ FEATURE_CTA_LABELS: dict[str, str] = {
     "SNS": "SNS 마케팅 리포트 보기",
 }
 
+SUPPORT_MATCH_STOP_TERMS = {
+    "사업",
+    "사업화",
+    "창업",
+    "예비창업",
+    "예비창업자",
+    "지원",
+    "지원사업",
+    "정부",
+    "정부지원",
+    "공고",
+    "모집",
+    "기업",
+    "대상",
+    "참가",
+    "선정",
+    "프로그램",
+    "자금",
+    "지역",
+    "기반",
+    "관련",
+    "조건",
+    "사용자",
+    "아이템",
+    "서비스",
+    "운영",
+    "검토",
+    "가능",
+    "필요",
+    "grant",
+    "mentoring",
+    "startup",
+    "business",
+    "program",
+    "support",
+}
+
 
 def feature_key_from_request(request: ChatRequest) -> str:
     context = request.context or {}
@@ -352,13 +389,18 @@ def _item_report(request: ChatRequest, results: dict[str, AgentResponse]) -> dic
         grounding=grounding,
         region=region,
     )
+    missing_evidence = list(grounding["missing_evidence"])
+    if not items:
+        missing_evidence.append("아이템 후보")
+    elif grounding["support_matches"] and not any(item.get("supportPrograms") for item in items):
+        missing_evidence.append("아이템-지원사업 직접 매칭")
 
     return {
         "location": region,
-        "analysis": _item_report_analysis(idea, finance, grounding),
+        "analysis": _item_report_analysis(idea, finance, grounding, items),
         "items": items,
         "dataSources": grounding["data_sources"],
-        "missingEvidence": grounding["missing_evidence"],
+        "missingEvidence": _unique_lines(missing_evidence),
     }
 
 
@@ -397,6 +439,8 @@ def _ground_item_recommendations(
     items = []
     for index, raw_item in enumerate(recommendations, start=1):
         item = _dict(raw_item)
+        if _is_template_candidate(item):
+            continue
         title = str(item.get("title") or "").strip()
         if not title:
             continue
@@ -464,6 +508,11 @@ def _grounded_item_score(
     }
 
 
+def _is_template_candidate(item: dict[str, Any]) -> bool:
+    generated_by = str(item.get("generated_by") or item.get("generatedBy") or "").strip().lower()
+    return generated_by in {"rule_fallback", "guardrail"}
+
+
 def _commercial_area_adjustment(item: dict[str, Any], commercial: dict[str, Any]) -> int:
     if not commercial.get("available"):
         return 0
@@ -502,8 +551,6 @@ def _support_program_adjustment(matches: list[dict[str, Any]]) -> int:
         return 7
     if top_score >= 70 and direct:
         return 5
-    if top_score >= 70:
-        return 2
     return 0
 
 
@@ -588,6 +635,7 @@ def _item_report_analysis(
     idea: dict[str, Any],
     finance: dict[str, Any],
     grounding: dict[str, Any],
+    items: list[dict[str, Any]],
 ) -> list[list[str]]:
     analysis = [
         ["프로필 적합도", f"{int(idea.get('score') or 0)}점"],
@@ -601,7 +649,11 @@ def _item_report_analysis(
         if isinstance(direct, (int, float)):
             analysis.append(["직접 경쟁점", f"{int(direct):,}개"])
 
-    support_matches = grounding["support_matches"]
+    support_matches = [
+        program
+        for item in items
+        for program in _list(item.get("supportPrograms"))
+    ]
     if support_matches:
         analysis.append(["지원사업 후보", f"{support_matches[0]['title']} ({support_matches[0]['score']}점)"])
     analysis.append(["주요 리스크", _first(_list(idea.get("risks")), "초기 고객 검증 필요")])
@@ -642,18 +694,33 @@ def _matched_support_programs(item: dict[str, Any], support_matches: list[dict[s
     scored = []
     for match in support_matches:
         match_terms = _item_terms(match)
-        overlap = sorted(item_terms & match_terms)
-        score = _safe_int(match.get("score"), 0) + min(10, len(overlap) * 3)
+        overlap = _meaningful_support_overlap(item_terms, match_terms)
         if not overlap:
-            score -= 12
+            continue
+        score = _safe_int(match.get("score"), 0) + min(10, len(overlap) * 3)
         scored.append({
             **match,
             "score": max(0, min(100, score)),
             "keywordOverlap": overlap,
-            "matchBasis": "키워드 일치" if overlap else "일반 창업 지원",
+            "matchBasis": "아이템 키워드 일치",
         })
     scored.sort(key=lambda value: value["score"], reverse=True)
     return scored[:2]
+
+
+def _meaningful_support_overlap(item_terms: set[str], match_terms: set[str]) -> list[str]:
+    return sorted(
+        term
+        for term in item_terms & match_terms
+        if _is_meaningful_support_term(term)
+    )
+
+
+def _is_meaningful_support_term(term: str) -> bool:
+    normalized = str(term or "").strip().lower()
+    if len(normalized) < 2:
+        return False
+    return normalized not in SUPPORT_MATCH_STOP_TERMS
 
 
 def _item_terms(item: dict[str, Any]) -> set[str]:
@@ -700,7 +767,15 @@ def _item_terms(item: dict[str, Any]) -> set[str]:
 
 
 def re_split_terms(text: str) -> list[str]:
-    return [token.strip() for token in text.replace(",", " ").replace("/", " ").replace("|", " ").split() if token.strip()]
+    separators = ",/|()[]{}<>·&+:-_\"'“”‘’\n\r\t"
+    normalized = str(text or "")
+    for separator in separators:
+        normalized = normalized.replace(separator, " ")
+    return [
+        token.strip(" .!?;，。！？")
+        for token in normalized.split()
+        if token.strip(" .!?;，。！？")
+    ]
 
 
 def _commercial_area_relevant(item: dict[str, Any]) -> bool:

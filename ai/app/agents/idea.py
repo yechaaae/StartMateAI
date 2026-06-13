@@ -16,16 +16,14 @@ class IdeaAgent(BaseAgent):
         budget = profile.budget_krw or 3_000_000
         candidate_limit = max(5, min(8, request.count + 3))
         raw_candidates, generation, warnings = await self._candidate_pool(profile, candidate_limit)
-        raw_candidates = self._merge_candidates(
-            raw_candidates,
-            self._guardrail_candidates(profile, budget),
-        )
         candidates = [self._score_candidate(profile, budget, candidate) for candidate in raw_candidates]
         candidates.sort(key=lambda item: item["match_score"], reverse=True)
 
         selected = self._select_diverse_candidates(candidates, request.count)
         if not selected:
             selected = candidates[: request.count]
+        if not selected:
+            return await self._empty_recommendation_response(profile, budget, generation, warnings)
         top = selected[0]
         missing_inputs = self._missing_inputs(profile)
         ranking_basis = [
@@ -120,19 +118,93 @@ class IdeaAgent(BaseAgent):
                     warnings,
                 )
             warnings.extend(llm_diagnostics.get("warnings", []) if llm_diagnostics else [])
-            warnings.append("idea_llm_generation_failed_fallback_used")
+            warnings.append("idea_llm_generation_failed_no_recommendations")
+        else:
+            warnings.append("idea_llm_disabled_no_recommendations")
 
-        fallback_candidates = self._fallback_candidates(profile, count)
         generation = {
-            "generated_by": "rule_fallback",
-            "fallback_used": True,
+            "generated_by": "none",
+            "fallback_used": False,
             "llm_enabled": self.llm.is_enabled,
             "requested_count": count,
-            "candidate_count": len(fallback_candidates),
+            "candidate_count": 0,
+            "rule_fallback_disabled": True,
         }
         if llm_diagnostics:
             generation["llm_diagnostics"] = llm_diagnostics
-        return (fallback_candidates, generation, warnings)
+        return ([], generation, warnings)
+
+    async def _empty_recommendation_response(
+        self,
+        profile: StartupProfile,
+        budget: int,
+        generation: dict[str, Any],
+        warnings: list[str],
+    ) -> AgentResponse:
+        missing_inputs = self._missing_inputs(profile)
+        data = self.agent_data(
+            position="아이템 후보를 생성할 수 없어 추천을 확정하지 않았습니다.",
+            evidence={
+                "generation": generation,
+                "ranking_basis": [],
+                "quality_checks": {
+                    "count": 0,
+                    "strategies": [],
+                    "within_budget": 0,
+                    "needs_trimmed_mvp": 0,
+                    "quality_flags": ["no_generated_candidates"],
+                },
+            },
+            score=0,
+            risks=[
+                "LLM 후보 생성 결과가 없어 템플릿 아이템을 추천처럼 노출하지 않았습니다.",
+                *warnings,
+            ],
+            assumptions=[
+                f"초기 예산은 {budget:,}원으로 확인했습니다.",
+                "근거 없는 rule fallback 후보는 저장 리포트와 화면 추천에 사용하지 않습니다.",
+            ],
+            missing_inputs=missing_inputs,
+            recommendation="지역, 예산, 관심 분야를 확인한 뒤 AI 생성 설정 또는 외부 LLM 응답을 점검하고 다시 추천을 요청하세요.",
+            payload={
+                "recommendations": [],
+                "all_candidates": [],
+                "generation": generation,
+                "ranking_basis": [],
+                "quality_checks": {
+                    "count": 0,
+                    "strategies": [],
+                    "within_budget": 0,
+                    "needs_trimmed_mvp": 0,
+                    "quality_flags": ["no_generated_candidates"],
+                },
+                "decision_rules": [
+                    "LLM 후보가 없으면 템플릿 후보를 추천처럼 만들지 않음",
+                    "후보 제목, 고객, 검증 방법이 실제 생성 결과에 있을 때만 추천",
+                    "상권/지원사업 근거는 리포트 단계에서 후보 점수 보정에만 사용",
+                ],
+            },
+        )
+        summary = await self.polish_summary(
+            task="startup idea recommendation unavailable",
+            data=data,
+            fallback=(
+                "아이템 후보를 만들 수 있는 LLM 결과가 없어 추천을 확정하지 않았습니다. "
+                "예전처럼 템플릿 후보를 목업처럼 보여주지 않고, 생성 설정과 입력 조건을 확인한 뒤 다시 요청해야 합니다."
+            ),
+        )
+        return AgentResponse(
+            intent="idea",
+            agent=self.name,
+            summary=summary,
+            data=data,
+            next_actions=[
+                "LLM/API 설정과 응답 로그 확인",
+                "지역, 예산, 관심 분야를 구체화한 뒤 다시 추천 요청",
+                "상권/지원사업 데이터가 붙는지 리포트 생성 로그 확인",
+            ],
+            warnings=data["risks"],
+        )
 
     async def _generate_candidates_with_llm(
         self,
@@ -178,39 +250,53 @@ class IdeaAgent(BaseAgent):
             f"candidate_count: {count}\n"
             f"profile: {json.dumps(profile.model_dump(), ensure_ascii=False)}"
         )
-        try:
-            raw = await self.llm.complete(
-                system_prompt="You are a strict JSON startup idea generation engine.",
-                user_prompt=prompt,
-                temperature=0.45,
-                fallback="{}",
-            )
-            diagnostics["raw_preview"] = self._debug_preview(raw)
-            parsed = self._parse_json_object(raw)
-            diagnostics["parsed_type"] = type(parsed).__name__
-            ideas = parsed.get("ideas") if isinstance(parsed, dict) else None
-            if not isinstance(ideas, list):
-                diagnostics["failure_reason"] = "missing_or_invalid_ideas_array"
-                diagnostics["parsed_keys"] = sorted(parsed) if isinstance(parsed, dict) else []
-                diagnostics["warnings"].append("idea_llm_generation_missing_ideas_array")
-                return [], diagnostics
+        last_error: Exception | None = None
+        for attempt in range(1, 3):
+            diagnostics["attempt"] = attempt
+            try:
+                raw = await self.llm.complete(
+                    system_prompt="You are a strict JSON startup idea generation engine.",
+                    user_prompt=prompt,
+                    temperature=0.45,
+                    fallback="{}",
+                )
+                diagnostics["raw_preview"] = self._debug_preview(raw)
+                parsed = self._parse_json_object(raw)
+                diagnostics["parsed_type"] = type(parsed).__name__
+                ideas = parsed.get("ideas") if isinstance(parsed, dict) else None
+                if not isinstance(ideas, list):
+                    diagnostics["failure_reason"] = "missing_or_invalid_ideas_array"
+                    diagnostics["parsed_keys"] = sorted(parsed) if isinstance(parsed, dict) else []
+                    if attempt == 1:
+                        continue
+                    diagnostics["warnings"].append("idea_llm_generation_missing_ideas_array")
+                    return [], diagnostics
 
-            prompt_guardrails = self._idea_prompt_guardrails()
-            if prompt_guardrails and isinstance(parsed, dict):
-                diagnostics["guardrails"] = prompt_guardrails
-            candidates = self._sanitize_candidates(ideas, profile, source="llm")[:count]
-            diagnostics["parsed_idea_count"] = len(ideas)
-            diagnostics["sanitized_candidate_count"] = len(candidates)
-            if not candidates:
+                prompt_guardrails = self._idea_prompt_guardrails()
+                if prompt_guardrails and isinstance(parsed, dict):
+                    diagnostics["guardrails"] = prompt_guardrails
+                candidates = self._sanitize_candidates(ideas, profile, source="llm")[:count]
+                diagnostics["parsed_idea_count"] = len(ideas)
+                diagnostics["sanitized_candidate_count"] = len(candidates)
+                if candidates:
+                    diagnostics["attempts"] = attempt
+                    return candidates, diagnostics
                 diagnostics["failure_reason"] = "no_valid_candidates_after_sanitize"
+                if attempt == 1:
+                    continue
                 diagnostics["warnings"].append("idea_llm_generation_no_valid_candidates")
-            return candidates, diagnostics
-        except Exception as error:
-            diagnostics["failure_reason"] = "exception"
-            diagnostics["error_type"] = error.__class__.__name__
-            diagnostics["error_message"] = self._debug_preview(str(error), limit=1000)
-            diagnostics["warnings"].append(f"idea_llm_generation_error:{error.__class__.__name__}")
-            return [], diagnostics
+                return [], diagnostics
+            except Exception as error:
+                last_error = error
+                if attempt == 1:
+                    continue
+
+        diagnostics["failure_reason"] = "exception"
+        diagnostics["attempts"] = 2
+        diagnostics["error_type"] = last_error.__class__.__name__ if last_error else "UnknownError"
+        diagnostics["error_message"] = self._debug_preview(str(last_error or ""), limit=1000)
+        diagnostics["warnings"].append(f"idea_llm_generation_error:{diagnostics['error_type']}")
+        return [], diagnostics
 
     def _idea_prompt_guardrails(self) -> list[str]:
         return [
@@ -278,18 +364,6 @@ class IdeaAgent(BaseAgent):
                 candidate["keywords"] = self._keywords_from_candidate(candidate)
             candidates.append(candidate)
         return candidates
-
-    def _merge_candidates(self, primary: list[dict[str, Any]], fallback: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        merged: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        for item in [*primary, *fallback]:
-            title = str(item.get("title") or "").strip()
-            key = re.sub(r"\s+", " ", title.lower())
-            if not title or key in seen:
-                continue
-            seen.add(key)
-            merged.append(item)
-        return merged
 
     def _select_diverse_candidates(self, candidates: list[dict[str, Any]], count: int) -> list[dict[str, Any]]:
         selected: list[dict[str, Any]] = []

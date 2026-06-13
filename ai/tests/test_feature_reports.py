@@ -232,6 +232,83 @@ class FeatureReportsTest(unittest.TestCase):
         self.assertEqual(report_data["items"], [])
         self.assertIn("상권 데이터", report_data["missingEvidence"])
         self.assertIn("지원사업 추천", report_data["missingEvidence"])
+        self.assertIn("아이템 후보", report_data["missingEvidence"])
+
+    def test_item_report_filters_template_fallback_candidates(self):
+        request = ChatRequest(
+            message="아이템 추천 리포트를 만들어줘",
+            profile=StartupProfile(region="포항", interests=["카페"], budget_krw=5_000_000),
+            context={"featureContext": {"featureKey": "ITEM"}},
+        )
+        response = _response("selective_collaboration", {})
+        results = {
+            "idea": _response("idea", {
+                "recommendations": [
+                    {
+                        "title": "포항 한식 소량 예약 판매",
+                        "business_type": "food",
+                        "match_score": 77,
+                        "reason": "rule fallback template",
+                        "generated_by": "rule_fallback",
+                    }
+                ],
+            }),
+            "finance": _response("finance", {}),
+            "policy": _response("policy", {"matches": []}),
+            "commercial_area": _response("commercial_area", {
+                "payload": {"reference_data_used": False, "commercial_area": None},
+            }),
+        }
+
+        result = build_feature_result(request=request, response=response, results=results)
+        report_data = result["payload"]["reportData"]
+
+        self.assertEqual(report_data["items"], [])
+        self.assertIn("아이템 후보", report_data["missingEvidence"])
+
+    def test_item_report_does_not_use_generic_support_program_overlap_as_evidence(self):
+        request = ChatRequest(
+            message="아이템 추천 리포트를 만들어줘",
+            profile=StartupProfile(region="포항", interests=["러닝", "굿즈"], budget_krw=5_000_000),
+            context={"featureContext": {"featureKey": "ITEM"}},
+        )
+        response = _response("selective_collaboration", {})
+        results = {
+            "idea": _response("idea", {
+                "recommendations": [
+                    {
+                        "title": "포항 로컬 러닝 굿즈 예약판매",
+                        "business_type": "commerce",
+                        "match_score": 85,
+                        "reason": "러닝 커뮤니티를 대상으로 예약판매를 검증합니다.",
+                        "keywords": ["러닝", "굿즈", "예약판매"],
+                        "generated_by": "llm",
+                    }
+                ],
+            }),
+            "finance": _response("finance", {}),
+            "policy": _response("policy", {
+                "matches": [
+                    {
+                        "title": "항공우주기술 기반 예비창업자 지원사업",
+                        "eligibility_score": 100,
+                        "summary": "항공우주 딥테크 기업의 기술 사업화를 지원합니다.",
+                        "support_type": "grant",
+                        "why_matched": ["예비창업자 지원사업입니다.", "초기 창업 지원이 가능합니다."],
+                    }
+                ],
+            }),
+            "commercial_area": _response("commercial_area", {
+                "payload": {"reference_data_used": False, "commercial_area": None},
+            }),
+        }
+
+        result = build_feature_result(request=request, response=response, results=results)
+        item = result["payload"]["reportData"]["items"][0]
+
+        self.assertEqual(item["supportPrograms"], [])
+        self.assertEqual(item["scoreBreakdown"]["support_program_adjustment"], 0)
+        self.assertIn("아이템-지원사업 직접 매칭", result["payload"]["reportData"]["missingEvidence"])
 
 
 if __name__ == "__main__":
