@@ -52,6 +52,25 @@ LOGGER = logging.getLogger(__name__)
 PROGRESS_MIN_GAP_SECONDS = float(os.getenv("AGENT_PROGRESS_MIN_GAP_SECONDS", "0.5"))
 AGENT_MIN_THINK_SECONDS = float(os.getenv("AGENT_MIN_THINK_SECONDS", "0.9"))
 
+# 근거(evidence) dict 키를 사용자용 한국어 라벨로 매핑한다. 여기 없는 내부 영어 키는 노출하지 않는다.
+EVIDENCE_KEY_LABELS = {
+    "target": "목적",
+    "idea_name": "아이템",
+    "item_name": "아이템",
+    "product_name": "상품",
+    "focused_section": "중점 섹션",
+    "ranking_basis": "순위 기준",
+    "region": "지역",
+    "budget_krw": "예산",
+    "industry": "업종",
+    "channel": "채널",
+    "objective": "목표",
+    "target_customer": "타깃 고객",
+    "competition_level": "경쟁 강도",
+    "organization": "주관기관",
+    "support_type": "지원 유형",
+}
+
 # 기능 페이지별 결과물 설명 (기능 의도 게이트 LLM 판단용)
 FEATURE_GATE_PURPOSE = {
     "ITEM": "창업 아이템 추천 리포트",
@@ -535,7 +554,10 @@ class OrchestratorAgent:
             for key, value in evidence.items():
                 if value in (None, "", [], {}):
                     continue
-                label = str(key).replace("_", " ")
+                # 내부 영어 키는 그대로 노출하지 않는다. 한국어 라벨이 있는 키만 보여준다.
+                label = EVIDENCE_KEY_LABELS.get(str(key))
+                if not label:
+                    continue
                 if isinstance(value, (int, float)):
                     lines.append(f"{label}: {value:,}")
                 elif isinstance(value, str):
@@ -1123,6 +1145,8 @@ class OrchestratorAgent:
             "- 사용자가 이미 선택/언급한 결과(아이템 등)가 있으면 그것을 전제로 답합니다. 새 항목을 재추천하지 마세요.\n"
             "- 질문이 실행 방법/가격/메뉴/일정처럼 구체적이면 그에 맞춰 구체적으로 답합니다.\n"
             "- Agent 분석의 수치·근거를 활용하되, 단순 나열이 아니라 하나의 답변으로 합성합니다.\n"
+            "- 내부 영어 필드명(missing_inputs, assumptions, evidence, ranking_basis 등)을 그대로 쓰지 말고, "
+            "그 값을 일반 사용자가 이해할 한국어로 풀어 쓰세요.\n"
             "- 불확실하면 가정과 다음에 확인할 점을 덧붙입니다.\n\n"
             f"[사용자 마지막 질문]\n{request.message}\n\n"
             f"[최근 대화]\n{transcript or '없음'}\n\n"
