@@ -40,6 +40,7 @@ import { ItemInputForm } from '../../reports/ItemInputForm'
 import { buildOperationFeedbackPayload } from '../../reports/operationFeedbackLogic'
 import { buildFeatureSavedReport } from '../../reports/savedReportPayload'
 import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from '../featureChatContext'
+import { applicationFormForContext } from '../../reports/applicationFormSchemas'
 import { buildFeaturePageTheme } from './featurePageTheme'
 import { ItemGeneratingState } from './ItemGeneratingState'
 import './FeaturePage.css'
@@ -569,6 +570,10 @@ export const FeaturePage = ({
     ],
   )
   const resolvedIdeaId = workspaceContext?.selectedIdea?.rank ?? selectedIdeaRank ?? null
+  // plan 기능에서 연결된 공고가 신청서 양식을 가지면, 리포트 UI가 그 신청서 폼으로 바뀐다.
+  const applicationForm = id === 'plan'
+    ? applicationFormForContext({ program: workspaceContext?.selectedSupportProgram, announcement })
+    : null
 
   const sendFeatureMessage = async (text, { hidden = false, currentResultOverride = null } = {}) => {
     if (!room?.roomId) {
@@ -1011,6 +1016,7 @@ export const FeaturePage = ({
             onRequestOperationFeedback={handleOperationFeedbackRequest}
             operationFeedbackSaving={savingReport}
             onCampaignControlChange={handleCampaignControlChange}
+            applicationForm={applicationForm}
           />
         ) : id === 'item' && aiReportStatus === 'loading' ? (
           <ItemGeneratingState agentId={feature.agent} />

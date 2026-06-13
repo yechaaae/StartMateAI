@@ -5016,6 +5016,90 @@ summary {
   background: var(--surface-2, #f7f8fa);
 }
 
+/* 공고에 맞춰 변신하는 신청서 폼 */
+.plan-appform-head h3 {
+  margin: 0 0 4px;
+}
+
+.plan-appform-head p {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+
+.plan-appform-field {
+  margin: 14px 0;
+}
+
+.plan-appform-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.plan-appform-req {
+  color: #e5484d;
+}
+
+.plan-appform-ai {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--brand, #2d6cdf);
+  background: rgba(45, 108, 223, 0.1);
+  border-radius: 999px;
+}
+
+.plan-appform-input,
+.plan-appform-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, #e6e8ec);
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+.plan-appform-textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.plan-appform-input:focus,
+.plan-appform-textarea:focus {
+  outline: none;
+  border-color: var(--brand, #2d6cdf);
+}
+
+.plan-appform-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.plan-appform-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.plan-appform-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 details p {
   color: var(--ink-2);
   line-height: 1.75;
