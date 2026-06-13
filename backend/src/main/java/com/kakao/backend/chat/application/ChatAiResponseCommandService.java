@@ -16,12 +16,16 @@ import com.kakao.backend.workspace.application.SavedResultService;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Transactional
 public class ChatAiResponseCommandService {
+
+    private static final Logger log = LoggerFactory.getLogger(ChatAiResponseCommandService.class);
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -53,6 +57,16 @@ public class ChatAiResponseCommandService {
     }
 
     public ChatMessage handle(AiChatResponseMessage response) {
+        if (!chatRequestStatusService.exists(response.requestId())) {
+            log.warn(
+                    "Ignoring AI response without chat request status. requestId={}, roomId={}, messageType={}",
+                    response.requestId(),
+                    response.roomId(),
+                    response.messageType()
+            );
+            return null;
+        }
+
         if ("FAILED".equalsIgnoreCase(response.status())) {
             chatRequestStatusService.markFailed(response.requestId(), responsePayloadReader.extractErrorMessage(response));
             return null;

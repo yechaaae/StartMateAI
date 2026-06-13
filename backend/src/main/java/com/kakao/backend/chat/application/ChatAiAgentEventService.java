@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,29 +34,42 @@ public class ChatAiAgentEventService {
             "revision",
             "consensus"
     );
+    private static final Logger log = LoggerFactory.getLogger(ChatAiAgentEventService.class);
 
     private final ChatSseService chatSseService;
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final AgentRepository agentRepository;
     private final ObjectMapper objectMapper;
+    private final ChatRequestStatusService chatRequestStatusService;
 
     public ChatAiAgentEventService(
             ChatSseService chatSseService,
             ChatRoomRepository chatRoomRepository,
             ChatMessageRepository chatMessageRepository,
             AgentRepository agentRepository,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ChatRequestStatusService chatRequestStatusService
     ) {
         this.chatSseService = chatSseService;
         this.chatRoomRepository = chatRoomRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.agentRepository = agentRepository;
         this.objectMapper = objectMapper;
+        this.chatRequestStatusService = chatRequestStatusService;
     }
 
     public void handle(AiChatResponseMessage response) {
         if (response == null || response.roomId() == null) {
+            return;
+        }
+        if (!chatRequestStatusService.exists(response.requestId())) {
+            log.warn(
+                    "Ignoring AI agent event without chat request status. requestId={}, roomId={}, eventType={}",
+                    response.requestId(),
+                    response.roomId(),
+                    textAt(response.payload(), "eventType")
+            );
             return;
         }
 
