@@ -117,6 +117,7 @@ const ResultBox = ({
   onSelectSupport,
   savedIdSet,
   onToggleSave,
+  onWritePlanFromProgram,
   emptyTitle = '해당하는 결과가 없어요',
   emptyDescription = '조건을 바꿔 다시 추천을 받아보세요.',
   go,
@@ -145,7 +146,11 @@ const ResultBox = ({
             actionLabel="이 공고로 사업계획서 작성"
             onAction={() => {
               onSelectSupport?.(program.title)
-              go('plan')
+              if (onWritePlanFromProgram) {
+                onWritePlanFromProgram(program)
+              } else {
+                go('plan')
+              }
             }}
             onToggleSave={onToggleSave}
           />
@@ -174,6 +179,7 @@ export const SupportReport = ({
   savedSupportPrograms = [],
   supportViewMode = 'all',
   onChangeSupportViewMode,
+  onWritePlanFromProgram,
 }) => {
   // 조건 선택 화면 ↔ 추천 결과 화면 (시뮬레이션처럼 페이지가 바뀐다)
   const [view, setView] = useState(supportHasSearched ? 'results' : 'condition')
@@ -329,6 +335,7 @@ export const SupportReport = ({
                 onSelectSupport={onSelectSupport}
                 savedIdSet={savedIdSet}
                 onToggleSave={handleToggleSave}
+                onWritePlanFromProgram={onWritePlanFromProgram}
                 emptyTitle={isSavedView ? '저장한 지원사업이 아직 없어요' : undefined}
                 emptyDescription={isSavedView ? "추천 카드의 '저장'을 눌러 담아보세요." : undefined}
                 go={go}
@@ -341,6 +348,7 @@ export const SupportReport = ({
                 onSelectSupport={onSelectSupport}
                 savedIdSet={savedIdSet}
                 onToggleSave={handleToggleSave}
+                onWritePlanFromProgram={onWritePlanFromProgram}
                 emptyTitle={isSavedView ? '저장한 지원 프로그램이 아직 없어요' : undefined}
                 emptyDescription={isSavedView ? "추천 카드의 '저장'을 눌러 담아보세요." : undefined}
                 go={go}

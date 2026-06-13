@@ -17,6 +17,7 @@ export const Report = ({
   onSelectIdea,
   selectedSupportTitle,
   onSelectSupport,
+  onWritePlanFromProgram,
   selectedOperationSuggestionTitle,
   onSelectOperationSuggestion,
   supportSearchMode,
@@ -37,6 +38,11 @@ export const Report = ({
   onFocusSection,
   planGoal,
   onChangePlanGoal,
+  announcement,
+  onSubmitAnnouncement,
+  announcementLoading,
+  applicationForm,
+  formDefaults,
   onRequestOperationFeedback,
   operationFeedbackSaving,
   onCampaignControlChange,
@@ -62,6 +68,7 @@ export const Report = ({
         go={go}
         selectedSupportTitle={selectedSupportTitle}
         onSelectSupport={onSelectSupport}
+        onWritePlanFromProgram={onWritePlanFromProgram}
         supportSearchMode={supportSearchMode}
         onChangeSupportSearchMode={onChangeSupportSearchMode}
         supportUserGoal={supportUserGoal}
@@ -87,6 +94,11 @@ export const Report = ({
         onFocusSection={onFocusSection}
         planGoal={planGoal}
         onChangePlanGoal={onChangePlanGoal}
+        announcement={announcement}
+        onSubmitAnnouncement={onSubmitAnnouncement}
+        announcementLoading={announcementLoading}
+        applicationForm={applicationForm}
+        formDefaults={formDefaults}
       />
     )
   }

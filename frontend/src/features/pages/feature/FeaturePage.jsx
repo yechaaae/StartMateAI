@@ -40,8 +40,10 @@ import { ItemInputForm } from '../../reports/ItemInputForm'
 import { buildOperationFeedbackPayload } from '../../reports/operationFeedbackLogic'
 import { buildFeatureSavedReport } from '../../reports/savedReportPayload'
 import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from '../featureChatContext'
+import { applicationFormForContext } from '../../reports/applicationFormSchemas'
 import { buildFeaturePageTheme } from './featurePageTheme'
 import { ItemGeneratingState } from './ItemGeneratingState'
+import { PlanWritingState } from './PlanWritingState'
 import './FeaturePage.css'
 
 const FEATURE_TARGETS = {
@@ -106,6 +108,26 @@ const reportDataFromMessage = (message, featureId) => {
   return payload.reportData
 }
 
+// 사업계획서는 생성 시 자동 저장되는 결과 대신, 사용자가 '리포트 저장'을 누른 결과만
+// '저장한 결과'에 보여준다. 명시적으로 저장한 id를 로컬에 기록해 목록을 필터링한다.
+const explicitSavedKey = (featureId) => `sm_saved_${featureId}_ids`
+const readExplicitSavedIds = (featureId) => {
+  try {
+    return new Set((JSON.parse(localStorage.getItem(explicitSavedKey(featureId)) || '[]')).map(String))
+  } catch {
+    return new Set()
+  }
+}
+const addExplicitSavedId = (featureId, savedId) => {
+  try {
+    const ids = readExplicitSavedIds(featureId)
+    ids.add(String(savedId))
+    localStorage.setItem(explicitSavedKey(featureId), JSON.stringify([...ids]))
+  } catch {
+    /* 로컬 저장 실패는 무시 */
+  }
+}
+
 export const FeaturePage = ({
   id,
   go,
@@ -152,6 +174,11 @@ export const FeaturePage = ({
   const [supportViewMode, setSupportViewMode] = useState('all')
   const [focusedSectionTitle, setFocusedSectionTitle] = useState(featureSeed.focusedSectionTitle)
   const [planGoal, setPlanGoal] = useState(featureSeed.planGoal)
+  // 사업계획서 기능에서 사용자가 붙여넣는 공고문(있으면 그 내용에 맞춰 초안을 재생성한다).
+  // 경북 사회적경제 창업학교 공고로 진입하면 고정 공고문이 기본값으로 들어온다.
+  const [announcement, setAnnouncement] = useState(featureSeed.announcement ?? '')
+  // 공고로 신청서를 '작성하는 척' 보여주는 로딩(약 10초).
+  const [planWriting, setPlanWriting] = useState(false)
   const {
     messages,
     pushImmediate,
@@ -181,6 +208,7 @@ export const FeaturePage = ({
   const hiddenRequestIdsRef = useRef(new Set())
   const autoGenerationKeysRef = useRef(new Set())
   const savedMenuRef = useRef(null)
+  const planWritingStartedRef = useRef(false)
 
   const applyReportData = useCallback((reportData) => {
     setData(reportData)
@@ -208,9 +236,14 @@ export const FeaturePage = ({
   const refreshSavedReports = useCallback(async () => {
     try {
       const response = await savedResultApi.list()
-      const items = (response?.results ?? []).filter(
+      let items = (response?.results ?? []).filter(
         (item) => String(item.sourceFeature ?? '').toLowerCase() === id,
       )
+      // plan은 사용자가 명시적으로 저장한 결과만 노출(자동 저장분 제외).
+      if (id === 'plan') {
+        const explicit = readExplicitSavedIds(id)
+        items = items.filter((item) => explicit.has(String(item.id)))
+      }
       setSavedReports(items)
     } catch {
       /* 저장 목록 조회 실패는 무시 */
@@ -548,10 +581,12 @@ export const FeaturePage = ({
       supportRegionBasis,
       focusedSectionTitle,
       planGoal,
+      announcement,
       workspaceContext,
       startupProfile,
     }),
     [
+      announcement,
       data,
       focusedSectionTitle,
       id,
@@ -567,6 +602,40 @@ export const FeaturePage = ({
     ],
   )
   const resolvedIdeaId = workspaceContext?.selectedIdea?.rank ?? selectedIdeaRank ?? null
+  // plan 기능에서 연결된 공고가 신청서 양식을 가지면, 리포트 UI가 그 신청서 폼으로 바뀐다.
+  const applicationForm = id === 'plan'
+    ? applicationFormForContext({ program: workspaceContext?.selectedSupportProgram, announcement })
+    : null
+  // 신청 항목(창업여부·창업 아이템·지원동기)의 프로필 기반 기본값. LLM이 꺼져 있어도 비지 않게 채운다.
+  // (LLM이 켜져 있으면 AI 생성 답변이 이 값을 덮어쓴다.)
+  const planFormDefaults = useMemo(() => {
+    if (!applicationForm) return null
+    // 현재 워크스페이스(=선택한 아이템)를 최우선으로 반영한다. featureWorkspace는 비어 있을 수 있다.
+    const idea = workspace?.selectedIdea ?? workspaceContext?.selectedIdea ?? null
+    const ideaTitle = idea?.title || workspace?.name || startupProfile?.currentItemName || '준비 중인 창업 아이템'
+    const isExisting = Boolean(startupProfile?.currentItemName && startupProfile.currentItemName.trim())
+    return {
+      startupStatus: isExisting ? '기 창업자' : '예비창업자',
+      // 창업 아이템 칸에는 워크스페이스 제목만 넣는다.
+      item: ideaTitle,
+      motivation:
+        `${ideaTitle} 창업을 준비하며 사회적경제에 대한 기초·실무 역량과 사업화 자금이 필요합니다. `
+        + '경북형 사회적경제 창업학교의 실무 교육(20시간), 우수팀 사업화 자금(최대 5천만원), '
+        + '사회적경제기업 전환 컨설팅과 네트워킹을 통해 아이템을 체계적으로 다듬고, '
+        + '지역 기반의 사회적 가치를 지속가능하게 실현하고자 지원합니다.',
+    }
+  }, [applicationForm, workspace, workspaceContext, startupProfile])
+
+  // 공고로 plan에 진입하면(신청서 폼 모드) 약 10초간 '작성 중' 로딩을 보여준 뒤 결과를 노출한다.
+  useEffect(() => {
+    if (id !== 'plan' || !applicationForm || planWritingStartedRef.current) {
+      return undefined
+    }
+    planWritingStartedRef.current = true
+    setPlanWriting(true)
+    const timer = window.setTimeout(() => setPlanWriting(false), 10000)
+    return () => window.clearTimeout(timer)
+  }, [id, applicationForm])
 
   const sendFeatureMessage = async (text, { hidden = false, currentResultOverride = null } = {}) => {
     if (!room?.roomId) {
@@ -595,8 +664,8 @@ export const FeaturePage = ({
         currentResultId: null,
         selectedIdeaId: resolvedIdeaId,
         candidateAgents: [],
-        // 칩 변경처럼 방금 바뀐 입력으로 즉시 재생성할 때는 최신 data로 만든 결과를 직접 넘긴다
-        // (memo된 currentResult는 setData 직후 한 렌더 동안 이전 값이라 stale).
+        // 칩/공고처럼 방금 바뀐 입력으로 즉시 재생성할 때는 최신 값으로 만든 결과를 직접 넘긴다
+        // (memo된 currentResult는 setState 직후 한 렌더 동안 이전 값이라 stale).
         currentResult: currentResultOverride ?? currentResult,
       })
 
@@ -689,7 +758,7 @@ export const FeaturePage = ({
     try {
       setSavingReport(true)
       setError('')
-      await savedResultApi.save(buildFeatureSavedReport({
+      const saved = await savedResultApi.save(buildFeatureSavedReport({
         featureId: id,
         data,
         currentResult,
@@ -701,6 +770,10 @@ export const FeaturePage = ({
         focusedSectionTitle,
         planGoal,
       }))
+      // plan: 명시적으로 저장한 결과만 목록에 남기기 위해 저장된 id를 기록한다.
+      if (id === 'plan' && saved?.id != null) {
+        addExplicitSavedId(id, saved.id)
+      }
       await refreshSavedReports()
       setSavedMenuOpen(true) // 저장한 결과를 우측 상단 드롭다운에서 바로 확인.
     } catch (nextError) {
@@ -800,6 +873,47 @@ export const FeaturePage = ({
       .catch(() => setAiReportStatus('error'))
   }
 
+  // 지원사업 카드의 '이 공고로 사업계획서 작성': 선택 공고를 부모 워크스페이스에 즉시 커밋한 뒤 plan으로 이동.
+  // (support 페이지는 곧 언마운트돼 effect 기반 패치가 실행되지 않으므로, 부모 상태를 직접 갱신해야 plan이 그 공고를 받는다.)
+  const handleWritePlanFromProgram = (program) => {
+    const patch = {}
+    if (program) patch.selectedSupportProgram = program
+    // 현재 워크스페이스의 아이템을 함께 넘겨 plan이 그 아이템 기준으로 작성하게 한다.
+    if (workspace?.selectedIdea) patch.selectedIdea = workspace.selectedIdea
+    if (Object.keys(patch).length) {
+      onWorkspaceContextChange?.(patch)
+    }
+    go('plan')
+  }
+
+  // 사업계획서: 붙여넣은 공고문에 맞춰 초안을 재생성한다.
+  // setState 직후의 stale memo를 피하려고, 입력값으로 만든 currentResult를 직접 넘긴다.
+  const handleSubmitAnnouncement = (text) => {
+    if (!room?.roomId || aiReportStatus === 'loading') {
+      return
+    }
+    const trimmed = (text ?? '').trim()
+    setAnnouncement(trimmed)
+    const override = buildCurrentResult({
+      featureId: id,
+      data,
+      selectedIdeaRank,
+      selectedSupportTitle,
+      selectedOperationSuggestionTitle,
+      supportSearchMode,
+      supportUserGoal,
+      supportRegionBasis,
+      focusedSectionTitle,
+      planGoal,
+      announcement: trimmed,
+      workspaceContext,
+      startupProfile,
+    })
+    setAiReportStatus('loading')
+    sendFeatureMessage(GENERATE_REPORT_PROMPT, { hidden: true, currentResultOverride: override })
+      .catch(() => setAiReportStatus('error'))
+  }
+
   // SNS 홍보 자동화: 톤/목적 칩을 바꾸면 그 값을 에이전트에 넘겨 멘트를 다시 생성한다.
   const handleCampaignControlChange = (patch) => {
     if (!room?.roomId || aiReportStatus === 'loading') {
@@ -841,25 +955,7 @@ export const FeaturePage = ({
             <p>{feature.sub}</p>
           </div>
           <div className="report-title-actions">
-            {id === 'plan' ? (
-              <div className="plan-header-meta">
-                <div>
-                  <small>보조할 사업</small>
-                  <b>{data?.target || '선택한 사업'}</b>
-                </div>
-                <div>
-                  <small>작성 전략</small>
-                  <b>
-                    {{
-                      ALIGN_SUPPORT: '공고 요건에 맞춰 보완',
-                      STRENGTHEN_SECTION: '핵심 문단 강화',
-                      REWRITE_TONE: '문체 다듬기',
-                      CHECK_GAPS: '빠진 항목 점검',
-                    }[planGoal] || '공고 요건에 맞춰 보완'}
-                  </b>
-                </div>
-              </div>
-            ) : id === 'sns' ? null : (
+            {id === 'sns' ? null : (
               <>
                 <div className="sim-saved-menu" ref={savedMenuRef}>
                   <button
@@ -893,12 +989,8 @@ export const FeaturePage = ({
                             }}
                           >
                             <b>{item.title}</b>
-                            {(item.createdAt || item.savedAt || item.summary || item.region) && (
-                              <small>
-                                {item.createdAt || item.savedAt ? (item.createdAt ?? item.savedAt).slice(0, 10) : ''}
-                                {item.region ? ` · ${item.region}` : ''}
-                                {item.summary ? ` · ${item.summary}` : ''}
-                              </small>
+                            {(item.createdAt || item.savedAt) && (
+                              <small>{(item.createdAt ?? item.savedAt).slice(0, 10)}</small>
                             )}
                           </button>
                         ))
@@ -907,7 +999,7 @@ export const FeaturePage = ({
                   )}
                 </div>
                 {/* 운영 피드백은 폼 내부 저장 버튼을 쓰고, 아이템은 추천 화면일 때만 생성/저장 버튼을 보여준다. */}
-                {id !== 'support' && id !== 'operation' && !(id === 'item' && itemFlowStep !== 'recommend') && (
+                {id !== 'support' && id !== 'operation' && id !== 'plan' && !(id === 'item' && itemFlowStep !== 'recommend') && (
                   <>
                     <button
                       type="button"
@@ -924,7 +1016,7 @@ export const FeaturePage = ({
                             : 'AI 리포트 갱신'}
                       </span>
                     </button>
-                    {aiReportStatus === 'ready' && (
+                    {aiReportStatus === 'ready' && id !== 'plan' && (
                       <button
                         type="button"
                         className="secondary-chip"
@@ -957,7 +1049,10 @@ export const FeaturePage = ({
             onSubmit={handleItemInputSubmit}
             onBack={() => setItemFlowStep('choice')}
           />
+        ) : id === 'plan' && planWriting ? (
+          <PlanWritingState agentId={feature.agent} durationMs={10000} />
         ) : aiReportStatus === 'ready' ? (
+          <>
           <Report
             id={id}
             data={data}
@@ -970,6 +1065,7 @@ export const FeaturePage = ({
             onSelectIdea={setSelectedIdeaRank}
             selectedSupportTitle={selectedSupportTitle}
             onSelectSupport={setSelectedSupportTitle}
+            onWritePlanFromProgram={handleWritePlanFromProgram}
             selectedOperationSuggestionTitle={selectedOperationSuggestionTitle}
             onSelectOperationSuggestion={setSelectedOperationSuggestionTitle}
             supportSearchMode={supportSearchMode}
@@ -990,10 +1086,29 @@ export const FeaturePage = ({
             onFocusSection={setFocusedSectionTitle}
             planGoal={planGoal}
             onChangePlanGoal={setPlanGoal}
+            announcement={announcement}
+            onSubmitAnnouncement={handleSubmitAnnouncement}
+            announcementLoading={aiReportStatus === 'loading'}
             onRequestOperationFeedback={handleOperationFeedbackRequest}
             operationFeedbackSaving={savingReport}
             onCampaignControlChange={handleCampaignControlChange}
+            applicationForm={applicationForm}
+            formDefaults={planFormDefaults}
           />
+          {id === 'plan' && (
+            <div className="plan-save-bar">
+              <button
+                type="button"
+                className="om-primary"
+                onClick={handleSaveReport}
+                disabled={savingReport}
+              >
+                <Icon name="bookmark" size={15} />
+                <span>{savingReport ? '저장 중…' : '리포트 저장'}</span>
+              </button>
+            </div>
+          )}
+          </>
         ) : id === 'item' && aiReportStatus === 'loading' ? (
           <ItemGeneratingState agentId={feature.agent} />
         ) : (
