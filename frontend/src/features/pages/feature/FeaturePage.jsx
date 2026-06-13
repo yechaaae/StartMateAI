@@ -578,9 +578,10 @@ export const FeaturePage = ({
   // (LLM이 켜져 있으면 AI 생성 답변이 이 값을 덮어쓴다.)
   const planFormDefaults = useMemo(() => {
     if (!applicationForm) return null
-    const idea = workspaceContext?.selectedIdea ?? null
-    const ideaTitle = idea?.title || startupProfile?.currentItemName || '준비 중인 창업 아이템'
-    const ideaReason = idea?.reason || ''
+    // 현재 워크스페이스(=선택한 아이템)를 최우선으로 반영한다. featureWorkspace는 비어 있을 수 있다.
+    const idea = workspace?.selectedIdea ?? workspaceContext?.selectedIdea ?? null
+    const ideaTitle = idea?.title || workspace?.name || startupProfile?.currentItemName || '준비 중인 창업 아이템'
+    const ideaReason = idea?.reason || workspace?.recommend || ''
     const isExisting = Boolean(startupProfile?.currentItemName && startupProfile.currentItemName.trim())
     return {
       startupStatus: isExisting ? '기 창업자' : '예비창업자',
@@ -593,7 +594,7 @@ export const FeaturePage = ({
         + '사회적경제기업 전환 컨설팅과 네트워킹을 통해 아이템을 체계적으로 다듬고, '
         + '지역 기반의 사회적 가치를 지속가능하게 실현하고자 지원합니다.',
     }
-  }, [applicationForm, workspaceContext, startupProfile])
+  }, [applicationForm, workspace, workspaceContext, startupProfile])
 
   const sendFeatureMessage = async (text, { hidden = false, currentResultOverride = null } = {}) => {
     if (!room?.roomId) {
@@ -826,8 +827,12 @@ export const FeaturePage = ({
   // 지원사업 카드의 '이 공고로 사업계획서 작성': 선택 공고를 부모 워크스페이스에 즉시 커밋한 뒤 plan으로 이동.
   // (support 페이지는 곧 언마운트돼 effect 기반 패치가 실행되지 않으므로, 부모 상태를 직접 갱신해야 plan이 그 공고를 받는다.)
   const handleWritePlanFromProgram = (program) => {
-    if (program) {
-      onWorkspaceContextChange?.({ selectedSupportProgram: program })
+    const patch = {}
+    if (program) patch.selectedSupportProgram = program
+    // 현재 워크스페이스의 아이템을 함께 넘겨 plan이 그 아이템 기준으로 작성하게 한다.
+    if (workspace?.selectedIdea) patch.selectedIdea = workspace.selectedIdea
+    if (Object.keys(patch).length) {
+      onWorkspaceContextChange?.(patch)
     }
     go('plan')
   }
