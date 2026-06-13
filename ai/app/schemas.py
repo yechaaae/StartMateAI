@@ -16,6 +16,7 @@ IntentName = Literal[
     "operation",
     "marketing",
     "commercial_area",
+    "plan",
     "collaboration",
     "roadmap",
 ]
