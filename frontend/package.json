@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test src/features/pages/authStepFlow.test.js src/features/pages/authFormFields.test.js src/features/pages/onboardingFlow.test.js src/features/pages/feature/featurePageTheme.test.js src/features/layout/sidebarFeatureNav.test.js src/features/chat/chatMappers.test.js src/features/reports/supportProgramSearch.test.js src/features/reports/supportProgramStorage.test.js src/features/reports/operationFeedbackLogic.test.js src/app/routePaths.test.js",
+    "test": "node --test src/features/pages/authStepFlow.test.js src/features/pages/authFormFields.test.js src/features/pages/onboardingFlow.test.js src/features/pages/onboardingTags.test.js src/features/pages/feature/featurePageTheme.test.js src/features/layout/sidebarFeatureNav.test.js src/features/chat/chatMappers.test.js src/features/reports/supportProgramSearch.test.js src/features/reports/supportProgramStorage.test.js src/features/reports/operationFeedbackLogic.test.js src/app/routePaths.test.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },

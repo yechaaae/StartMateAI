@@ -12,7 +12,7 @@ export const isAuthStepValueReady = (stepName, value) => {
   }
 
   if (stepName === 'password' || stepName === 'passwordConfirm') {
-    return value.length >= 6
+    return value.length >= 8
   }
 
   return trimmed.length > 0
