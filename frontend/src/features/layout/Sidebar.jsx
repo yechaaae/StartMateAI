@@ -4,6 +4,7 @@ import { agents } from '../../shared/data/agents'
 import { profile } from '../../shared/data/profile'
 import { Icon } from '../../shared/components/Icon'
 import { StartMateLogo } from '../../shared/components/StartMateLogo'
+import { categoryLabel } from '../../shared/data/itemCategory'
 import { buildFeatureNavTheme } from './sidebarFeatureNav'
 
 // 사이드바 기능을 창업 단계별로 묶는다. (아이템 추천은 워크스페이스 드롭다운의 '아이템 추가하기'로 진입)
@@ -52,61 +53,61 @@ export const Sidebar = ({ route, go, workspaces = [], workspace, setWorkspace, u
         </div>
       </div>
 
-      <button className={route === 'discuss' ? 'discuss-btn on' : 'discuss-btn'} onClick={() => go('discuss')}>
-        <Icon name="discuss" size={18} /> AI와 논의하기
-      </button>
+      <div className="workspace-switcher" ref={switcherRef}>
+        <button
+          type="button"
+          className="ws-switcher-trigger"
+          aria-expanded={workspaceOpen}
+          aria-label="워크스페이스 전환"
+          onClick={() => setWorkspaceOpen((open) => !open)}
+        >
+          <span className="ws-switcher-text">
+            <small>워크스페이스</small>
+            <b>{workspace?.name ?? '워크스페이스'}</b>
+          </span>
+          <Icon name="chevron" size={15} />
+        </button>
+
+        {workspaceOpen && (
+          <div className="workspace-modal">
+            <div className="workspace-modal-list">
+              {workspaces.length === 0 && (
+                <p className="workspace-empty">아직 워크스페이스가 없어요.<br />아이템을 추가해 시작하세요.</p>
+              )}
+              {workspaces.map((nextWorkspace) => (
+                <button
+                  className={workspace?.id === nextWorkspace.id ? 'on' : ''}
+                  key={nextWorkspace.id}
+                  onClick={() => {
+                    setWorkspace(nextWorkspace)
+                    setWorkspaceOpen(false)
+                    go('home')
+                  }}
+                >
+                  <div>
+                    <b>{nextWorkspace.name}</b>
+                    <small>{categoryLabel(nextWorkspace.desc)}</small>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="workspace-add-item"
+              onClick={() => {
+                setWorkspaceOpen(false)
+                onAddItem?.()
+              }}
+            >
+              <Icon name="plus" size={14} /> 아이템 추가하기
+            </button>
+          </div>
+        )}
+      </div>
 
       <nav>
-        <div className="workspace-modal-anchor" ref={switcherRef}>
-          <button
-            className="workspace-section-trigger"
-            type="button"
-            aria-expanded={workspaceOpen}
-            onClick={() => setWorkspaceOpen((open) => !open)}
-          >
-            <span>워크스페이스</span>
-            <Icon name="chevron" size={14} />
-          </button>
-
-          {workspaceOpen && (
-            <div className="workspace-modal">
-              <div className="workspace-modal-list">
-                {workspaces.length === 0 && (
-                  <p className="workspace-empty">아직 워크스페이스가 없어요.<br />아이템을 추가해 시작하세요.</p>
-                )}
-                {workspaces.map((nextWorkspace) => (
-                  <button
-                    className={workspace?.id === nextWorkspace.id ? 'on' : ''}
-                    key={nextWorkspace.id}
-                    onClick={() => {
-                      setWorkspace(nextWorkspace)
-                      setWorkspaceOpen(false)
-                      go('home')
-                    }}
-                  >
-                    <div>
-                      <b>{nextWorkspace.name}</b>
-                      <small>{nextWorkspace.desc}</small>
-                    </div>
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="workspace-add-item"
-                onClick={() => {
-                  setWorkspaceOpen(false)
-                  onAddItem?.()
-                }}
-              >
-                <Icon name="plus" size={14} /> 아이템 추가하기
-              </button>
-            </div>
-          )}
-        </div>
-
         <button className={route === 'home' ? 'on' : ''} onClick={() => go('home')}>
-          {workspace?.name ?? '홈'}
+          <Icon name="home" size={18} /> 홈
         </button>
 
         <p>창업 전</p>
@@ -114,6 +115,10 @@ export const Sidebar = ({ route, go, workspaces = [], workspace, setWorkspace, u
         <p>창업 후</p>
         {POST_STARTUP_FEATURES.map((id) => renderFeatureLink(id))}
       </nav>
+
+      <button className={route === 'discuss' ? 'discuss-btn on' : 'discuss-btn'} onClick={() => go('discuss')}>
+        <Icon name="discuss" size={18} /> 파트너들과 논의하기
+      </button>
 
       <div className="user-box">
         <span>{displayName.slice(0, 1)}</span>
