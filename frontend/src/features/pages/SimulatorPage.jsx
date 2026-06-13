@@ -8,7 +8,14 @@ import { agents } from '../../shared/data/agents'
 import { AgentAvatar } from '../../shared/components/AgentAvatar'
 import { ChatInput } from '../chat/ChatInput'
 import { ChatRow } from '../chat/ChatRow'
+import { StatusProgressRow } from '../chat/StatusProgressRow'
 import { TypingRow } from '../chat/TypingRow'
+import {
+  clearActiveProgressByRequest,
+  listActiveProgresses,
+  resolveTypingAgent,
+  upsertActiveProgress,
+} from '../chat/chatProgressState'
 import {
   createChatEventSource,
   createFeatureChatRoom,
@@ -99,7 +106,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
   const [chatError, setChatError] = useState('')
   const [savingReport, setSavingReport] = useState(false)
   const [statusMap, setStatusMap] = useState({})
-  const [agentProgress, setAgentProgress] = useState(null)
+  const [activeProgressMap, setActiveProgressMap] = useState(new Map())
   const chatRef = useRef(null)
   const hiddenRequestIdsRef = useRef(new Set())
   const agent = agents.finance
@@ -109,7 +116,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
 
   useEffect(() => {
     if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight
-  }, [messages, agentProgress, statusMap])
+  }, [messages, activeProgressMap, statusMap])
 
   useEffect(() => {
     let active = true
@@ -185,7 +192,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
         setChatLoading(true)
         setChatError('')
         setStatusMap({})
-        setAgentProgress(null)
+        setActiveProgressMap(new Map())
 
         const history = await getChatMessages(room.roomId)
         if (!active) return
@@ -209,7 +216,6 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
       const nextReportData = reportDataFromMessage(nextMessage)
       if (nextReportData) {
         applyAiReportData(nextReportData)
-        setAgentProgress(null)
       }
       setMessages((prev) => upsertMessage(prev, nextMessage))
     })
@@ -219,6 +225,11 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
       const payload = JSON.parse(event.data)
       if (!payload.status) return
       const nextStatus = normalizeStatusEvent(payload.status)
+
+      if (['COMPLETED', 'FAILED'].includes(nextStatus.status)) {
+        setActiveProgressMap((prev) => clearActiveProgressByRequest(prev, nextStatus.requestId))
+      }
+
       if (hiddenRequestIdsRef.current.has(nextStatus.requestId)) {
         if (nextStatus.status === 'FAILED') {
           setChatError(nextStatus.errorMessage || 'AI 시뮬레이션 리포트를 갱신하지 못했습니다.')
@@ -233,9 +244,9 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
       const payload = JSON.parse(event.data)
       if (!payload.agentProgress) return
       const nextProgress = normalizeAgentProgressEvent(payload.agentProgress)
-      if (hiddenRequestIdsRef.current.has(nextProgress.requestId)) return
-      setAgentProgress(nextProgress)
-      if (nextProgress.agent && nextProgress.message) {
+      setActiveProgressMap((prev) => upsertActiveProgress(prev, nextProgress))
+
+      if (nextProgress.viewType !== 'status' && nextProgress.agent && nextProgress.message) {
         setMessages((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
       }
     })
@@ -268,8 +279,19 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
   }), [assumption, idea, location, report, startupProfile])
 
   const latestStatus = useMemo(() => Object.values(statusMap).at(-1) ?? null, [statusMap])
-  const typing = agentProgress?.agent?.status === 'running'
-    ? agentProgress.agent.key
+  const activeProgresses = useMemo(() => listActiveProgresses(activeProgressMap), [activeProgressMap])
+  const statusProgresses = useMemo(
+    () => activeProgresses.filter((progress) => progress.viewType === 'status'),
+    [activeProgresses],
+  )
+  const typing = activeProgresses.length
+    ? resolveTypingAgent(
+        activeProgresses.filter((progress) => (
+          ['running', 'queued'].includes(String(progress.agent?.status ?? '').toLowerCase())
+          || progress.eventType === 'orchestrator.synthesizing'
+        )),
+        null,
+      )
     : latestStatus && ['QUEUED', 'PROCESSING'].includes(latestStatus.status)
       ? 'finance'
       : null
@@ -346,7 +368,6 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
     setChatError('')
 
     try {
-      setAgentProgress(null)
       const messageMetadata = { source: 'simulator-page', featureId: 'simulator' }
       if (hidden) {
         messageMetadata.hidden = true
@@ -511,9 +532,10 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
             {messages
               .filter((message) => !message.metadata?.hidden)
               .map((message) => <ChatRow key={message.id} message={message} onOpenReport={go} />)}
+            {statusProgresses.map((progress) => <StatusProgressRow key={progress.id} progress={progress} />)}
             {typing && <TypingRow agent={typing} />}
           </div>
-          {!!latestStatus && (
+          {!!latestStatus && latestStatus.status === 'FAILED' && (
             <div className={`chat-status-banner ${latestStatus.status?.toLowerCase()}`}>
               <b>{latestStatus.status}</b>
               {latestStatus.errorMessage ? <span>{latestStatus.errorMessage}</span> : <span>요청 ID {latestStatus.requestId}</span>}
