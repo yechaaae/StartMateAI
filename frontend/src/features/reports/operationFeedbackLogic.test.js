@@ -1,10 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  addProduct,
+  applyPreviousFromSavedReport,
   buildOperationFeedbackPayload,
   calculateChangePercent,
   normalizeOperationReport,
   normalizeProductShares,
+  removeProduct,
   scaleSharesTo100,
 } from './operationFeedbackLogic.js'
 
@@ -64,7 +67,11 @@ test('normalizeOperationReport maps AI tuple shapes into display objects', () =>
   })
 
   assert.deepEqual(report.kpis[0], { label: '이번 달 매출', value: '₩2,780,000', delta: '+12%', good: true })
-  assert.deepEqual(report.products, [{ name: '대표 상품', pct: 60 }, { name: '보조 상품', pct: 40 }])
+  assert.deepEqual(
+    report.products.map(({ name, pct }) => ({ name, pct })),
+    [{ name: '대표 상품', pct: 60 }, { name: '보조 상품', pct: 40 }],
+  )
+  assert.equal(report.products[0].locked, false)
   assert.deepEqual(report.channels, [{ name: 'AI 진단', summary: '광고 효율 점검 필요' }])
   assert.equal(report.suggestions[0].title, '광고 전환율 회복')
   assert.equal(report.suggestions[0].link, 'sns')
@@ -114,4 +121,73 @@ test('buildOperationFeedbackPayload keeps valid YYYY-MM period and input KPI key
   assert.equal(payload.kpis[0].key, 'totalSales')
   assert.equal(payload.kpis[0].previous, 2480000)
   assert.equal(payload.products[0].share, 100)
+})
+
+test('buildOperationFeedbackPayload preserves locked flag per product', () => {
+  const payload = buildOperationFeedbackPayload({
+    period: '2026-06',
+    kpis: [{ key: 'totalSales', label: '매출', unit: '원', current: 100, previous: 90 }],
+    products: [
+      { id: 'a', name: '아메리카노', share: 60, locked: true },
+      { id: 'b', name: '쿠키', share: 40, locked: false },
+    ],
+  }, null)
+
+  assert.equal(payload.products[0].locked, true)
+  assert.equal(payload.products[1].locked, false)
+})
+
+test('addProduct appends a zero-share row without breaking the total', () => {
+  const next = addProduct([
+    { id: 'a', name: '아메리카노', share: 60 },
+    { id: 'b', name: '쿠키', share: 40 },
+  ])
+
+  assert.equal(next.length, 3)
+  assert.equal(next[2].share, 0)
+  assert.equal(next[2].locked, false)
+  assert.equal(next.reduce((sum, item) => sum + item.share, 0), 100)
+})
+
+test('removeProduct deletes a row by index and rescales the rest to total 100', () => {
+  const next = removeProduct([
+    { id: 'a', name: '아메리카노', share: 50 },
+    { id: 'b', name: '쿠키', share: 30 },
+    { id: 'c', name: '케이크', share: 20 },
+  ], 2)
+
+  assert.equal(next.length, 2)
+  assert.ok(next.every((item) => item.id !== 'c'))
+  assert.equal(Number(next.reduce((sum, item) => sum + item.share, 0).toFixed(1)), 100)
+})
+
+test('removeProduct without ids deletes only the targeted index', () => {
+  const next = removeProduct([
+    { name: '아메리카노', share: 50 },
+    { name: '쿠키', share: 30 },
+    { name: '케이크', share: 20 },
+  ], 0)
+
+  assert.equal(next.length, 2)
+  assert.deepEqual(next.map((item) => item.name), ['쿠키', '케이크'])
+  assert.equal(Number(next.reduce((sum, item) => sum + item.share, 0).toFixed(1)), 100)
+})
+
+test('applyPreviousFromSavedReport sets previous from the saved record current values', () => {
+  const kpis = applyPreviousFromSavedReport(
+    [
+      { key: 'totalSales', current: 3000000, previous: 0 },
+      { key: 'adConversionRate', current: 2.1, previous: 0 },
+    ],
+    {
+      kpis: [
+        { key: 'totalSales', current: 2480000 },
+        { key: 'adConversionRate', current: 2.4 },
+      ],
+    },
+  )
+
+  assert.equal(kpis[0].previous, 2480000)
+  assert.equal(kpis[1].previous, 2.4)
+  assert.equal(kpis[0].current, 3000000)
 })

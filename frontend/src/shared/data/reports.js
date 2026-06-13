@@ -39,28 +39,19 @@ export const reportDefaults = {
     ],
   },
   operation: {
-    period: '2026-06',
+    // 운영 피드백은 사용자가 직접 입력하는 실측 데이터라 기본값(목데이터)을 두지 않는다.
+    // KPI는 입력 필드를 매핑하기 위한 빈 스캐폴딩만 유지한다.
+    period: '',
     kpis: [
-      { key: 'totalSales', label: '매출', unit: '원', current: 2780000, previous: 2480000 },
-      { key: 'totalCost', label: '지출', unit: '원', current: 1410000, previous: 1360000 },
-      { key: 'orderCount', label: '주문 수', unit: '건', current: 842, previous: 773 },
-      { key: 'adConversionRate', label: '광고 전환율', unit: '%', current: 1.8, previous: 2.4 },
+      { key: 'totalSales', label: '매출', unit: '원', current: '', previous: null },
+      { key: 'totalCost', label: '지출', unit: '원', current: '', previous: null },
+      { key: 'orderCount', label: '주문 수', unit: '건', current: '', previous: null },
+      { key: 'adConversionRate', label: '광고 전환율', unit: '%', current: '', previous: null },
     ],
-    products: [
-      { id: 'product-1', name: '아메리카노', share: 38 },
-      { id: 'product-2', name: '수제 케이크', share: 27 },
-      { id: 'product-3', name: '수제 쿠키', share: 21 },
-      { id: 'product-4', name: '굿즈', share: 14 },
-    ],
-    channels: [
-      ['인스타그램 광고', '전환율 1.8%, CPC 420원'],
-      ['네이버 플레이스', '방문 수는 늘었지만 전화 전환은 정체'],
-    ],
-    notes: '쿠키 상품은 꾸준히 팔리지만 광고 효율이 떨어지고 있습니다.',
-    suggestions: [
-      { title: '광고 전환율 회복', body: '전환율이 낮아 SNS 콘텐츠를 리뉴얼하고 랜딩 문구를 조정하는 것이 좋습니다.', link: 'sns' },
-      { title: '수제 쿠키 집중', body: '수제 쿠키 비중이 빠르게 오르고 있어 묶음 세트 구성으로 객단가를 올릴 수 있습니다.' },
-    ],
+    products: [],
+    channels: [],
+    notes: '',
+    suggestions: [],
   },
   sns: {
     topic: '수제 쿠키 예약',
