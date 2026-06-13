@@ -169,6 +169,8 @@ export const FeaturePage = ({
   const [savingReport, setSavingReport] = useState(false)
   const [aiReportStatus, setAiReportStatus] = useState('idle')
   const [streamVersion, setStreamVersion] = useState(0)
+  const [savedReports, setSavedReports] = useState([])
+  const [savedMenuOpen, setSavedMenuOpen] = useState(false)
   // 아이템 기능 진입 흐름: 선택 화면(choice) → AI 추천(recommend) 또는 직접 입력(input).
   // 다른 기능에서는 쓰이지 않는다. 저장된 리포트가 있으면(아래 loadLatestReport) recommend로 바로 진입한다.
   const [itemFlowStep, setItemFlowStep] = useState('choice')
@@ -176,6 +178,7 @@ export const FeaturePage = ({
   const reconnectTimeoutRef = useRef(null)
   const hiddenRequestIdsRef = useRef(new Set())
   const autoGenerationKeysRef = useRef(new Set())
+  const savedMenuRef = useRef(null)
 
   const applyReportData = useCallback((reportData) => {
     setData(reportData)
@@ -198,6 +201,43 @@ export const FeaturePage = ({
       )
     }
   }, [id])
+
+  // 우측 상단 '저장한 결과' 드롭다운: 이 기능으로 저장된 결과를 모아 불러본다(시뮬레이션과 동일 로직).
+  const refreshSavedReports = useCallback(async () => {
+    try {
+      const response = await savedResultApi.list()
+      const items = (response?.results ?? []).filter(
+        (item) => String(item.sourceFeature ?? '').toLowerCase() === id,
+      )
+      setSavedReports(items)
+    } catch {
+      /* 저장 목록 조회 실패는 무시 */
+    }
+  }, [id])
+
+  const loadSavedReport = async (savedResultId) => {
+    setSavedMenuOpen(false)
+    try {
+      const detail = await savedResultApi.get(savedResultId)
+      const reportData = detail?.payload?.reportData
+      if (reportData) {
+        applyReportData(reportData)
+        setAiReportStatus('ready')
+      }
+    } catch (nextError) {
+      setError(nextError.message ?? '저장한 결과를 불러오지 못했습니다.')
+    }
+  }
+
+  useEffect(() => {
+    const close = (event) => {
+      if (savedMenuRef.current && !savedMenuRef.current.contains(event.target)) {
+        setSavedMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -231,6 +271,7 @@ export const FeaturePage = ({
     }
 
     loadLatestReport()
+    refreshSavedReports()
 
     return () => {
       active = false
@@ -524,7 +565,7 @@ export const FeaturePage = ({
   )
   const resolvedIdeaId = workspaceContext?.selectedIdea?.rank ?? selectedIdeaRank ?? null
 
-  const sendFeatureMessage = async (text, { hidden = false } = {}) => {
+  const sendFeatureMessage = async (text, { hidden = false, currentResultOverride = null } = {}) => {
     if (!room?.roomId) {
       return null
     }
@@ -551,7 +592,9 @@ export const FeaturePage = ({
         currentResultId: null,
         selectedIdeaId: resolvedIdeaId,
         candidateAgents: [],
-        currentResult,
+        // 칩 변경처럼 방금 바뀐 입력으로 즉시 재생성할 때는 최신 data로 만든 결과를 직접 넘긴다
+        // (memo된 currentResult는 setData 직후 한 렌더 동안 이전 값이라 stale).
+        currentResult: currentResultOverride ?? currentResult,
       })
 
       if (hidden) {
@@ -655,7 +698,8 @@ export const FeaturePage = ({
         focusedSectionTitle,
         planGoal,
       }))
-      go('saved')
+      await refreshSavedReports()
+      setSavedMenuOpen(true) // 저장한 결과를 우측 상단 드롭다운에서 바로 확인.
     } catch (nextError) {
       setError(nextError.message ?? '리포트를 저장하지 못했습니다.')
     } finally {
@@ -713,9 +757,6 @@ export const FeaturePage = ({
 
       setData((prev) => ({ ...prev, list: results }))
       setSelectedSupportTitle(results[0]?.title ?? null)
-      const nextSavedPrograms = mergeSupportProgramHistory(readSupportProgramHistory(), results, filters)
-      writeSupportProgramHistory(nextSavedPrograms)
-      setSavedSupportPrograms(nextSavedPrograms)
       setSupportHasSearched(true)
     } catch (nextError) {
       setError(nextError.message ?? '지원사업 추천 결과를 불러오지 못했습니다.')
@@ -730,12 +771,52 @@ export const FeaturePage = ({
     setSavedSupportPrograms(nextSavedPrograms)
   }
 
+  // 추천 결과에서 개별 지원사업을 '저장한 추천 목록'에 담는다(검색 시 자동 저장하지 않음).
+  const handleSaveSupportProgram = (program) => {
+    if (!program) return
+    const filters = {
+      recommendationBasis: supportSearchMode,
+      priority: supportUserGoal,
+      regionBasis: supportRegionBasis,
+    }
+    const nextSavedPrograms = mergeSupportProgramHistory(readSupportProgramHistory(), [program], filters)
+    writeSupportProgramHistory(nextSavedPrograms)
+    setSavedSupportPrograms(nextSavedPrograms)
+  }
+
   const handleRegenerateReport = () => {
     if (!room?.roomId || aiReportStatus === 'loading') {
       return
     }
     setAiReportStatus('loading')
     sendFeatureMessage(GENERATE_REPORT_PROMPT, { hidden: true })
+      .catch(() => setAiReportStatus('error'))
+  }
+
+  // SNS 홍보 자동화: 톤/목적 칩을 바꾸면 그 값을 에이전트에 넘겨 멘트를 다시 생성한다.
+  const handleCampaignControlChange = (patch) => {
+    if (!room?.roomId || aiReportStatus === 'loading') {
+      return
+    }
+    const nextData = { ...data, ...patch }
+    setData(nextData)
+    setAiReportStatus('loading')
+    // setData는 비동기라 memo된 currentResult가 아직 이전 값이므로, 새 data로 직접 결과를 만들어 넘긴다.
+    const overrideResult = buildCurrentResult({
+      featureId: id,
+      data: nextData,
+      selectedIdeaRank,
+      selectedSupportTitle,
+      selectedOperationSuggestionTitle,
+      supportSearchMode,
+      supportUserGoal,
+      supportRegionBasis,
+      focusedSectionTitle,
+      planGoal,
+      workspaceContext,
+      startupProfile,
+    })
+    sendFeatureMessage(GENERATE_REPORT_PROMPT, { hidden: true, currentResultOverride: overrideResult })
       .catch(() => setAiReportStatus('error'))
   }
 
@@ -753,34 +834,92 @@ export const FeaturePage = ({
             <p>{feature.sub}</p>
           </div>
           <div className="report-title-actions">
-            {/* 운영 피드백은 폼 내부 저장 버튼을 쓰고, 아이템은 추천 화면일 때만 생성/저장 버튼을 보여준다. */}
-            {id !== 'operation' && !(id === 'item' && itemFlowStep !== 'recommend') && (
+            {id === 'plan' ? (
+              <div className="plan-header-meta">
+                <div>
+                  <small>보조할 사업</small>
+                  <b>{data?.target || '선택한 사업'}</b>
+                </div>
+                <div>
+                  <small>작성 전략</small>
+                  <b>
+                    {{
+                      ALIGN_SUPPORT: '공고 요건에 맞춰 보완',
+                      STRENGTHEN_SECTION: '핵심 문단 강화',
+                      REWRITE_TONE: '문체 다듬기',
+                      CHECK_GAPS: '빠진 항목 점검',
+                    }[planGoal] || '공고 요건에 맞춰 보완'}
+                  </b>
+                </div>
+              </div>
+            ) : id === 'support' || id === 'sns' ? null : (
               <>
-                <button
-                  type="button"
-                  className="secondary-chip"
-                  onClick={handleRegenerateReport}
-                  disabled={aiReportStatus === 'loading' || loading || !room?.roomId}
-                >
-                  <Icon name="refresh" size={15} />
-                  <span>
-                    {aiReportStatus === 'loading'
-                      ? 'AI 생성 중'
-                      : aiReportStatus === 'empty'
-                        ? 'AI 리포트 생성'
-                        : 'AI 리포트 갱신'}
-                  </span>
-                </button>
-                {aiReportStatus === 'ready' && (
+                <div className="sim-saved-menu" ref={savedMenuRef}>
                   <button
                     type="button"
-                    className="secondary-chip"
-                    onClick={handleSaveReport}
-                    disabled={savingReport || aiReportStatus !== 'ready'}
+                    className="sim-saved-trigger"
+                    aria-expanded={savedMenuOpen}
+                    onClick={() => setSavedMenuOpen((open) => !open)}
                   >
                     <Icon name="bookmark" size={15} />
-                    <span>{savingReport ? '저장 중' : '리포트 저장'}</span>
+                    저장한 결과{savedReports.length ? ` ${savedReports.length}` : ''}
+                    <Icon name="chevron" size={14} />
                   </button>
+                  {savedMenuOpen && (
+                    <div className="sim-saved-dropdown">
+                      {savedReports.length === 0 ? (
+                        <p className="sim-saved-empty">저장한 결과가 아직 없어요.</p>
+                      ) : (
+                        savedReports.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className="sim-saved-item"
+                            onClick={() => loadSavedReport(item.id)}
+                          >
+                            <b>{item.title}</b>
+                            {(item.createdAt || item.summary) && (
+                              <small>
+                                {item.createdAt ? item.createdAt.slice(0, 10) : ''}
+                                {item.summary ? ` · ${item.summary}` : ''}
+                              </small>
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* 운영 피드백은 폼 내부 저장 버튼을 쓰고, 아이템은 추천 화면일 때만 생성/저장 버튼을 보여준다. */}
+                {id !== 'operation' && !(id === 'item' && itemFlowStep !== 'recommend') && (
+                  <>
+                    <button
+                      type="button"
+                      className="secondary-chip"
+                      onClick={handleRegenerateReport}
+                      disabled={aiReportStatus === 'loading' || loading || !room?.roomId}
+                    >
+                      <Icon name="refresh" size={15} />
+                      <span>
+                        {aiReportStatus === 'loading'
+                          ? 'AI 생성 중'
+                          : aiReportStatus === 'empty'
+                            ? 'AI 리포트 생성'
+                            : 'AI 리포트 갱신'}
+                      </span>
+                    </button>
+                    {aiReportStatus === 'ready' && (
+                      <button
+                        type="button"
+                        className="secondary-chip"
+                        onClick={handleSaveReport}
+                        disabled={savingReport || aiReportStatus !== 'ready'}
+                      >
+                        <Icon name="bookmark" size={15} />
+                        <span>{savingReport ? '저장 중' : '리포트 저장'}</span>
+                      </button>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -827,6 +966,7 @@ export const FeaturePage = ({
             supportHasSearched={supportHasSearched}
             onRunSupportSearch={handleSupportProgramSearch}
             savedSupportPrograms={savedSupportPrograms}
+            onSaveSupportProgram={handleSaveSupportProgram}
             onDeleteSavedSupportProgram={handleDeleteSavedSupportProgram}
             focusedSectionTitle={focusedSectionTitle}
             onFocusSection={setFocusedSectionTitle}
@@ -834,6 +974,7 @@ export const FeaturePage = ({
             onChangePlanGoal={setPlanGoal}
             onRequestOperationFeedback={handleOperationFeedbackRequest}
             operationFeedbackSaving={savingReport}
+            onCampaignControlChange={handleCampaignControlChange}
           />
         ) : id === 'item' && aiReportStatus === 'loading' ? (
           <ItemGeneratingState agentId={feature.agent} />

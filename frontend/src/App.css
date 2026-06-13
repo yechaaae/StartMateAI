@@ -6893,6 +6893,95 @@ button:disabled {
   color: var(--ink-4);
 }
 
+/* 지원사업: 청년 배지 + 결과 화면 상단바 */
+.support-youth-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--brand-tint);
+  color: var(--brand-strong);
+  font-size: 11px;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+.support-results-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.support-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.support-back-btn:hover {
+  background: #f6f7fa;
+}
+
+.support-results-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.support-program-buttons {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.support-save-btn {
+  padding: 8px 13px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.support-save-btn:hover {
+  background: #f6f7fa;
+}
+
+/* 사업계획서 상단: 보조할 사업 + 작성 전략 */
+.plan-header-meta {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.plan-header-meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.plan-header-meta small {
+  color: var(--ink-4);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.plan-header-meta b {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
 .simulator-header {
   display: flex;
   align-items: flex-start;

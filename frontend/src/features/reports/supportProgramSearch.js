@@ -157,6 +157,8 @@ const splitDocuments = (raw) => {
   return text(raw).split(/[,/|]/).map(text).filter(Boolean)
 }
 
+const YOUTH_RE = /청년|만\s?39\s?세|39세|만\s?34\s?세|34세|대학생|청소년|young/i
+
 const normalizeProgram = (item) => {
   const title = text(item.title)
   if (!title) {
@@ -165,6 +167,16 @@ const normalizeProgram = (item) => {
   const deadlineDate = item.applicationEndDate ?? null
   const matchReasons = Array.isArray(item.matchReasons) ? item.matchReasons.filter(Boolean) : []
   const cautionReasons = Array.isArray(item.cautionReasons) ? item.cautionReasons.filter(Boolean) : []
+  const supportType = text(item.supportType)
+  const youthHaystack = [
+    title,
+    text(item.summary),
+    text(item.regionCondition),
+    text(item.organization),
+    text(item.supportTarget),
+    text(item.eligibility),
+    ...matchReasons,
+  ].join(' ')
   return {
     id: item.programId ? `support-program-${item.programId}` : title,
     programId: item.programId ?? null,
@@ -178,8 +190,10 @@ const normalizeProgram = (item) => {
     summary: item.summary ?? '',
     requiredDocs: splitDocuments(item.requiredDocuments),
     docs: splitDocuments(item.requiredDocuments),
-    tags: [item.organization, item.supportType, item.status].map(text).filter(Boolean),
+    tags: [item.organization, supportType, item.status].map(text).filter(Boolean),
     amount: item.supportAmount ?? '',
+    supportType,
+    isYouth: YOUTH_RE.test(youthHaystack),
     deadlineDate,
     applyUrl: item.applyUrl ?? '',
     url: item.applyUrl ?? '',
@@ -192,8 +206,9 @@ export const runSupportProgramSearch = async (filters = {}) => {
   const payload = buildSupportProgramRecommendationPayload(filters)
   const programs = await supportProgramApi.recommend(payload)
   const sorter = sorters[filters.priority] ?? sorters.HIGH_MATCH
+  // 청년 관련 사업을 최상위로 올리고, 그 안에서는 선택한 우선순위로 정렬한다.
   return (Array.isArray(programs) ? programs : [])
     .map(normalizeProgram)
     .filter(Boolean)
-    .sort(sorter)
+    .sort((a, b) => (Number(b.isYouth) - Number(a.isYouth)) || sorter(a, b))
 }

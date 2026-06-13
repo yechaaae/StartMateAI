@@ -29,6 +29,7 @@ export const Report = ({
   supportHasSearched,
   onRunSupportSearch,
   savedSupportPrograms,
+  onSaveSupportProgram,
   onDeleteSavedSupportProgram,
   focusedSectionTitle,
   onFocusSection,
@@ -36,6 +37,7 @@ export const Report = ({
   onChangePlanGoal,
   onRequestOperationFeedback,
   operationFeedbackSaving,
+  onCampaignControlChange,
 }) => {
   if (id === 'item') {
     return (
@@ -68,6 +70,7 @@ export const Report = ({
         supportHasSearched={supportHasSearched}
         onRunSupportSearch={onRunSupportSearch}
         savedSupportPrograms={savedSupportPrograms}
+        onSaveSupportProgram={onSaveSupportProgram}
         onDeleteSavedSupportProgram={onDeleteSavedSupportProgram}
       />
     )
@@ -96,5 +99,5 @@ export const Report = ({
       />
     )
   }
-  return <SnsReport data={data} setData={setData} />
+  return <SnsReport data={data} setData={setData} onCampaignControlChange={onCampaignControlChange} />
 }

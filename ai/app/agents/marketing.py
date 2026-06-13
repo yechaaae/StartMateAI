@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import re
 from typing import Any
 
@@ -58,10 +59,11 @@ class MarketingAgent(BaseAgent):
         channel = self._channel(request)
         objective = self._objective(request)
         tone = self._clean(request.brand_tone) or "친근하고 실행력 있는"
+        style = self._tone_style(tone)
         cta = self._call_to_action(objective, place)
-        hook = self._hook(product, target, date, objective)
+        hook = self._hook(product, target, date, objective, style)
         beats = self._storyboard(product, place, target, cta)
-        caption = self._caption(product, place, date, target, tone, cta)
+        caption = self._caption(product, place, date, target, tone, cta, style)
         tags = self._hashtags(request, product)
         schedule = self._schedule(request, channel)
 
@@ -172,12 +174,61 @@ class MarketingAgent(BaseAgent):
             return f"{place}에서 오늘 운영 시간을 확인하고 방문하세요."
         return "저장해두고 다음 오픈 소식을 확인하세요."
 
-    def _hook(self, product: str, target: str, date: str, objective: str) -> str:
-        if "방문" in objective:
-            return f"{target}이라면 {date} 놓치기 아까운 {product}, 현장에서 바로 확인하세요."
-        if "예약" in objective or "문의" in objective:
-            return f"{product}가 궁금했다면 {date} 예약 전에 이 3가지만 확인하세요."
-        return f"{target}를 위한 {product}, 첫 반응을 확인할 시간입니다."
+    def _tone_style(self, tone: str) -> str:
+        text = tone or ""
+        if "전문" in text:
+            return "expert"
+        if "트렌디" in text or "감각" in text:
+            return "trendy"
+        if "믿음" in text or "정직" in text or "신뢰할" in text:
+            return "trust"
+        return "friendly"
+
+    # 톤/목적은 유지하되, 다시 생성할 때마다 표현이 달라지도록 변주(variant) 목록을 둔다.
+    _OBJECTIVE_PHRASES = {
+        "revisit": ["단골이 다시 찾을 이유를 준비했어요.", "한 번 온 손님이 또 오게 만드는 포인트예요."],
+        "reserve": ["예약·문의는 지금이 가장 좋아요.", "지금 예약하면 가장 좋은 자리를 잡을 수 있어요."],
+        "visit": ["지금 방문하면 가장 좋은 혜택을 만나요.", "오늘 방문하기 딱 좋은 이유가 있어요."],
+        "awareness": ["오늘 처음 봐도 기억에 남게 만들어요.", "한 번 보면 잊기 어려운 첫인상을 노려요."],
+        "default": ["첫 반응을 확인할 시간이에요.", "지금 바로 반응을 떠볼 타이밍이에요."],
+    }
+    _HOOK_OPENERS = {
+        "friendly": [
+            "{target}이라면 주목! {date}, 가볍게 즐기는 {product} 이야기예요.",
+            "{date}, {target}을 위해 {product}를 편하게 소개할게요!",
+        ],
+        "expert": [
+            "{product}, 무엇을 보고 골라야 할까요? {target}을 위해 핵심 기준만 짚어드립니다.",
+            "{target}이 {product}를 고를 때 꼭 확인할 포인트를 전문가 시선으로 정리했어요.",
+        ],
+        "trendy": [
+            "요즘 {target} 사이에서 화제인 {product}, {date}에 제일 먼저 만나보세요.",
+            "지금 가장 핫한 {product}, {target}이라면 {date}에 놓치면 아쉬워요.",
+        ],
+        "trust": [
+            "{target}에게 과장 없이 추천하는 {product}, {date}에 직접 확인해보세요.",
+            "보이는 그대로 정직하게 만든 {product}, {target}에게 믿고 권합니다.",
+        ],
+    }
+
+    def _objective_phrase(self, objective: str) -> str:
+        if "재방문" in objective:
+            key = "revisit"
+        elif "예약" in objective or "문의" in objective:
+            key = "reserve"
+        elif "방문" in objective:
+            key = "visit"
+        elif "인지" in objective:
+            key = "awareness"
+        else:
+            key = "default"
+        return random.choice(self._OBJECTIVE_PHRASES[key])
+
+    def _hook(self, product: str, target: str, date: str, objective: str, style: str) -> str:
+        intent = self._objective_phrase(objective)
+        templates = self._HOOK_OPENERS.get(style, self._HOOK_OPENERS["friendly"])
+        opener = random.choice(templates).format(product=product, target=target, date=date)
+        return f"{opener} {intent}"
 
     def _storyboard(self, product: str, place: str, target: str, cta: str) -> list[str]:
         return [
@@ -187,10 +238,31 @@ class MarketingAgent(BaseAgent):
             f"13-15초: {place} 안내와 '{cta}' 문구로 마무리",
         ]
 
-    def _caption(self, product: str, place: str, date: str, target: str, tone: str, cta: str) -> str:
+    _CAPTION_INTROS = {
+        "friendly": [
+            "{date}, {place}에서 {product}를 준비했어요. 편하게 구경하러 오세요!",
+            "{date}, {place}에서 {product} 만나요. 부담 없이 들러주세요!",
+        ],
+        "expert": [
+            "{date}, {place}에서 선보이는 {product}. 선택 기준과 차별점을 또렷하게 정리했습니다.",
+            "{date}, {place}. {product}를 고를 때 중요한 기준을 짚어 정리했습니다.",
+        ],
+        "trendy": [
+            "{date}, {place}. 지금 가장 핫한 {product}를 가장 먼저 만나보세요.",
+            "{date}, {place}에서 요즘 뜨는 {product}, 트렌드를 먼저 잡아보세요.",
+        ],
+        "trust": [
+            "{date}, {place}에서 정직하게 만든 {product}를 소개합니다. 보이는 그대로예요.",
+            "{date}, {place}. 과장 없이 만든 {product}를 믿고 권해드려요.",
+        ],
+    }
+
+    def _caption(self, product: str, place: str, date: str, target: str, tone: str, cta: str, style: str) -> str:
+        templates = self._CAPTION_INTROS.get(style, self._CAPTION_INTROS["friendly"])
+        intro = random.choice(templates).format(product=product, place=place, date=date)
         return (
-            f"{date}, {place}에서 {product} 콘텐츠를 준비했습니다.\n"
-            f"{target}이 부담 없이 반응을 확인할 수 있도록 핵심 정보만 {tone} 톤으로 전합니다.\n"
+            f"{intro}\n"
+            f"{target}이 부담 없이 확인할 수 있도록 핵심 정보만 {tone} 톤으로 전합니다.\n"
             f"수량, 운영 시간, 위치를 확인한 뒤 {cta}"
         )
 

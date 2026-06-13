@@ -2399,6 +2399,34 @@ class OrchestratorAgent:
             number /= 100
         return number
 
+    # 프론트 SNS 컨트롤(칩)에서 보내는 코드값 → 에이전트가 멘트에 반영할 한글 표현.
+    _TONE_CODE_TO_KO = {
+        "FRIENDLY": "친근하고 실행력 있는",
+        "EXPERT": "전문적이고 신뢰감 있는",
+        "TRENDY": "트렌디하고 감각적인",
+        "TRUSTED": "믿음직하고 정직한",
+    }
+    _OBJECTIVE_CODE_TO_KO = {
+        "CONVERSION": "예약/문의 전환",
+        "AWARENESS": "인지도 확보",
+        "REVISIT": "재방문 유도",
+        "EVENT": "행사 방문 유도",
+    }
+    _CHANNEL_CODE_TO_KO = {
+        "INSTAGRAM_REELS": "Instagram Reels",
+        "INSTAGRAM_POST": "Instagram Post",
+        "SHORTS": "YouTube Shorts",
+        "BLOG_POST": "Blog/Search",
+    }
+
+    def _map_campaign_code(self, value: Any, table: dict[str, str]) -> str | None:
+        if value is None:
+            return None
+        key = str(value).strip()
+        if not key:
+            return None
+        return table.get(key.upper(), key)
+
     def _marketing_request_from_context(self, request: ChatRequest, profile=None) -> MarketingRequest:
         context = request.context or {}
         message = request.message or ""
@@ -2413,14 +2441,39 @@ class OrchestratorAgent:
             or self._dict_at(current_result, "businessContext")
             or self._dict_at(feature_payload, "businessContext")
         )
-        selected_idea = self._dict_at(business_context, "selectedIdea")
+        # SNS 기능 페이지에서 사용자가 고른 톤/목적/채널은 campaignDraft로 들어온다.
+        campaign_draft = (
+            self._dict_at(current_result, "campaignDraft")
+            or self._dict_at(context, "campaignDraft")
+        )
+        campaign_context = self._dict_at(current_result, "campaignContext")
+        selected_idea = (
+            self._dict_at(business_context, "selectedIdea")
+            or self._dict_at(campaign_context, "selectedIdea")
+        )
 
         product_name = (
             context.get("product_name")
             or context.get("item_name")
+            or campaign_draft.get("topic")
             or self._title_at(selected_idea)
             or self._infer_marketing_product(message)
             or "창업 상품"
+        )
+        brand_tone = (
+            self._map_campaign_code(campaign_draft.get("tone"), self._TONE_CODE_TO_KO)
+            or context.get("brand_tone")
+            or "친근하고 실행력 있는"
+        )
+        objective = (
+            self._map_campaign_code(campaign_draft.get("objective"), self._OBJECTIVE_CODE_TO_KO)
+            or context.get("objective")
+            or self._infer_marketing_objective(message)
+        )
+        channel = (
+            self._map_campaign_code(campaign_draft.get("channel"), self._CHANNEL_CODE_TO_KO)
+            or context.get("channel")
+            or self._infer_marketing_channel(message)
         )
         return MarketingRequest(
             profile=profile or request.profile,
@@ -2428,11 +2481,11 @@ class OrchestratorAgent:
             event_date=context.get("event_date") or self._infer_marketing_event_date(message),
             target_customer=context.get("target_customer") or self._infer_marketing_target(message, profile or request.profile),
             place=context.get("place") or self._infer_marketing_place(message, profile or request.profile),
-            brand_tone=context.get("brand_tone", "친근하고 실행력 있는"),
+            brand_tone=brand_tone,
             goal=message,
-            channel=context.get("channel") or self._infer_marketing_channel(message),
-            objective=context.get("objective") or self._infer_marketing_objective(message),
-            schedule=context.get("schedule"),
+            channel=channel,
+            objective=objective,
+            schedule=campaign_draft.get("schedule") or context.get("schedule"),
         )
 
     def _infer_marketing_product(self, message: str) -> str | None:
