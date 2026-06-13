@@ -1885,6 +1885,7 @@
   align-items: center;
   gap: 12px;
   padding: 18px 20px 16px;
+  border-bottom: 1px solid var(--line);
 }
 
 .sidebar-logo {
@@ -2025,16 +2026,81 @@
 }
 
 .workspace-modal {
-  position: fixed;
-  top: 132px;
-  left: 14px;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
   z-index: 50;
-  width: 250px;
   overflow: hidden;
   border: 1px solid var(--line-2);
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 16px 42px rgba(31, 38, 64, .14);
+}
+
+/* 노션 스타일 워크스페이스 스위처 (흰 박스) */
+.workspace-switcher {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 12px 14px;
+  padding: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(31, 38, 64, .05);
+}
+
+/* 흰 박스 전체가 워크스페이스 '전환' 트리거 (홈 이동은 별도 홈 버튼이 담당) */
+.ws-switcher-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.ws-switcher-trigger:hover {
+  background: #f6f7fa;
+}
+
+.ws-switcher-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.ws-switcher-text small {
+  color: var(--ink-4);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.ws-switcher-text b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.ws-switcher-trigger > svg {
+  flex-shrink: 0;
+  color: var(--ink-4);
+  transform: rotate(90deg);
+  transition: transform .16s ease;
+}
+
+.ws-switcher-trigger[aria-expanded="true"] > svg {
+  transform: rotate(-90deg);
 }
 
 .workspace-modal-list {
@@ -2097,14 +2163,15 @@
 .workspace-modal-list b,
 .workspace-modal-list small {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .workspace-modal-list b {
   font-size: 14px;
   font-weight: 900;
+  line-height: 1.35;
 }
 
 .workspace-modal-list small {
@@ -2161,8 +2228,9 @@
 
 .user-box {
   display: grid;
-  grid-template-columns: 34px 1fr;
-  grid-template-rows: auto auto auto;
+  grid-template-columns: 34px 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
   gap: 0 11px;
   padding: 14px 18px;
   border-top: 1px solid var(--line);
@@ -2170,6 +2238,7 @@
 
 .user-box span {
   display: grid;
+  grid-column: 1;
   grid-row: 1 / 3;
   place-items: center;
   width: 34px;
@@ -2180,10 +2249,19 @@
 }
 
 .user-box b {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .user-box small {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
   color: var(--ink-3);
   font-size: 11px;
   overflow: hidden;
@@ -2192,11 +2270,13 @@
 }
 
 .user-box button {
-  grid-column: 2;
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: center;
+  justify-self: end;
   width: fit-content;
-  margin-top: 8px;
-  padding: 5px 9px;
-  border-radius: 7px;
+  padding: 6px 11px;
+  border-radius: 8px;
   background: #f4f5f8;
   color: var(--ink-2);
   font-size: 11px;
@@ -2249,11 +2329,151 @@
 }
 
 .profile-summary-card,
-.fit-summary-card {
+.fit-summary-card,
+.item-summary-card {
   padding: 24px;
   border-color: #e7e8ef;
-  border-radius: var(--r-lg);
+  border-radius: 16px;
   box-shadow: var(--shadow);
+}
+
+/* 추천 아이템 요약 카드 (메인) */
+.item-summary-score {
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--brand-tint);
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.item-summary-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.item-summary-title {
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.3;
+  word-break: keep-all;
+}
+
+.item-summary-cat {
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--ink-3, var(--ink-4));
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.item-summary-reason {
+  margin: 2px 0 0;
+  color: var(--ink-2, var(--ink-4));
+  font-size: 13.5px;
+  line-height: 1.55;
+  word-break: keep-all;
+}
+
+.item-summary-empty,
+.item-summary-note {
+  margin: 6px 0 14px;
+  color: var(--ink-4);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.item-detail-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 9px 15px;
+  border-radius: 9px;
+  background: var(--brand-tint);
+  color: var(--brand-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.item-detail {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.item-detail-section h4 {
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.item-detail-section .metric-grid {
+  margin: 10px 0;
+}
+
+.item-detail-label {
+  display: block;
+  margin: 12px 0 6px;
+  color: var(--ink-4);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.item-detail-line {
+  margin: 6px 0;
+  color: var(--ink-2, var(--ink-4));
+  font-size: 13px;
+  line-height: 1.55;
+  word-break: keep-all;
+}
+
+.item-detail-line b {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.item-detail-bullets,
+.item-detail-steps {
+  margin: 4px 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.item-detail-bullets li,
+.item-detail-steps li {
+  color: var(--ink-2, var(--ink-4));
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+
+.item-detail-bullets.warn li {
+  color: #b45309;
+}
+
+.item-detail-support {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: var(--line);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
 }
 
 .summary-card-head {
@@ -2661,6 +2881,11 @@
   margin: 0 2px 16px;
 }
 
+/* 창업전 ↔ 창업후 사이 간격 확대 */
+.feature-section-head.section-gap {
+  margin-top: 44px;
+}
+
 .feature-section-head span {
   color: var(--ink);
   font-size: 13px;
@@ -2690,7 +2915,17 @@
   gap: 16px;
 }
 
+/* 메인 하단 기능: 폭을 232px로 고정한 정사각형 타일 3개씩.
+   화면을 꽉 채우지 않고 왼쪽 정렬 — 창업전 3개, 창업후 2개 모두 같은 크기 타일. */
+.feature-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 300px));
+  justify-content: start;
+}
+
 .feature-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
   padding: 20px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -2706,26 +2941,32 @@
   box-shadow: var(--shadow-lg);
 }
 
-.feature-card > span {
+/* 아이콘 + 분류 라벨을 한 줄에 배치 */
+.feature-card-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 14px;
+}
+
+.feature-card-head > span {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  margin-bottom: 12px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 9px;
   background: var(--tint);
   color: var(--accent);
 }
 
-.feature-card small {
-  display: inline-block;
-  margin-bottom: 8px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: #f4f5f8;
-  color: var(--ink-3);
-  font-size: 11px;
-  font-weight: 800;
+/* 회색 칠 제거한 분류 라벨 — 아이콘과 같은 accent 색으로 톤 맞춤 */
+.feature-card-head small {
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  line-height: 1.3;
 }
 
 .feature-card h3 {
@@ -2734,15 +2975,20 @@
 }
 
 .feature-card p {
-  min-height: 42px;
-  margin: 0 0 16px;
+  min-height: 0;
+  margin: 0;
   color: var(--ink-3);
   font-size: 13px;
   line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .feature-card b {
   display: block;
+  margin-top: auto;
   padding: 10px;
   border-radius: 9px;
   background: var(--tint);
@@ -3475,6 +3721,8 @@
 
 .report-area > .page-title,
 .report-area > .report-stack,
+.report-area > .support-report-stack,
+.report-area > .sns-report-stack,
 .report-area > .card {
   max-width: 920px;
   margin-left: auto;
@@ -3847,7 +4095,32 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 520px;
+  width: 100%;
+}
+
+/* 재추천 방향 입력 */
+.onboarding-modal-refine {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.onboarding-refine-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  font-family: inherit;
+  resize: vertical;
+}
+
+.onboarding-refine-input:focus {
+  outline: none;
+  border-color: var(--brand);
 }
 
 .item-input-back {
@@ -3895,6 +4168,8 @@
 }
 
 .item-input-field input {
+  width: 100%;
+  box-sizing: border-box;
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 11px 13px;
@@ -6096,7 +6371,8 @@ button:disabled {
   }
 
   .profile-summary-card,
-  .fit-summary-card {
+  .fit-summary-card,
+  .item-summary-card {
     min-height: 0;
   }
 
@@ -6328,7 +6604,7 @@ button:disabled {
 
 .simulator-page {
   width: 100%;
-  max-width: 1180px;
+  max-width: 920px;
   margin: 0 auto;
   padding: 34px 38px 44px;
   overflow-y: auto;
@@ -6337,6 +6613,158 @@ button:disabled {
 .report-area .simulator-page {
   padding: 0;
   overflow: visible;
+}
+
+/* 가정값 단계 AI 제안 안내 배지 */
+.sim-ai-assumption-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -2px 0 14px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--a-finance-t, var(--brand-tint));
+  color: var(--a-finance, var(--brand));
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.sim-ai-assumption-note.loading {
+  opacity: .85;
+}
+
+/* 가정값 계산 중 스피너 */
+.sim-loading-spin {
+  display: flex;
+  justify-content: center;
+  padding: 26px 0 10px;
+}
+
+.sim-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--line);
+  border-top-color: var(--a-finance, var(--brand));
+  border-radius: 50%;
+  animation: sim-spin .8s linear infinite;
+}
+
+@keyframes sim-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 가정값 읽기 전용 표시(LLM 제공 값, 사용자 입력 없음) */
+.sim-readonly-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.sim-readonly-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.sim-readonly-field span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+
+.sim-readonly-field b {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+/* 저장한 시뮬레이션 결과 드롭다운(우측 상단) */
+.sim-saved-menu {
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.sim-saved-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sim-saved-trigger:hover {
+  background: #f6f7fa;
+}
+
+.sim-saved-trigger > svg:last-child {
+  transition: transform .16s ease;
+}
+
+.sim-saved-trigger[aria-expanded="true"] > svg:last-child {
+  transform: rotate(90deg);
+}
+
+.sim-saved-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 300px;
+  max-height: 340px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 16px 42px rgba(31, 38, 64, .14);
+}
+
+.sim-saved-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: transparent;
+  text-align: left;
+}
+
+.sim-saved-item:hover {
+  background: #f6f7fa;
+}
+
+.sim-saved-item b {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.sim-saved-item small {
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.sim-saved-empty {
+  margin: 0;
+  padding: 14px 10px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--ink-4);
 }
 
 .simulator-header {

@@ -80,10 +80,11 @@ export const ItemReport = ({
   selectedIdeaRank,
   onSelectIdea,
 }) => {
-  const items = useMemo(() => (data.items ?? []).filter((item) => {
-    const generatedBy = item?.generatedBy ?? item?.generated_by
-    return item && !['rule_fallback', 'guardrail'].includes(generatedBy)
-  }), [data.items])
+  // 폴백(rule_fallback/guardrail) 아이템도 흐름이 멈추지 않도록 렌더한다(검증 필요 배지로 구분).
+  const items = useMemo(() => (data.items ?? []).filter(Boolean), [data.items])
+  const needsValidation = (item) =>
+    item?.validationStatus === 'needs_validation' ||
+    ['rule_fallback', 'guardrail'].includes(item?.generatedBy ?? item?.generated_by)
 
   // 선택된 아이템(없으면 첫 번째). 이 아이템의 location/analysis로 지도와 상권 지표를 보여준다.
   const selectedItem = useMemo(() => {
@@ -114,7 +115,7 @@ export const ItemReport = ({
       scoreBreakdown: item.scoreBreakdown ?? null,
       supportPrograms: item.supportPrograms ?? [],
       commercialArea: item.commercialArea ?? null,
-    })
+    }, data)
   }
 
   return (
@@ -162,6 +163,21 @@ export const ItemReport = ({
                   <span>{item.rank}</span>
                   <div>
                     <b>{item.title}</b>
+                    {needsValidation(item) && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          padding: '1px 6px',
+                          fontSize: 11,
+                          borderRadius: 6,
+                          background: 'rgba(245, 158, 11, 0.15)',
+                          color: '#b45309',
+                          verticalAlign: 'middle',
+                        }}
+                      >
+                        검증 필요
+                      </span>
+                    )}
                     <p>{item.reason}</p>
                     {item.location && <span className="idea-option-loc"><Icon name="pin" size={12} /> {item.location}</span>}
                     {!!item.evidence?.length && (

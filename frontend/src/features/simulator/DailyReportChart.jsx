@@ -98,7 +98,7 @@ export const DailyReportChart = ({ data, assumption, location, onBack, onLocatio
           <Icon name="arrow" size={16} /> 가정 다시 조정
         </button>
         <button className="sim-primary-btn" onClick={onSave}>
-          결과 저장 및 AI와 이야기하기 <Icon name="arrow" size={17} />
+          결과 저장 <Icon name="arrow" size={17} />
         </button>
       </div>
     </section>

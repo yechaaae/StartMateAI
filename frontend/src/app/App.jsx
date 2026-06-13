@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import '../App.css'
 import { features } from '../shared/data/features'
-import { authApi, startupProfileApi, workspaceApi } from '../shared/api/client'
+import { authApi, savedResultApi, startupProfileApi, workspaceApi } from '../shared/api/client'
+import { buildFeatureSavedReport } from '../features/reports/savedReportPayload'
 import { Sidebar } from '../features/layout/Sidebar'
 import { DiscussPage } from '../features/pages/DiscussPage'
 import { FeaturePage } from '../features/pages/feature/FeaturePage'
@@ -170,14 +171,13 @@ export default function App() {
   }
 
   const handleAddItem = useCallback(() => {
-    // 추천/직접입력 선택 화면을 먼저 보여준다(아이템 기능에 choice 단계로 진입).
-    setItemEntryNonce((nonce) => nonce + 1)
-    setRoute('item')
+    // 추천/직접입력 선택부터 추천목록·아이템 입력까지 모달(OnboardingItemModal)로 진행한다.
+    setItemModal(true)
   }, [])
 
   // '이 아이템으로 시작'(추천/직접입력) → 그 아이템으로 워크스페이스를 만들어(백엔드 영속화) 현재 워크스페이스로 설정한다.
   // 워크스페이스 자체가 아이템이므로, 이후 창업 전/후 기능들이 이 워크스페이스(=아이템)를 기준으로 동작한다.
-  const handleCreateWorkspaceFromItem = useCallback(async (item) => {
+  const handleCreateWorkspaceFromItem = useCallback(async (item, reportData = null) => {
     const selectedIdea = {
       title: item.title,
       category: item.category || item.location || '추천 아이템',
@@ -194,6 +194,16 @@ export default function App() {
       const draft = [...list].reverse().find((ws) => !ws.selectedIdeaTitle)
       const target = draft ?? await workspaceApi.create({ title: item.title })
       const created = toClientWorkspace(await workspaceApi.update(target.id, { title: item.title, selectedIdea }))
+      // 선택한 아이템 리포트를 자동 저장해 home에서 추천 근거/상세 방안을 보여줄 수 있게 한다(best-effort).
+      if (reportData?.items?.length) {
+        try {
+          await savedResultApi.save(
+            buildFeatureSavedReport({ featureId: 'item', data: reportData, selectedIdeaRank: item.rank ?? null }),
+          )
+        } catch {
+          /* 리포트 저장 실패는 워크스페이스 생성 흐름을 막지 않는다 */
+        }
+      }
       await refreshWorkspaces()
       setWorkspace(created)
       setFeatureWorkspace((prev) => ({ ...prev, selectedIdea: created.selectedIdea }))
@@ -295,7 +305,7 @@ export default function App() {
       />
     )
   } else {
-    page = <HomePage go={setRoute} workspace={workspace} />
+    page = <HomePage go={setRoute} workspace={workspace} user={user} />
   }
 
   if (itemModal) {
@@ -305,9 +315,9 @@ export default function App() {
           stage={startupProfile?.stage}
           user={user}
           startupProfile={startupProfile}
-          onSelect={(item) => {
+          onSelect={(item, reportData) => {
             setItemModal(false)
-            handleCreateWorkspaceFromItem(item)
+            handleCreateWorkspaceFromItem(item, reportData)
           }}
           onClose={() => setItemModal(false)}
         />
