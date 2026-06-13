@@ -15,6 +15,7 @@ import { SignupPage } from '../features/pages/SignupPage'
 import { SimulatorPage } from '../features/pages/SimulatorPage'
 import { WorkspacePreparing } from '../features/pages/WorkspacePreparing'
 import { OnboardingItemModal } from '../features/pages/OnboardingItemModal'
+import { decodeHtmlEntities } from '../shared/lib/text'
 import { pathToRoute, routeToPath } from './routePaths'
 
 const publicRoutes = new Set(['landing', 'login', 'signup'])
@@ -22,18 +23,19 @@ const LOGIN_HINT_KEY = 'sm_logged_in'
 const featureIds = Object.keys(features)
 
 // 백엔드 워크스페이스 응답을 사이드바/홈이 쓰는 형태(name/desc/selectedIdea)로 매핑한다.
+// AI 생성 텍스트의 HTML 엔티티(&lsquo; 등)가 화면에 날것으로 노출되지 않게 제목/근거는 디코딩한다.
 const toClientWorkspace = (ws) => ({
   id: ws.id,
-  name: ws.title,
+  name: decodeHtmlEntities(ws.title),
   desc: ws.selectedIdeaCategory || '작업공간',
   fit: ws.selectedIdeaScore ?? null,
-  recommend: ws.selectedIdeaReason || '',
+  recommend: decodeHtmlEntities(ws.selectedIdeaReason || ''),
   selectedIdea: ws.selectedIdeaTitle
     ? {
-        title: ws.selectedIdeaTitle,
+        title: decodeHtmlEntities(ws.selectedIdeaTitle),
         category: ws.selectedIdeaCategory,
         score: ws.selectedIdeaScore,
-        reason: ws.selectedIdeaReason,
+        reason: decodeHtmlEntities(ws.selectedIdeaReason),
       }
     : null,
 })
@@ -198,7 +200,12 @@ export default function App() {
       if (reportData?.items?.length) {
         try {
           await savedResultApi.save(
-            buildFeatureSavedReport({ featureId: 'item', data: reportData, selectedIdeaRank: item.rank ?? null }),
+            buildFeatureSavedReport({
+              featureId: 'item',
+              workspaceId: target.id,
+              data: reportData,
+              selectedIdeaRank: item.rank ?? null,
+            }),
           )
         } catch {
           /* 리포트 저장 실패는 워크스페이스 생성 흐름을 막지 않는다 */
@@ -211,11 +218,11 @@ export default function App() {
       // 실패 시 메모리 상태로라도 반영
       const fallback = {
         id: `item-${Date.now()}`,
-        name: item.title,
+        name: decodeHtmlEntities(item.title),
         desc: selectedIdea.category,
         fit: item.score ?? null,
-        recommend: item.reason ?? '',
-        selectedIdea: { ...item },
+        recommend: decodeHtmlEntities(item.reason ?? ''),
+        selectedIdea: { ...item, title: decodeHtmlEntities(item.title), reason: decodeHtmlEntities(item.reason) },
       }
       setWorkspaceList((prev) => [...prev, fallback])
       setWorkspace(fallback)

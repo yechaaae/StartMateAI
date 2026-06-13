@@ -15,4 +15,10 @@ public interface SavedResultRepository extends JpaRepository<SavedResult, Long> 
             Long userId,
             String sourceFeature
     );
+
+    Optional<SavedResult> findFirstByWorkspaceIdAndWorkspaceUserIdAndSourceFeatureIgnoreCaseOrderByCreatedAtDesc(
+            Long workspaceId,
+            Long userId,
+            String sourceFeature
+    );
 }

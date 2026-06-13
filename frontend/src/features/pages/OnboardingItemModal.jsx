@@ -188,7 +188,7 @@ export const OnboardingItemModal = ({ stage, user, startupProfile, onSelect, onC
             </div>
           ) : (
             <div className="onboarding-modal-state">
-              <Icon name="sparkle" size={40} />
+              <Icon name="sparkle" size={40} className="om-loading-sparkle" />
               <h2>{LOADING_STEPS[loadingStep]}</h2>
               <p>잠시만요, 입력하신 정보로 딱 맞는 창업 아이템을 추천하고 있어요.</p>
               <div className="generating-progress"><span style={{ width: `${progress}%` }} /></div>

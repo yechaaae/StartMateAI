@@ -23,6 +23,7 @@ export const FEATURE_RESULT_TYPES = {
 
 export const buildFeatureSavedReport = ({
   featureId,
+  workspaceId = null,
   data,
   currentResult,
   selectedIdeaRank,
@@ -67,6 +68,7 @@ export const buildFeatureSavedReport = ({
   }
 
   return {
+    workspaceId,
     sourceFeature: featureId,
     resultType: FEATURE_RESULT_TYPES[featureId] ?? 'FEATURE_REPORT',
     referenceId: operationFeedbackId,

@@ -20,8 +20,12 @@ export const HomePage = ({ go, workspace, user }) => {
 
   useEffect(() => {
     startupProfileApi.get().then(setProfile)
-    savedResultApi.latest('ITEM').then(setItemReport).catch(() => setItemReport(null))
   }, [])
+
+  // 현재 워크스페이스에 묶인 아이템 리포트를 가져온다. 워크스페이스가 바뀌면 다시 조회한다.
+  useEffect(() => {
+    savedResultApi.latest('ITEM', workspace?.id ?? null).then(setItemReport).catch(() => setItemReport(null))
+  }, [workspace?.id])
 
   // 저장된 아이템 리포트에서 선택한 아이템을 뽑는다. 없으면 워크스페이스 4필드로 폴백한다.
   const { item, hasDetail } = useMemo(() => {
