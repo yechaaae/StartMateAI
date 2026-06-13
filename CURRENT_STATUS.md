@@ -319,6 +319,22 @@ AI coding assistant 또는 작업자는 작업 종료 전에 아래 항목을 �
 ```text
 작업일: 2026-06-13
 작업자: Claude (Claude Code)
+브랜치: feat/simulator-discuss-chat
+이번 작업 요약: 시뮬레이터 리포트 페이지 채팅을 전체 상담실(DiscussPage)과 동일한 멀티에이전트 진행/토론 UI로 전환. 기존에는 "AI 리포트 갱신"이 hidden 요청이라 agent-progress를 통째로 버려서 에이전트 간 대화(challenge/revision/consensus)가 안 보였음
+수정한 주요 영역: frontend/src/features/pages/SimulatorPage.jsx (단일 agentProgress 상태 → chatProgressState의 activeProgressMap, StatusProgressRow 도입, agent-progress 핸들러의 hidden 조기 return 제거 후 viewType!=='status' 이벤트를 대화 메시지로 렌더, chat-status에서 COMPLETED/FAILED 시 진행맵 정리, 상태 배너는 FAILED만 표시 — DiscussPage와 동일 패턴)
+추가/변경된 API: 없음
+추가/변경된 환경변수: 없음
+실행한 테스트: cd frontend && npm install; npm run build (성공, 69 modules); npm test (32/32 pass)
+실패한 테스트와 이유: 해당 없음
+데모 영향: 시뮬레이터에서 리포트 생성/갱신 중에도 에이전트들이 서로 의견을 주고받는 과정이 실시간으로 보임(전체 상담실과 동일 경험). hidden이던 리포트 생성 트리거 프롬프트(사용자 말풍선)는 여전히 숨김 유지
+깨질 수 있는 부분: 진행/토론 메시지는 실시간 표시용이라 새로고침(히스토리 재로드) 후에는 사라짐(DiscussPage와 동일). 최종 리포트 카드/요약 말풍선과 리포트 데이터 적용은 기존 동작 유지
+다음 사람이 보면 좋은 파일: frontend/src/features/pages/DiscussPage.jsx, frontend/src/features/chat/chatProgressState.js, frontend/src/features/chat/ChatRow.jsx(ProgressConversationRow)
+아직 안 한 일: 다른 기능 페이지(FeaturePage)들도 동일 패턴 필요한지 검토 미진행
+```
+
+```text
+작업일: 2026-06-13
+작업자: Claude (Claude Code)
 이번 작업 요약: 전체 코드 점검(멀티에이전트/외부 API/AI 판단/전체 플로우) 후 구조 문서와 제한사항·다음 작업 리스트를 실제 코드 기준으로 갱신
 수정한 주요 영역: 루트 PROJECT_STRUCTURE_HANDOFF.md(백엔드 모듈 전체·Agent 10종·라우팅/토론 메커니즘·API 표 확장·§10 해커톤 데모 흐름 연출 가이드 추가), CURRENT_STATUS.md(검증된 제한사항 추가·우선순위 개선 리스트·본 기록)
 추가/변경된 API: 없음(문서 표만 실제 엔드포인트에 맞게 확장)
