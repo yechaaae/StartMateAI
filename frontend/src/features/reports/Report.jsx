@@ -29,9 +29,11 @@ export const Report = ({
   supportSearchLoading,
   supportHasSearched,
   onRunSupportSearch,
-  savedSupportPrograms,
   onSaveSupportProgram,
-  onDeleteSavedSupportProgram,
+  onDeleteSupportProgram,
+  savedSupportPrograms,
+  supportViewMode,
+  onChangeSupportViewMode,
   focusedSectionTitle,
   onFocusSection,
   planGoal,
@@ -76,9 +78,11 @@ export const Report = ({
         supportSearchLoading={supportSearchLoading}
         supportHasSearched={supportHasSearched}
         onRunSupportSearch={onRunSupportSearch}
-        savedSupportPrograms={savedSupportPrograms}
         onSaveSupportProgram={onSaveSupportProgram}
-        onDeleteSavedSupportProgram={onDeleteSavedSupportProgram}
+        onDeleteSupportProgram={onDeleteSupportProgram}
+        savedSupportPrograms={savedSupportPrograms}
+        supportViewMode={supportViewMode}
+        onChangeSupportViewMode={onChangeSupportViewMode}
       />
     )
   }

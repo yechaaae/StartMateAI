@@ -149,6 +149,8 @@ export const FeaturePage = ({
   const [savedSupportPrograms, setSavedSupportPrograms] = useState(() => (
     id === 'support' ? readSupportProgramHistory() : []
   ))
+  // 지원사업 결과 화면 뷰 모드: 'all'(전체 추천) | 'saved'(저장한 결과만). 이 페이지에서만 유지된다.
+  const [supportViewMode, setSupportViewMode] = useState('all')
   const [focusedSectionTitle, setFocusedSectionTitle] = useState(featureSeed.focusedSectionTitle)
   const [planGoal, setPlanGoal] = useState(featureSeed.planGoal)
   // 사업계획서 기능에서 사용자가 붙여넣는 공고문(있으면 그 내용에 맞춰 초안을 재생성한다).
@@ -502,6 +504,7 @@ export const FeaturePage = ({
     return ordered
   }, [activeProgresses])
   const visibleAgents = visibleAgentKeys.map((key) => ({ key, ...agents[key] }))
+  const savedMenuItems = id === 'support' ? savedSupportPrograms : savedReports
   const visibleAgentStatus = runningAgentKey && agents[runningAgentKey]
     ? '현재 답변을 준비하고 있어요.'
     : visibleAgents.length
@@ -796,12 +799,6 @@ export const FeaturePage = ({
     }
   }
 
-  const handleDeleteSavedSupportProgram = (programId) => {
-    const nextSavedPrograms = removeSupportProgramHistoryItem(readSupportProgramHistory(), programId)
-    writeSupportProgramHistory(nextSavedPrograms)
-    setSavedSupportPrograms(nextSavedPrograms)
-  }
-
   // 추천 결과에서 개별 지원사업을 '저장한 추천 목록'에 담는다(검색 시 자동 저장하지 않음).
   const handleSaveSupportProgram = (program) => {
     if (!program) return
@@ -811,6 +808,16 @@ export const FeaturePage = ({
       regionBasis: supportRegionBasis,
     }
     const nextSavedPrograms = mergeSupportProgramHistory(readSupportProgramHistory(), [program], filters)
+    writeSupportProgramHistory(nextSavedPrograms)
+    setSavedSupportPrograms(nextSavedPrograms)
+    setSavedMenuOpen(true)
+  }
+
+  // 저장한 추천 목록에서 개별 지원사업을 제거한다('저장한 결과' 뷰의 × 버튼).
+  const handleDeleteSupportProgram = (program) => {
+    if (!program) return
+    const targetId = program.id ?? program.title
+    const nextSavedPrograms = removeSupportProgramHistoryItem(readSupportProgramHistory(), targetId)
     writeSupportProgramHistory(nextSavedPrograms)
     setSavedSupportPrograms(nextSavedPrograms)
   }
@@ -924,7 +931,7 @@ export const FeaturePage = ({
                   </b>
                 </div>
               </div>
-            ) : id === 'support' || id === 'sns' ? null : (
+            ) : id === 'sns' ? null : (
               <>
                 <div className="sim-saved-menu" ref={savedMenuRef}>
                   <button
@@ -934,25 +941,34 @@ export const FeaturePage = ({
                     onClick={() => setSavedMenuOpen((open) => !open)}
                   >
                     <Icon name="bookmark" size={15} />
-                    저장한 결과{savedReports.length ? ` ${savedReports.length}` : ''}
+                    저장한 결과{savedMenuItems.length ? ` ${savedMenuItems.length}` : ''}
                     <Icon name="chevron" size={14} />
                   </button>
                   {savedMenuOpen && (
                     <div className="sim-saved-dropdown">
-                      {savedReports.length === 0 ? (
+                      {savedMenuItems.length === 0 ? (
                         <p className="sim-saved-empty">저장한 결과가 아직 없어요.</p>
                       ) : (
-                        savedReports.map((item) => (
+                        savedMenuItems.map((item) => (
                           <button
-                            key={item.id}
+                            key={item.id ?? item.title}
                             type="button"
                             className="sim-saved-item"
-                            onClick={() => loadSavedReport(item.id)}
+                            onClick={() => {
+                              if (id === 'support') {
+                                setSelectedSupportTitle(item.title)
+                                setSupportViewMode('saved')
+                                setSavedMenuOpen(false)
+                                return
+                              }
+                              loadSavedReport(item.id)
+                            }}
                           >
                             <b>{item.title}</b>
-                            {(item.createdAt || item.summary) && (
+                            {(item.createdAt || item.savedAt || item.summary || item.region) && (
                               <small>
-                                {item.createdAt ? item.createdAt.slice(0, 10) : ''}
+                                {item.createdAt || item.savedAt ? (item.createdAt ?? item.savedAt).slice(0, 10) : ''}
+                                {item.region ? ` · ${item.region}` : ''}
                                 {item.summary ? ` · ${item.summary}` : ''}
                               </small>
                             )}
@@ -963,7 +979,7 @@ export const FeaturePage = ({
                   )}
                 </div>
                 {/* 운영 피드백은 폼 내부 저장 버튼을 쓰고, 아이템은 추천 화면일 때만 생성/저장 버튼을 보여준다. */}
-                {id !== 'operation' && !(id === 'item' && itemFlowStep !== 'recommend') && (
+                {id !== 'support' && id !== 'operation' && !(id === 'item' && itemFlowStep !== 'recommend') && (
                   <>
                     <button
                       type="button"
@@ -1038,9 +1054,11 @@ export const FeaturePage = ({
             supportSearchLoading={supportSearchLoading}
             supportHasSearched={supportHasSearched}
             onRunSupportSearch={handleSupportProgramSearch}
-            savedSupportPrograms={savedSupportPrograms}
             onSaveSupportProgram={handleSaveSupportProgram}
-            onDeleteSavedSupportProgram={handleDeleteSavedSupportProgram}
+            onDeleteSupportProgram={handleDeleteSupportProgram}
+            savedSupportPrograms={savedSupportPrograms}
+            supportViewMode={supportViewMode}
+            onChangeSupportViewMode={setSupportViewMode}
             focusedSectionTitle={focusedSectionTitle}
             onFocusSection={setFocusedSectionTitle}
             planGoal={planGoal}

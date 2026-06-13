@@ -1497,7 +1497,7 @@
 }
 
 .address-modal {
-  width: min(460px, 100%);
+  width: min(760px, 100%);
 }
 
 .region-loading {
@@ -1508,45 +1508,173 @@
   font-weight: 700;
 }
 
-.region-selects {
-  display: grid;
-  gap: 14px;
-}
-
-.region-select {
-  display: grid;
-  gap: 7px;
-}
-
-.region-select > span {
-  color: var(--ink-2);
-  font-size: 12.5px;
-  font-weight: 800;
-}
-
-.region-select select {
-  width: 100%;
-  padding: 13px 14px;
+/* 검색창 */
+.region-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 0 14px;
   border: 1px solid var(--line-2);
   border-radius: 12px;
-  outline: none;
   background: #fff;
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
+  color: var(--ink-3);
   transition: border-color .18s ease, box-shadow .18s ease;
 }
 
-.region-select select:focus {
+.region-search:focus-within {
   border-color: rgba(79, 107, 240, .55);
   box-shadow: 0 0 0 4px rgba(79, 107, 240, .12);
 }
 
-.region-select select:disabled {
-  background: #f6f7fa;
+.region-search input {
+  flex: 1;
+  padding: 12px 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+/* 3단 컬럼 패널 */
+.region-columns {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr 1.3fr;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.region-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--line);
+}
+
+.region-col:last-child {
+  border-right: 0;
+}
+
+.region-col-head {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #f7f8fb;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.region-col-list {
+  height: 300px;
+  overflow-y: auto;
+}
+
+.region-col-item {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 11px 14px;
+  text-align: left;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.region-col-item:hover {
+  background: #f6f8ff;
+}
+
+.region-col-item.on {
+  background: var(--brand-tint);
+  color: var(--brand-strong);
+  font-weight: 800;
+}
+
+.region-col-empty {
+  margin: 0;
+  padding: 18px 14px;
   color: var(--ink-4);
-  cursor: not-allowed;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+
+/* 검색 결과 */
+.region-results {
+  max-height: 348px;
+  overflow-y: auto;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+}
+
+.region-result {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+}
+
+.region-result:last-child {
+  border-bottom: 0;
+}
+
+.region-result:hover {
+  background: #f6f8ff;
+}
+
+.region-results-empty {
+  margin: 0;
+  padding: 22px 14px;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+/* 하단 초기화 */
+.region-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.region-modal-reset {
+  padding: 8px 16px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 800;
+  transition: color .15s ease, border-color .15s ease;
+}
+
+.region-modal-reset:hover {
+  color: var(--ink);
+  border-color: rgba(79, 107, 240, .45);
+}
+
+@media (max-width: 640px) {
+  .region-col-list {
+    height: 240px;
+  }
+
+  .region-col-item {
+    padding: 10px;
+    font-size: 13px;
+  }
 }
 
 /* ===== 초기 예산 (만원) ===== */
@@ -7171,6 +7299,12 @@ button:disabled {
   color: var(--ink);
 }
 
+.support-view-toggle {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .support-program-buttons {
   display: flex;
   gap: 8px;
@@ -7189,6 +7323,12 @@ button:disabled {
 
 .support-save-btn:hover {
   background: #f6f7fa;
+}
+
+.support-save-btn.saved {
+  border-color: #dbe1fb;
+  background: #f7f9ff;
+  color: var(--brand);
 }
 
 /* 사업계획서 상단: 보조할 사업 + 작성 전략 */
