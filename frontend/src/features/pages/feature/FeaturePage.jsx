@@ -41,6 +41,7 @@ import { buildOperationFeedbackPayload } from '../../reports/operationFeedbackLo
 import { buildFeatureSavedReport } from '../../reports/savedReportPayload'
 import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from '../featureChatContext'
 import { buildFeaturePageTheme } from './featurePageTheme'
+import { ItemGeneratingState } from './ItemGeneratingState'
 import './FeaturePage.css'
 
 const FEATURE_TARGETS = {
@@ -836,6 +837,8 @@ export const FeaturePage = ({
             onRequestOperationFeedback={handleOperationFeedbackRequest}
             operationFeedbackSaving={savingReport}
           />
+        ) : id === 'item' && aiReportStatus === 'loading' ? (
+          <ItemGeneratingState agentId={feature.agent} />
         ) : (
           <div className="ai-report-state">
             <AgentAvatar id={feature.agent} size={56} active={aiReportStatus === 'loading'} />
