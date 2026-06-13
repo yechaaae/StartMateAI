@@ -1,3 +1,14 @@
+// AI가 기능 리포트 생성을 끝내면 chat-message metadata에 reportData가 담겨 온다.
+// 해당 featureId의 완성된 reportData를 꺼내거나, 아직이면 null을 돌려준다.
+export const reportDataFromMessage = (message, featureId) => {
+  const result = message?.metadata?.result
+  if (result?.shouldCreateResult !== true) return null
+  const payload = result?.payload
+  if (!payload?.reportData) return null
+  if (payload.featureId && payload.featureId !== featureId) return null
+  return payload.reportData
+}
+
 const AGENT_NAME_TO_KEY = {
   ProfileAgent: 'profile',
   IdeaAgent: 'idea',

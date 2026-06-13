@@ -573,6 +573,15 @@ class OrchestratorAgent:
             plan_meta = {"source": "explicit_intent"}
 
         effective_profile = None
+        contextual_plan = self._contextual_followup_plan(request)
+        if contextual_plan:
+            plan = contextual_plan
+            plan_meta = {
+                "source": "contextual_followup",
+                "reason": self._contextual_followup_reason(request, contextual_plan),
+                "original_plan": plan_meta,
+            }
+
         if request.intent == "auto" and feature_key not in FEATURE_REPORT_TEAMS:
             effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
             profile_gate_reason = self._profile_gate_reason(request, effective_profile, plan)
@@ -618,12 +627,16 @@ class OrchestratorAgent:
             "results": {},
             "followups": [],
             "followup_meta": {},
+            "policy_query": self._policy_query_from_context(request) if "policy" in plan else None,
             "progress_lock": asyncio.Lock(),
             "progress_last_at": time.monotonic(),
         }
 
     def _normalize_plan_for_request(self, request: ChatRequest, plan: list[str]) -> list[str]:
         normalized = self._unique(plan)
+        contextual_plan = self._contextual_followup_plan(request)
+        if contextual_plan:
+            return contextual_plan
         if self._is_idea_recommendation_request(request.message):
             normalized = [intent for intent in normalized if intent not in {"policy", "plan"}]
             if "idea" not in normalized:
@@ -635,6 +648,16 @@ class OrchestratorAgent:
                 ordered = ["idea", *[intent for intent in normalized if intent != "idea"]]
             return self._unique(ordered)[:3]
         return normalized[:3]
+
+    def _contextual_followup_plan(self, request: ChatRequest) -> list[str]:
+        if self._contextual_policy_followup(request):
+            return ["policy"]
+        return []
+
+    def _contextual_followup_reason(self, request: ChatRequest, plan: list[str]) -> str:
+        if plan == ["policy"]:
+            return "support_program_followup_keeps_policy_agent"
+        return "contextual_followup"
 
     def _normalization_reason(self, request: ChatRequest, original: list[str], normalized: list[str]) -> str:
         if self._is_idea_recommendation_request(request.message):
@@ -865,6 +888,97 @@ class OrchestratorAgent:
             return False
         return any(keyword in text for keyword in ["지원사업", "정부지원", "정부 지원", "공고", "보조금", "지원금", "사업화 자금"])
 
+    def _contextual_policy_followup(self, request: ChatRequest) -> bool:
+        message = request.message or ""
+        text = message.lower()
+        if self._explicit_policy_request(message):
+            return True
+        if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "주변 점포", "주변 가게", "임대료"]):
+            return False
+        supportish = any(
+            keyword in text
+            for keyword in [
+                "관련 지원",
+                "지원할 수 있는",
+                "지원받",
+                "지원 가능",
+                "지원 가능한",
+                "관련된걸",
+                "관련된 걸",
+                "관련있는",
+                "관련 있는",
+            ]
+        )
+        if not supportish:
+            return False
+        context_text = self._context_text(request.context)
+        return any(keyword in context_text for keyword in ["지원사업", "공고", "보조금", "지원금", "support"])
+
+    def _policy_query_from_context(self, request: ChatRequest) -> str:
+        message = request.message or ""
+        idea_title = self._selected_idea_title_from_context(request.context)
+        current_result = self._current_result_from_context(request.context)
+        region = (
+            request.profile.region
+            or self._first_text(
+                current_result.get("desiredRegion"),
+                current_result.get("region"),
+                current_result.get("location"),
+            )
+            or self._region_hint_from_text(message)
+        )
+        parts = [
+            f"{region} 지역" if region else "",
+            f"{idea_title} 아이템 기준" if idea_title else "",
+            "창업 지원사업 추천",
+            message,
+        ]
+        return " ".join(part for part in parts if part)
+
+    def _current_result_from_context(self, context: dict[str, Any]) -> dict[str, Any]:
+        feature_payload = self._dict_at(context, "featurePayload") or self._dict_at(context, "feature_payload")
+        return (
+            self._dict_at(context, "currentResult")
+            or self._dict_at(feature_payload, "currentResult")
+            or self._dict_at(context, "current_result")
+        )
+
+    def _selected_idea_title_from_context(self, context: dict[str, Any]) -> str:
+        current_result = self._current_result_from_context(context)
+        feature_payload = self._dict_at(context, "featurePayload") or self._dict_at(context, "feature_payload")
+        candidates = [
+            self._dict_at(context, "selectedIdea"),
+            self._dict_at(context, "selected_idea"),
+            self._dict_at(current_result, "selectedIdea"),
+            self._dict_at(current_result, "selected_idea"),
+            self._dict_at(self._dict_at(current_result, "ideaContext"), "selectedIdea"),
+            self._dict_at(self._dict_at(current_result, "businessContext"), "selectedIdea"),
+            self._dict_at(self._dict_at(feature_payload, "ideaContext"), "selectedIdea"),
+            self._dict_at(self._dict_at(feature_payload, "businessContext"), "selectedIdea"),
+        ]
+        for candidate in candidates:
+            title = self._title_at(candidate)
+            if title:
+                return title
+        items = current_result.get("items")
+        if isinstance(items, list) and items:
+            first = items[0]
+            if isinstance(first, dict):
+                return self._title_at(first) or ""
+        return ""
+
+    def _region_hint_from_text(self, text: str) -> str:
+        for region in ["구미", "구미시", "경북", "경상북도", "대구", "서울", "부산", "경기", "전국"]:
+            if region in text:
+                return region
+        return ""
+
+    def _context_text(self, context: dict[str, Any]) -> str:
+        try:
+            return json.dumps(context or {}, ensure_ascii=False).lower()
+        except TypeError:
+            return str(context or "").lower()
+
     def _policy_followup_allowed(self, state: dict[str, Any], finance_response: AgentResponse) -> bool:
         request: ChatRequest = state["request"]
         if self._explicit_policy_request(request.message):
@@ -1003,6 +1117,10 @@ class OrchestratorAgent:
         if reason:
             lines.append(f"추천 이유는 {reason}")
 
+        conflict_note = self._idea_conflict_note(results, debate_rounds)
+        if conflict_note:
+            lines.append(conflict_note)
+
         if len(recommendations) > 1:
             lines.append("")
             lines.append("후보 순위")
@@ -1040,6 +1158,46 @@ class OrchestratorAgent:
         lines.append("")
         lines.append(f"정리하면, 최종 리포트의 중심은 `{title}` 추천이고 법률, 재무, 지원사업 의견은 이 아이템을 어떻게 작게 검증할지 보완하는 근거로 보면 됩니다.")
         return "\n".join(lines)
+
+    def _idea_conflict_note(
+        self,
+        results: dict[str, AgentResponse],
+        debate_rounds: dict[str, Any] | None = None,
+    ) -> str:
+        challenges = (debate_rounds or {}).get("challenges") or []
+        for challenge in challenges:
+            if not isinstance(challenge, dict):
+                continue
+            if challenge.get("source_intent") == "finance" and challenge.get("target_intent") in {"idea", "orchestrator"}:
+                issue = str(challenge.get("issue") or "").strip()
+                basis = str(challenge.get("basis") or "").strip()
+                proposal = str(challenge.get("proposal") or "").strip()
+                detail = " ".join(part for part in [issue, basis] if part)
+                return f"다만 Agent 충돌을 반영하면 이 아이템은 바로 확정이 아니라 검증 후보입니다. {detail} {proposal}".strip()
+
+        finance = results.get("finance")
+        if not finance:
+            return ""
+        data = finance.data or {}
+        monthly_profit = data.get("monthly_profit_krw")
+        break_even = data.get("break_even_units_per_day")
+        expected = data.get("expected_daily_customers")
+        if isinstance(monthly_profit, (int, float)) and monthly_profit < 0:
+            return (
+                "다만 Agent 충돌을 반영하면 이 아이템은 바로 확정이 아니라 검증 후보입니다. "
+                f"재무 Agent가 월 손익 {int(monthly_profit):,}원을 위험 신호로 봤습니다."
+            )
+        if (
+            isinstance(break_even, (int, float))
+            and isinstance(expected, (int, float))
+            and expected > 0
+            and break_even > expected
+        ):
+            return (
+                "다만 Agent 충돌을 반영하면 이 아이템은 바로 확정이 아니라 검증 후보입니다. "
+                f"손익분기 {int(break_even)}개/day가 예상 판매량 {int(expected)}개/day보다 높습니다."
+            )
+        return ""
 
     def _idea_validation_lines(self, results: dict[str, AgentResponse]) -> list[str]:
         lines: list[str] = []
@@ -1799,7 +1957,7 @@ class OrchestratorAgent:
             plan.append("finance")
         if any(keyword in text for keyword in ["운영", "재고", "리뷰", "피드백", "매장"]):
             plan.append("operation")
-        if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "경쟁", "주변 점포", "주변 가게", "연남동", "마포구", "구미", "인동동"]):
+        if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "경쟁", "주변 점포", "주변 가게", "임대료", "유동인구"]):
             plan.append("commercial_area")
         if any(keyword in text for keyword in ["sns", "홍보", "릴스", "게시글", "해시태그"]):
             plan.append("marketing")

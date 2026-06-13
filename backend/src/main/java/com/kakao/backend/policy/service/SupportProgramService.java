@@ -63,7 +63,12 @@ public class SupportProgramService {
     public List<RecommendedProgramResponse> recommend(SupportProgramRecommendationRequest request) {
         List<SupportProgram> programs = realPrograms();
         if (programs.isEmpty()) {
-            throw new IllegalStateException("support_programs is empty. Import seeds first.");
+            // 동기화된 실제 데이터가 없으면 demo 포함 전체로 폴백한다.
+            // (아무 데이터도 없으면 빈 목록을 반환한다 — 예외를 던지면 호출한 트랜잭션이 rollback-only로 오염된다.)
+            programs = supportProgramRepository.findAll();
+        }
+        if (programs.isEmpty()) {
+            return List.of();
         }
         return programs.stream()
                 .map(program -> matcher.match(program, request))

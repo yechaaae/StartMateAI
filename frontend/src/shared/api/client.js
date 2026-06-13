@@ -73,6 +73,18 @@ export const operationFeedbackApi = {
   }),
 }
 
+export const workspaceApi = {
+  list: () => request('/workspaces'),
+  create: (payload = {}) => request('/workspaces', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  update: (workspaceId, payload) => request(`/workspaces/${workspaceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
+}
+
 export const supportProgramApi = {
   recommend: (payload) => request('/support-programs/recommend', {
     method: 'POST',
