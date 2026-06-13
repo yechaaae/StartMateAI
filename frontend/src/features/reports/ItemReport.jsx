@@ -3,7 +3,7 @@ import { Card } from '../../shared/components/Card'
 import { Icon } from '../../shared/components/Icon'
 import { AgentReview } from './AgentReview'
 
-const KAKAO_APP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY || '2acaefd1805b94c10aa12a18f7680cbe'
+const KAKAO_APP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY ?? ''
 const KAKAO_SCRIPT_ID = 'kakao-map-script'
 const DEFAULT_POSITION = { lat: 35.1631, lng: 129.1635 }
 
@@ -15,6 +15,10 @@ const loadKakao = () => {
   kakaoLoaderPromise = new Promise((resolve, reject) => {
     if (window.kakao?.maps?.Map) {
       resolve()
+      return
+    }
+    if (!KAKAO_APP_KEY) {
+      reject(new Error('VITE_KAKAO_MAP_KEY is required.'))
       return
     }
 

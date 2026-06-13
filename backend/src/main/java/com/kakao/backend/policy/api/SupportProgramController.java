@@ -28,6 +28,6 @@ public class SupportProgramController {
 
     @PostMapping("/recommend")
     public List<RecommendedProgramResponse> recommend(@RequestBody SupportProgramRecommendationRequest request) {
-        return supportProgramService.recommendWithDemoFallback(request);
+        return supportProgramService.recommend(request);
     }
 }

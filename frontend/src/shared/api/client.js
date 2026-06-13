@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
+const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || '/api'
 
 const readErrorMessage = async (response) => {
   const fallback = `요청을 처리하지 못했습니다. (${response.status})`
@@ -68,6 +68,13 @@ export const savedResultApi = {
 
 export const operationFeedbackApi = {
   save: (payload) => request('/operation-feedback', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+}
+
+export const supportProgramApi = {
+  recommend: (payload) => request('/support-programs/recommend', {
     method: 'POST',
     body: JSON.stringify(payload),
   }),

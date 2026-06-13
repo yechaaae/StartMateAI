@@ -9,10 +9,10 @@ from app.core.config import Settings
 
 
 class GMSClient:
-    """Small adapter around the hackathon GMS Gemini API.
+    """Small adapter around the hackathon GMS LLM API.
 
-    GMS proxies Google Gemini `generateContent` endpoints through
-    `https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com`.
+    GMS can proxy OpenAI-compatible chat completions and Gemini
+    `generateContent` endpoints.
     If the hackathon gateway changes the request contract, only
     `_build_payload`, `_build_headers`, and `_extract_content` should need
     changes.
@@ -51,7 +51,14 @@ class GMSClient:
                 json=payload,
             )
             response.raise_for_status()
-            return self._extract_content(response.json())
+            if not response.content:
+                return fallback
+            try:
+                data = response.json()
+            except ValueError:
+                return fallback
+            content = self._extract_content(data).strip()
+            return content or fallback
 
     def _build_payload(self, system_prompt: str, user_prompt: str, temperature: float) -> dict[str, Any]:
         if self._uses_gemini_generate_content():
@@ -70,14 +77,16 @@ class GMSClient:
                 },
             }
 
-        return {
+        payload = {
             "model": self.settings.gms_model,
             "messages": [
-                {"role": "system", "content": system_prompt},
+                {"role": "developer", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": temperature,
         }
+        if not self._uses_default_only_temperature_model() and temperature != 1:
+            payload["temperature"] = temperature
+        return payload
 
     def _build_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -125,3 +134,6 @@ class GMSClient:
 
     def _uses_gemini_generate_content(self) -> bool:
         return self.settings.gms_chat_path.endswith(":generateContent")
+
+    def _uses_default_only_temperature_model(self) -> bool:
+        return self.settings.gms_model.startswith("gpt-5")

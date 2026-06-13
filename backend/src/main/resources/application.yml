@@ -5,4 +5,4 @@ spring:
 server:
   servlet:
     session:
-      timeout: 1d
+      timeout: 2d

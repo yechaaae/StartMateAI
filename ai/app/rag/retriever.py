@@ -29,6 +29,16 @@ class SupportProgramRetriever:
         vector_store_path: str | None = None,
         embedding_dimensions: int = 384,
     ) -> "SupportProgramRetriever":
+        return cls(programs=[], retrieval_mode=retrieval_mode)
+
+    @classmethod
+    def from_sample(
+        cls,
+        *,
+        retrieval_mode: str = "hybrid",
+        vector_store_path: str | None = None,
+        embedding_dimensions: int = 384,
+    ) -> "SupportProgramRetriever":
         data_path = Path(__file__).resolve().parents[1] / "data" / "support_programs.sample.json"
         programs = json.loads(data_path.read_text(encoding="utf-8"))
         retrieval_mode = cls._normalize_mode(retrieval_mode)

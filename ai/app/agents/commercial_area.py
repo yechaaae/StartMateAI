@@ -99,7 +99,7 @@ class CommercialAreaAgent(BaseAgent):
                 summary=self._missing_summary(missing_inputs, payload),
                 data=data,
                 next_actions=[
-                    "상가 CSV 또는 demo store 데이터 적재 확인",
+                    "상가 API 권한과 CSV 데이터 적재 상태 확인",
                     "시/군/구, 동, 업종 대분류/중분류를 구체화",
                     "같은 지역의 임대료, 유동인구, 객단가 데이터를 추가 확인",
                 ],
@@ -288,7 +288,7 @@ class CommercialAreaAgent(BaseAgent):
         inferred_region = self._infer_region(region_text)
         inferred_industry = self._infer_industry(industry_text)
         return {
-            "sido": self._first_text(context, "sido", "시도") or inferred_region["sido"] or "경북",
+            "sido": self._first_text(context, "sido", "시도") or inferred_region["sido"],
             "sigungu": self._first_text(context, "sigungu", "시군구") or inferred_region["sigungu"],
             "dong": self._first_text(context, "dong", "행정동", "법정동") or inferred_region["dong"],
             "latitude": self._number(context.get("latitude")),

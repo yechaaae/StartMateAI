@@ -92,6 +92,72 @@ class OperationFeedbackServiceTest {
     }
 
     @Test
+    void persistsLockedFlagOnProductShareMetric() {
+        OperationFeedbackService service = service();
+        User user = User.create("owner@example.com", "owner", "USER");
+        user.setId(7L);
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
+        workspace.setId(11L);
+        workspace.setUser(user);
+
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(workspaceRepository.findFirstByUserIdAndStatusOrderByIdAsc(7L, "ACTIVE")).thenReturn(Optional.of(workspace));
+        when(operationFeedbackRepository.save(any(OperationFeedback.class))).thenAnswer(invocation -> {
+            OperationFeedback feedback = invocation.getArgument(0);
+            feedback.setId(31L);
+            return feedback;
+        });
+        when(savedResultRepository.save(any(SavedResult.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.save(7L, requestWithProductShares(60, 40));
+
+        ArgumentCaptor<OperationFeedback> feedbackCaptor = ArgumentCaptor.forClass(OperationFeedback.class);
+        verify(operationFeedbackRepository).save(feedbackCaptor.capture());
+        List<com.kakao.backend.operation.domain.OperationMetric> productMetrics = feedbackCaptor.getValue().getMetrics().stream()
+                .filter(metric -> "PRODUCT_SHARE".equals(metric.getMetricType()))
+                .toList();
+        assertThat(productMetrics).hasSize(2);
+        assertThat(productMetrics.get(0).getDescription()).contains("고정");
+        assertThat(productMetrics.get(1).getDescription()).doesNotContain("고정");
+    }
+
+    @Test
+    void savesWhenNoProductsAreProvided() {
+        OperationFeedbackService service = service();
+        User user = User.create("owner@example.com", "owner", "USER");
+        user.setId(7L);
+        Workspace workspace = Workspace.create("workspace", "ACTIVE");
+        workspace.setId(11L);
+        workspace.setUser(user);
+
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(workspaceRepository.findFirstByUserIdAndStatusOrderByIdAsc(7L, "ACTIVE")).thenReturn(Optional.of(workspace));
+        when(operationFeedbackRepository.save(any(OperationFeedback.class))).thenAnswer(invocation -> {
+            OperationFeedback feedback = invocation.getArgument(0);
+            feedback.setId(42L);
+            return feedback;
+        });
+        when(savedResultRepository.save(any(SavedResult.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OperationFeedbackRequest request = new OperationFeedbackRequest(
+                "2026-06",
+                List.of(
+                        new OperationFeedbackRequest.KpiRequest("totalSales", "매출", "원", new BigDecimal("3000000"), null)
+                ),
+                List.of(),
+                List.of(),
+                "메모",
+                List.of(),
+                null
+        );
+
+        OperationFeedbackResponse response = service.save(7L, request);
+
+        assertThat(response.id()).isEqualTo(42L);
+        assertThat(response.savedResultCreated()).isTrue();
+    }
+
+    @Test
     void rejectsProductSharesWhenTotalIsNotOneHundred() {
         OperationFeedbackService service = service();
         when(userRepository.findById(7L)).thenReturn(Optional.of(User.create("owner@example.com", "owner", "USER")));
@@ -111,8 +177,8 @@ class OperationFeedbackServiceTest {
                         new OperationFeedbackRequest.KpiRequest("adConversionRate", "광고 전환율", "%", new BigDecimal("2.5"), new BigDecimal("2.0"))
                 ),
                 List.of(
-                        new OperationFeedbackRequest.ProductShareRequest("아메리카노", BigDecimal.valueOf(firstShare)),
-                        new OperationFeedbackRequest.ProductShareRequest("쿠키", BigDecimal.valueOf(secondShare))
+                        new OperationFeedbackRequest.ProductShareRequest("아메리카노", BigDecimal.valueOf(firstShare), true),
+                        new OperationFeedbackRequest.ProductShareRequest("쿠키", BigDecimal.valueOf(secondShare), false)
                 ),
                 List.of(List.of("인스타그램 광고", "전환율 2.5%")),
                 "광고 효율 점검",

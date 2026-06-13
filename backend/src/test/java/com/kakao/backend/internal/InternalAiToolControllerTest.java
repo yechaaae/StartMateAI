@@ -60,18 +60,24 @@ class InternalAiToolControllerTest {
                 "청년 예비창업 패키지",
                 "kstartup",
                 "사업화 자금과 멘토링 지원",
+                "전국",
+                "최대 5천만원",
+                "사업계획서,개인정보동의서",
+                "창업진흥원",
+                "grant",
+                "open",
                 92,
                 List.of("청년 연령 조건에 맞을 가능성이 높습니다."),
                 List.of(),
                 LocalDate.of(2026, 6, 30),
                 "https://example.com/apply"
         ));
-        when(supportProgramService.recommendWithDemoFallback(request)).thenReturn(expected);
+        when(supportProgramService.recommend(request)).thenReturn(expected);
 
         List<RecommendedProgramResponse> actual = controller.recommendSupportPrograms(TOKEN, request);
 
         assertThat(actual).isEqualTo(expected);
-        verify(supportProgramService).recommendWithDemoFallback(request);
+        verify(supportProgramService).recommend(request);
     }
 
     @Test

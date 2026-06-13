@@ -40,12 +40,18 @@ class AiChatExternalReferenceDataServiceTest {
 
     @Test
     void attachesRecommendedSupportProgramsForPolicyAgent() {
-        when(supportProgramService.recommendWithDemoFallback(any(SupportProgramRecommendationRequest.class)))
+        when(supportProgramService.recommend(any(SupportProgramRecommendationRequest.class)))
                 .thenReturn(List.of(new RecommendedProgramResponse(
                         1L,
                         "청년 예비창업 패키지",
                         "kstartup",
                         "사업화 자금과 멘토링 지원",
+                        "전국",
+                        "최대 5천만원",
+                        "사업계획서,개인정보동의서",
+                        "창업진흥원",
+                        "grant",
+                        "open",
                         92,
                         List.of("청년 연령 조건에 맞을 가능성이 높습니다."),
                         List.of(),
@@ -69,7 +75,7 @@ class AiChatExternalReferenceDataServiceTest {
 
         ArgumentCaptor<SupportProgramRecommendationRequest> captor =
                 ArgumentCaptor.forClass(SupportProgramRecommendationRequest.class);
-        verify(supportProgramService).recommendWithDemoFallback(captor.capture());
+        verify(supportProgramService).recommend(captor.capture());
         assertThat(captor.getValue().desiredSido()).isEqualTo("서울");
         assertThat(captor.getValue().desiredSigungu()).isEqualTo("마포구");
         assertThat(captor.getValue().industryMedium()).isEqualTo("커피점/카페");

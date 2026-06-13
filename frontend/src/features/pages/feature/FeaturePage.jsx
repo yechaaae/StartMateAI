@@ -234,6 +234,9 @@ export const FeaturePage = ({
         if (reportData) {
           applyReportData(reportData)
           setAiReportStatus('ready')
+        } else if (id === 'operation') {
+          // 운영 피드백은 사용자가 직접 입력하는 폼이므로 AI 생성 없이 빈 폼을 바로 보여준다.
+          setAiReportStatus('ready')
         } else {
           setAiReportStatus('empty')
         }
@@ -362,7 +365,8 @@ export const FeaturePage = ({
         return
       }
       const nextMessage = normalizeChatMessage(payload.message)
-      const nextReport = reportDataFromMessage(nextMessage, id)
+      // 운영 피드백 폼은 사용자 입력이 원본이라 AI 응답으로 덮어쓰지 않는다.
+      const nextReport = id === 'operation' ? null : reportDataFromMessage(nextMessage, id)
       if (nextReport) {
         // 리포트 패널 갱신은 도착 즉시(채팅 말풍선 순서만 큐가 통제).
         applyReportData(nextReport)
@@ -614,7 +618,8 @@ export const FeaturePage = ({
   }
 
   useEffect(() => {
-    if (aiReportStatus !== 'empty' || !room?.roomId) {
+    // 운영 피드백은 사용자 입력 폼이라 AI 자동 리포트 생성을 트리거하지 않는다.
+    if (aiReportStatus !== 'empty' || !room?.roomId || id === 'operation') {
       return
     }
 
@@ -800,31 +805,36 @@ export const FeaturePage = ({
             <p>{feature.sub}</p>
           </div>
           <div className="report-title-actions">
-            <button
-              type="button"
-              className="secondary-chip"
-              onClick={handleRegenerateReport}
-              disabled={aiReportStatus === 'loading' || loading || !room?.roomId}
-            >
-              <Icon name="refresh" size={15} />
-              <span>
-                {aiReportStatus === 'loading'
-                  ? 'AI 생성 중'
-                  : aiReportStatus === 'empty'
-                    ? 'AI 리포트 생성'
-                    : 'AI 리포트 갱신'}
-              </span>
-            </button>
-            {aiReportStatus === 'ready' && (
-              <button
-                type="button"
-                className="secondary-chip"
-                onClick={handleSaveReport}
-                disabled={savingReport || aiReportStatus !== 'ready'}
-              >
-                <Icon name="bookmark" size={15} />
-                <span>{savingReport ? '저장 중' : '리포트 저장'}</span>
-              </button>
+            {/* 운영 피드백은 사용자 입력 폼이라 AI 생성/일반 저장 버튼 대신 폼 내부 저장 버튼을 쓴다. */}
+            {id !== 'operation' && (
+              <>
+                <button
+                  type="button"
+                  className="secondary-chip"
+                  onClick={handleRegenerateReport}
+                  disabled={aiReportStatus === 'loading' || loading || !room?.roomId}
+                >
+                  <Icon name="refresh" size={15} />
+                  <span>
+                    {aiReportStatus === 'loading'
+                      ? 'AI 생성 중'
+                      : aiReportStatus === 'empty'
+                        ? 'AI 리포트 생성'
+                        : 'AI 리포트 갱신'}
+                  </span>
+                </button>
+                {aiReportStatus === 'ready' && (
+                  <button
+                    type="button"
+                    className="secondary-chip"
+                    onClick={handleSaveReport}
+                    disabled={savingReport || aiReportStatus !== 'ready'}
+                  >
+                    <Icon name="bookmark" size={15} />
+                    <span>{savingReport ? '저장 중' : '리포트 저장'}</span>
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

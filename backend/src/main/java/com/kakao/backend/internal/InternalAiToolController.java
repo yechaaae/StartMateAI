@@ -57,7 +57,7 @@ public class InternalAiToolController {
             @RequestBody SupportProgramRecommendationRequest request
     ) {
         internalToolAuthService.verify(token);
-        return supportProgramService.recommendWithDemoFallback(request);
+        return supportProgramService.recommend(request);
     }
 
     @GetMapping("/support-programs")

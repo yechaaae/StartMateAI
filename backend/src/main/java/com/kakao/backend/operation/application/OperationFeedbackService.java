@@ -118,7 +118,14 @@ public class OperationFeedbackService {
             addMetric(feedback, "KPI", text(kpi.label(), kpi.key()), kpi.current(), kpi.unit(), "previous=" + valueText(kpi.previous()));
         }
         for (OperationFeedbackRequest.ProductShareRequest product : safeList(request.products())) {
-            addMetric(feedback, "PRODUCT_SHARE", product.name(), oneDecimal(product.share()), "%", "상품 매출 비중");
+            addMetric(
+                    feedback,
+                    "PRODUCT_SHARE",
+                    product.name(),
+                    oneDecimal(product.share()),
+                    "%",
+                    product.isLocked() ? "상품 매출 비중 (고정)" : "상품 매출 비중"
+            );
         }
         for (List<String> channel : safeList(request.channels())) {
             if (channel == null || channel.isEmpty()) {
@@ -150,14 +157,20 @@ public class OperationFeedbackService {
     }
 
     private void validateProductShares(List<OperationFeedbackRequest.ProductShareRequest> products) {
-        for (OperationFeedbackRequest.ProductShareRequest product : safeList(products)) {
+        List<OperationFeedbackRequest.ProductShareRequest> list = safeList(products);
+        if (list.isEmpty()) {
+            // 상품을 등록하지 않은 경우 KPI만 저장할 수 있도록 비중 검증을 건너뛴다.
+            return;
+        }
+
+        for (OperationFeedbackRequest.ProductShareRequest product : list) {
             BigDecimal share = product.share() == null ? BigDecimal.ZERO : product.share();
             if (share.compareTo(BigDecimal.ZERO) < 0 || share.compareTo(ONE_HUNDRED) > 0) {
                 throw new IllegalArgumentException("Product shares must be between 0 and 100.");
             }
         }
 
-        BigDecimal total = safeList(products).stream()
+        BigDecimal total = list.stream()
                 .map(OperationFeedbackRequest.ProductShareRequest::share)
                 .map(value -> (value == null ? BigDecimal.ZERO : value).setScale(1, RoundingMode.HALF_UP))
                 .reduce(BigDecimal.ZERO, BigDecimal::add)

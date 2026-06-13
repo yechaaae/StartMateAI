@@ -139,12 +139,22 @@ const normalizeKpi = (item) => {
   return { label: '', value: toText(item), delta: '', good: null }
 }
 
-const normalizeProduct = (item) => {
+const normalizeProduct = (item, index = 0) => {
   if (Array.isArray(item)) {
-    return { name: toText(item[0]), pct: roundOneDecimal(clampPercent(parseNumberInput(item[1]))) }
+    return {
+      id: `product-${index + 1}`,
+      name: toText(item[0]),
+      pct: roundOneDecimal(clampPercent(parseNumberInput(item[1]))),
+      locked: false,
+    }
   }
   const pctSource = item?.pct ?? item?.share ?? 0
-  return { name: toText(item?.name), pct: roundOneDecimal(clampPercent(parseNumberInput(pctSource))) }
+  return {
+    id: toText(item?.id, `product-${index + 1}`),
+    name: toText(item?.name),
+    pct: roundOneDecimal(clampPercent(parseNumberInput(pctSource))),
+    locked: Boolean(item?.locked),
+  }
 }
 
 const normalizeChannel = (item) => {
@@ -174,8 +184,10 @@ export const normalizeOperationReport = (data) => ({
 })
 
 export const scaleSharesTo100 = (products) => {
-  const list = products.map((product) => ({
+  const list = products.map((product, index) => ({
+    id: toText(product.id, `product-${index + 1}`),
     name: product.name,
+    locked: Boolean(product.locked),
     pct: roundOneDecimal(clampPercent(parseNumberInput(product.pct ?? product.share))),
   }))
   if (!list.length) {
@@ -215,7 +227,11 @@ export const buildOperationFeedbackPayload = (data, selectedSuggestionTitle) => 
   return {
     period,
     kpis,
-    products: products.map((product) => ({ name: product.name, share: product.pct })),
+    products: products.map((product) => ({
+      name: product.name,
+      share: product.pct,
+      locked: Boolean(product.locked),
+    })),
     channels: report.channels.map((channel) => [channel.name, channel.summary]),
     notes: report.notes,
     suggestions: report.suggestions.map((suggestion) => ({
@@ -225,6 +241,57 @@ export const buildOperationFeedbackPayload = (data, selectedSuggestionTitle) => 
     })),
     selectedSuggestionTitle: selectedSuggestionTitle ?? report.suggestions[0]?.title ?? null,
   }
+}
+
+let productIdCounter = 0
+
+export const createProductRow = (name = '', share = 0) => {
+  productIdCounter += 1
+  return {
+    id: `product-new-${productIdCounter}`,
+    name: toText(name),
+    share: roundOneDecimal(clampPercent(parseNumberInput(share))),
+    locked: false,
+  }
+}
+
+export const addProduct = (products, name = '', share = 0) => [
+  ...(products ?? []).map((product) => ({ ...product })),
+  createProductRow(name, share),
+]
+
+// 상품을 인덱스로 삭제하고 남은 비중을 100으로 다시 정규화한다(잠금/이름/id 보존).
+// 인덱스 기준으로 지우는 이유: 저장된 리포트를 다시 불러오면 product.id가 없을 수 있어
+// id 매칭으로 지우면 전체가 삭제될 수 있다.
+export const removeProduct = (products, index) => {
+  const remaining = (products ?? []).filter((_, productIndex) => productIndex !== index)
+  if (!remaining.length) {
+    return remaining
+  }
+  return scaleSharesTo100(remaining).map((product) => ({
+    id: product.id,
+    name: product.name,
+    locked: Boolean(product.locked),
+    share: product.pct,
+  }))
+}
+
+// 직전 저장 리포트의 current 값을 이번 입력의 previous 기준으로 삼는다.
+export const applyPreviousFromSavedReport = (kpis, savedReportData) => {
+  const savedKpis = savedReportData?.kpis ?? []
+  const previousByKey = new Map()
+  savedKpis.forEach((item) => {
+    if (item && !Array.isArray(item) && item.key != null) {
+      previousByKey.set(item.key, parseNumberInput(item.current))
+    }
+  })
+
+  return (kpis ?? []).map((kpi) => {
+    if (kpi && kpi.key != null && previousByKey.has(kpi.key)) {
+      return { ...kpi, previous: previousByKey.get(kpi.key) }
+    }
+    return { ...kpi }
+  })
 }
 
 export const buildMockOperationSuggestions = ({ kpis, products, notes }) => {

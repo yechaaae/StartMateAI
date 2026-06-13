@@ -53,6 +53,12 @@ public class SupportProgramMatcher {
                 program.getTitle(),
                 program.getSource(),
                 program.getSummary(),
+                program.getRegionCondition(),
+                program.getSupportAmount(),
+                program.getRequiredDocuments(),
+                program.getOrganization(),
+                program.getSupportType(),
+                program.getStatus(),
                 Math.max(0, score),
                 reasons,
                 cautions,
@@ -74,6 +80,10 @@ public class SupportProgramMatcher {
         if (profile.age() != null && profile.age() >= 19 && profile.age() <= 39) {
             reasons.add("청년 연령 조건에 맞을 가능성이 높습니다.");
             return 30;
+        }
+        if (profile.age() == null) {
+            cautions.add("연령 정보가 없어 청년 조건은 공고 원문 확인이 필요합니다.");
+            return 0;
         }
         cautions.add("청년 연령 조건과 맞지 않을 수 있습니다.");
         return -30;

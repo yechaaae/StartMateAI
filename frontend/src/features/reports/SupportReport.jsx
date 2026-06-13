@@ -27,6 +27,9 @@ const formatAmount = (amount) => {
   if (!amount) {
     return null
   }
+  if (typeof amount === 'string') {
+    return amount.trim() || null
+  }
   return amount >= 100000000
     ? `최대 ${amount / 100000000}억원`
     : `최대 ${amount / 10000}만원`
@@ -44,6 +47,9 @@ const SupportProgramCard = ({
   onDelete,
 }) => {
   const amount = formatAmount(program.amount)
+  const docs = getDocs(program)
+  const dDay = getDDay(program)
+  const meta = [program.region, dDay ? `마감 ${dDay}` : ''].filter(Boolean).join(' · ')
 
   return (
     <article className={selected ? 'support-program-card selected' : 'support-program-card'}>
@@ -60,17 +66,19 @@ const SupportProgramCard = ({
       <div className="support-program-top">
         <div>
           <h4>{program.title}</h4>
-          <p>{program.region} · 마감 {getDDay(program)}</p>
+          {meta && <p>{meta}</p>}
         </div>
         <strong>{program.score}점</strong>
       </div>
 
-      <p className="support-program-reason">{program.reason}</p>
+      {program.reason && <p className="support-program-reason">{program.reason}</p>}
 
-      <div className="support-program-docs">
-        <span>필요 서류</span>
-        <p>{getDocs(program).join(', ')}</p>
-      </div>
+      {!!docs.length && (
+        <div className="support-program-docs">
+          <span>필요 서류</span>
+          <p>{docs.join(', ')}</p>
+        </div>
+      )}
 
       <div className="support-program-bottom">
         <div className="support-program-tags">
