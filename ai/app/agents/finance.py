@@ -173,6 +173,168 @@ FINANCE_TEMPLATES: dict[str, dict[str, Any]] = {
 class FinanceAgent(BaseAgent):
     name = "FinanceAgent"
 
+    async def suggest_simulation_assumption(
+        self,
+        *,
+        profile: StartupProfile,
+        item_name: str,
+        business_type: str = "",
+        monthly_rent: int | None = None,
+    ) -> dict[str, Any]:
+        """시뮬레이션 가정값 단계용으로 LLM이 3가지 시나리오(보수적/보통/공격적)를 제안한다(룰 폴백)."""
+        budget = profile.budget_krw or 10_000_000
+        rent = int(monthly_rent or 0)
+        fallback = self._fallback_scenarios(business_type, int(budget), rent)
+        if not self.llm.is_enabled:
+            return {"scenarios": fallback}
+        prompt = (
+            "너는 창업 재무 시뮬레이션 가정값을 제안하는 에이전트다.\n"
+            "주어진 아이템/지역/프로필로 첫 30일 시뮬레이션에 쓸 가정값을 '보수적/보통/공격적' 3가지 시나리오로 제안해라.\n"
+            "반드시 JSON object 하나만 출력해라. 설명/주석/markdown 금지.\n"
+            "출력 schema(원 단위 정수, variableCostRate만 0~1 소수):\n"
+            "{\n"
+            '  "scenarios": [\n'
+            "    {\n"
+            '      "key": "conservative"|"normal"|"aggressive",\n'
+            '      "label": string,        // 짧은 한글 라벨 (예: 보수적/보통/공격적)\n'
+            '      "description": string,  // 한 줄 설명\n'
+            '      "pricePerOrder": number,\n'
+            '      "expectedDailyOrders": number,\n'
+            '      "operatingDays": number,\n'
+            '      "monthlyRent": number,\n'
+            '      "laborCost": number,\n'
+            '      "marketingCost": number,\n'
+            '      "otherFixedCost": number,\n'
+            '      "variableCostRate": number,\n'
+            '      "initialBudget": number\n'
+            "    }\n"
+            "  ]   // 정확히 3개, 보수적 -> 보통 -> 공격적 순서\n"
+            "}\n\n"
+            f"item: {item_name}\n"
+            f"business_type: {business_type}\n"
+            f"monthly_rent_hint: {rent}\n"
+            f"profile: {json.dumps(profile.model_dump(), ensure_ascii=False)}"
+        )
+        try:
+            raw = await self.llm.complete(
+                system_prompt="You are a strict JSON startup finance assumption engine.",
+                user_prompt=prompt,
+                temperature=0.3,
+                fallback="{}",
+            )
+            parsed = self._parse_assumption_json(raw)
+        except Exception:
+            parsed = {}
+        raw_scenarios = parsed.get("scenarios") if isinstance(parsed, dict) else None
+        if not isinstance(raw_scenarios, list) or not raw_scenarios:
+            return {"scenarios": fallback}
+        scenarios: list[dict[str, Any]] = []
+        for index, item in enumerate(raw_scenarios[:3]):
+            if not isinstance(item, dict):
+                continue
+            base_fb = fallback[min(index, len(fallback) - 1)]
+            norm = self._normalize_assumption(item, base_fb, rent)
+            norm["key"] = str(item.get("key") or base_fb["key"])
+            norm["label"] = str(item.get("label") or base_fb["label"])
+            norm["description"] = str(item.get("description") or base_fb["description"])
+            scenarios.append(norm)
+        return {"scenarios": scenarios or fallback}
+
+    def _fallback_assumption(self, business_type: str, budget: int, rent: int) -> dict[str, Any]:
+        bt = str(business_type or "").lower()
+        price = {"cafe": 8000, "commerce": 15000, "content": 35000, "popup": 12000, "service": 50000, "food": 12000}.get(bt, 15000)
+        daily = {"cafe": 40, "commerce": 20, "content": 4, "popup": 35, "service": 6, "food": 30}.get(bt, 25)
+        return {
+            "pricePerOrder": price,
+            "expectedDailyOrders": daily,
+            "operatingDays": 24,
+            "monthlyRent": rent or 2_000_000,
+            "laborCost": 1_500_000,
+            "marketingCost": 500_000,
+            "otherFixedCost": 500_000,
+            "variableCostRate": 0.35,
+            "initialBudget": max(3_000_000, int(budget)),
+        }
+
+    def _fallback_scenarios(self, business_type: str, budget: int, rent: int) -> list[dict[str, Any]]:
+        base = self._fallback_assumption(business_type, budget, rent)
+        daily = base["expectedDailyOrders"]
+        return [
+            {
+                **base,
+                "key": "conservative",
+                "label": "보수적",
+                "description": "비용을 아끼고 작게 시작하는 가정",
+                "expectedDailyOrders": max(1, round(daily * 0.7)),
+                "laborCost": 800_000,
+                "marketingCost": 200_000,
+                "otherFixedCost": 300_000,
+                "variableCostRate": 0.32,
+            },
+            {
+                **base,
+                "key": "normal",
+                "label": "보통",
+                "description": "기본 인건비와 홍보비를 반영한 가정",
+            },
+            {
+                **base,
+                "key": "aggressive",
+                "label": "공격적",
+                "description": "초기 홍보·운영비를 넉넉히 잡은 가정",
+                "expectedDailyOrders": round(daily * 1.3),
+                "laborCost": 2_200_000,
+                "marketingCost": 900_000,
+                "otherFixedCost": 800_000,
+                "variableCostRate": 0.4,
+            },
+        ]
+
+    def _parse_assumption_json(self, raw: str) -> dict[str, Any]:
+        text = str(raw or "").strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+            text = re.sub(r"```$", "", text).strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            start, end = text.find("{"), text.rfind("}")
+            if start < 0 or end < start:
+                return {}
+            try:
+                parsed = json.loads(text[start : end + 1])
+            except json.JSONDecodeError:
+                return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    def _normalize_assumption(self, parsed: dict[str, Any], fallback: dict[str, Any], rent: int) -> dict[str, Any]:
+        def as_int(value: Any, default: int) -> int:
+            try:
+                return max(0, int(round(float(value))))
+            except (TypeError, ValueError):
+                return default
+
+        def as_rate(value: Any, default: float) -> float:
+            try:
+                rate = float(value)
+            except (TypeError, ValueError):
+                return default
+            if rate > 1:
+                rate = rate / 100
+            return round(max(0.05, min(0.9, rate)), 2)
+
+        return {
+            "pricePerOrder": as_int(parsed.get("pricePerOrder"), fallback["pricePerOrder"]),
+            "expectedDailyOrders": as_int(parsed.get("expectedDailyOrders"), fallback["expectedDailyOrders"]),
+            "operatingDays": min(31, max(1, as_int(parsed.get("operatingDays"), fallback["operatingDays"]))),
+            "monthlyRent": as_int(parsed.get("monthlyRent"), rent or fallback["monthlyRent"]),
+            "laborCost": as_int(parsed.get("laborCost"), fallback["laborCost"]),
+            "marketingCost": as_int(parsed.get("marketingCost"), fallback["marketingCost"]),
+            "otherFixedCost": as_int(parsed.get("otherFixedCost"), fallback["otherFixedCost"]),
+            "variableCostRate": as_rate(parsed.get("variableCostRate"), fallback["variableCostRate"]),
+            "initialBudget": as_int(parsed.get("initialBudget"), fallback["initialBudget"]),
+        }
+
     async def run(self, request: FinanceRequest) -> AgentResponse:
         assumption, template_key, assumption_meta, warnings = await self._resolve_assumption(
             request.assumption,

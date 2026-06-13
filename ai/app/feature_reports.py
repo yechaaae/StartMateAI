@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from app.agent_weights import feature_weights
 from app.schemas import AgentResponse, ChatRequest
 
 
@@ -310,8 +311,10 @@ def _item_conflict_adjustment(
                 notes.append(proposal)
             break
 
+    # 재무 Agent 발언권(power)만큼 충돌 패널티를 스케일한다.
+    finance_weight = feature_weights("ITEM").get("finance", 1.0)
     return {
-        "penalty": min(35, penalty),
+        "penalty": min(35, round(penalty * finance_weight)),
         "notes": _unique_text(notes)[:4],
         "target_title": target_title,
     }
@@ -556,11 +559,10 @@ def _ground_item_recommendations(
     grounding: dict[str, Any],
     region: str,
 ) -> list[dict[str, Any]]:
+    weights = feature_weights("ITEM")
     items = []
     for index, raw_item in enumerate(recommendations, start=1):
         item = _dict(raw_item)
-        if _is_template_candidate(item):
-            continue
         title = str(item.get("title") or "").strip()
         if not title:
             continue
@@ -572,11 +574,14 @@ def _ground_item_recommendations(
             0,
         )
         category = str(item.get("business_type") or item.get("category") or "AI 추천 아이템")
-        score_data = _grounded_item_score(item, base_score, grounding)
+        score_data = _grounded_item_score(item, base_score, grounding, weights)
         item_analysis = _item_analysis_for_candidate(item, score_data, grounding)
         support_programs = _matched_support_programs(item, grounding["support_matches"])
         evidence = _grounding_evidence(score_data, support_programs, grounding)
         reason = _grounded_item_reason(item, idea, evidence)
+
+        # 규칙 기반 폴백 후보는 버리지 않고 '검증 필요'로 표시해 흐름이 멈추지 않게 한다.
+        is_template = _is_template_candidate(item)
 
         items.append({
             "rank": index,
@@ -593,13 +598,22 @@ def _ground_item_recommendations(
             "supportPrograms": support_programs,
             "commercialArea": _public_commercial_area(grounding["commercial_area"]),
             "generatedBy": item.get("generated_by"),
+            "validationStatus": "needs_validation" if is_template else item.get("validationStatus"),
             "feasibilityLabel": item.get("feasibility_label"),
             "validationMethod": item.get("validation_method"),
             "first30Days": _list(item.get("first_30_days")),
             "risks": _list(item.get("risks")),
         })
 
-    items.sort(key=lambda value: (value["score"], value["baseScore"]), reverse=True)
+    # 점수 동점에서도 1순위가 항상 하나로 결정되도록 완전순서로 정렬한다.
+    items.sort(
+        key=lambda value: (
+            value["score"],
+            value["baseScore"],
+            str(value.get("title") or ""),
+        ),
+        reverse=True,
+    )
     for rank, item in enumerate(items[:3], start=1):
         item["rank"] = rank
     return items[:3]
@@ -609,11 +623,19 @@ def _grounded_item_score(
     item: dict[str, Any],
     base_score: int,
     grounding: dict[str, Any],
+    weights: dict[str, float] | None = None,
 ) -> dict[str, Any]:
+    weights = weights or {}
     commercial = grounding["commercial_area"]
     support_matches = _matched_support_programs(item, grounding["support_matches"])
-    commercial_adjustment = _commercial_area_adjustment(item, commercial)
-    support_adjustment = _support_program_adjustment(support_matches)
+    # Agent 발언권(power)을 보정치에 반영: lead(idea)의 base_score가 지배항이고,
+    # 보조 Agent(상권/지원사업)의 영향력은 기능별 가중치로 스케일된다.
+    commercial_adjustment = round(
+        _commercial_area_adjustment(item, commercial) * weights.get("commercial_area", 1.0)
+    )
+    support_adjustment = round(
+        _support_program_adjustment(support_matches) * weights.get("policy", 1.0)
+    )
     missing_evidence_adjustment = _missing_evidence_adjustment(item, grounding)
     grounded_score = max(0, min(100, base_score + commercial_adjustment + support_adjustment + missing_evidence_adjustment))
     return {
@@ -1008,6 +1030,22 @@ def _support_report(results: dict[str, AgentResponse]) -> dict[str, Any]:
             "organization": item.get("organization"),
             "source": item.get("source_note"),
         })
+    # lead(policy) 매칭이 0개여도 페이지가 멈추지 않도록 안내 항목 1개를 채운다.
+    if not items:
+        items = [{
+            "id": "support-needs-input",
+            "title": "맞춤 지원사업을 확정하려면 조건 확인이 필요해요",
+            "score": 0,
+            "region": "",
+            "due": "",
+            "docs": [],
+            "summary": "지역·업종·창업 단계 정보를 보강하면 매칭 정확도가 올라갑니다. 지원사업 동기화를 다시 시도한 뒤 재추천을 요청하세요.",
+            "url": None,
+            "amount": None,
+            "organization": "",
+            "source": "fallback",
+            "validationStatus": "needs_validation",
+        }]
     return {"list": items}
 
 

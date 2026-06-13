@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import json
+from contextvars import ContextVar
 from typing import Any
 
 from app.core.gms_client import GMSClient
+
+
+# 기능 리포트(ITEM/SUPPORT/PLAN) 빠른 모드 플래그.
+# 오케스트레이터가 Agent 실행 직전에 True로 세팅하면, 각 Agent의 polish_summary가
+# LLM 호출 없이 즉시 fallback을 돌려줘 리포트 1건당 LLM 호출 수를 절반 가까이 줄인다.
+# asyncio.gather는 태스크 생성 시점의 컨텍스트를 복사하므로 gather 전에 set하면
+# 병렬 Agent 코루틴들에서도 이 값이 보인다.
+FAST_FEATURE_REPORT: ContextVar[bool] = ContextVar("fast_feature_report", default=False)
 
 
 class BaseAgent:
@@ -46,7 +55,7 @@ class BaseAgent:
         fallback: str,
         instructions: str | None = None,
     ) -> str:
-        if not self.llm.is_enabled:
+        if not self.llm.is_enabled or FAST_FEATURE_REPORT.get():
             return fallback
 
         prompt = (

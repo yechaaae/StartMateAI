@@ -83,6 +83,7 @@ class ProfileRequest(BaseModel):
 class IdeaRequest(BaseModel):
     profile: StartupProfile
     count: int = Field(default=3, ge=1, le=5)
+    guidance: str | None = None
 
 
 class PolicyRequest(BaseModel):

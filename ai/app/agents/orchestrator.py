@@ -8,6 +8,7 @@ import re
 import time
 from typing import Any, Awaitable, Callable
 
+from app.agents.base import FAST_FEATURE_REPORT
 from app.agents.finance import FinanceAgent
 from app.agents.idea import IdeaAgent
 from app.agents.legal import LegalAgent
@@ -88,6 +89,14 @@ class OrchestratorAgent:
     ) -> AgentResponse:
         state = await self._build_orchestration_state(request)
         state["progress_callback"] = progress_callback
+        # 기능 리포트(ITEM/SUPPORT/PLAN)는 빠른 모드로: Agent별 polish LLM 호출을 생략해
+        # 응답 속도를 크게 줄인다(최종 요약은 규칙 기반 _selective_summary가 담당).
+        if str(state.get("target_feature") or "").upper() in FEATURE_REVIEW_FEATURES:
+            FAST_FEATURE_REPORT.set(True)
+        # 시뮬레이터 가정값 제안 요청은 무거운 멀티에이전트 대신 가벼운 단일 응답으로 처리한다.
+        assumption_response = await self._maybe_suggest_simulation_assumption(request, state)
+        if assumption_response is not None:
+            return assumption_response
         await self._emit_progress(
             state,
             "agents.selected",
@@ -748,8 +757,17 @@ class OrchestratorAgent:
         pending = [intent for intent in intents if intent not in state["results"]]
         if not pending:
             return
-        pairs = await asyncio.gather(*(self._run_agent_with_progress(state, intent) for intent in pending))
-        for intent, response in pairs:
+        # 한 Agent가 예외로 죽어도 기능 전체를 죽이지 않는다. 실패 Agent는 건너뛰고
+        # 나머지 결과로 리포트를 만든다(실패 progress 이벤트는 _run_agent_with_progress가 emit).
+        outcomes = await asyncio.gather(
+            *(self._run_agent_with_progress(state, intent) for intent in pending),
+            return_exceptions=True,
+        )
+        for intent, outcome in zip(pending, outcomes):
+            if isinstance(outcome, Exception):
+                LOGGER.warning("Agent '%s' failed and was skipped: %s", intent, outcome)
+                continue
+            _, response = outcome
             state["results"][intent] = response
 
     async def _run_agent_with_progress(self, state: dict[str, Any], intent: str) -> tuple[str, AgentResponse]:
@@ -794,7 +812,13 @@ class OrchestratorAgent:
             )
             return intent, response
         if intent == "idea":
-            return intent, await self.idea_agent.run(IdeaRequest(profile=effective_profile))
+            guidance = self._dict_at(request.context or {}, "requestMetadata").get("reportGuidance")
+            return intent, await self.idea_agent.run(
+                IdeaRequest(
+                    profile=effective_profile,
+                    guidance=guidance if isinstance(guidance, str) and guidance.strip() else None,
+                )
+            )
         if intent == "policy":
             query = state.get("policy_query") or request.message
             return intent, await self.policy_agent.run(
@@ -2623,6 +2647,53 @@ class OrchestratorAgent:
         if isinstance(value, dict) and isinstance(value.get(key), dict):
             return value[key]
         return {}
+
+    async def _maybe_suggest_simulation_assumption(
+        self, request: ChatRequest, state: dict[str, Any]
+    ) -> AgentResponse | None:
+        if str(state.get("target_feature") or "").upper() != "SIMULATOR":
+            return None
+        metadata = self._dict_at(request.context or {}, "requestMetadata")
+        if not metadata.get("assumptionRequest"):
+            return None
+
+        context = request.context or {}
+        current = context.get("currentResult")
+        if not isinstance(current, dict):
+            current = self._dict_at(context, "resultContext").get("currentResult")
+        current = current if isinstance(current, dict) else {}
+
+        idea = self._dict_at(current, "workspaceIdea") or self._dict_at(current, "ideaContext")
+        sim_input = self._dict_at(current, "simulationInput")
+        location = self._dict_at(current, "location")
+        item_name = str(idea.get("title") or sim_input.get("item") or "선택한 창업 아이템")
+        business_type = str(idea.get("category") or idea.get("business_type") or "")
+        monthly_rent = location.get("rent")
+        profile = state.get("effective_profile") or request.profile
+
+        assumption = await self.finance_agent.suggest_simulation_assumption(
+            profile=profile,
+            item_name=item_name,
+            business_type=business_type,
+            monthly_rent=monthly_rent if isinstance(monthly_rent, (int, float)) else None,
+        )
+
+        response = AgentResponse(
+            intent="simulation",
+            agent="FinanceAgent",
+            summary="시뮬레이션 가정값을 제안했어요.",
+            data={"assumption": assumption},
+        )
+        response.result = {
+            "targetFeature": "SIMULATOR",
+            "resultType": "SIMULATION_ASSUMPTION",
+            "resultTitle": "시뮬레이션 가정값 제안",
+            "shouldCreateResult": False,
+            "routeKey": "simulator-report",
+            "referenceId": self._dict_at(context, "rabbitmq").get("roomId"),
+            "payload": {"featureId": "simulator", "reportData": {"assumption": assumption}},
+        }
+        return response
 
     def _title_at(self, value: dict[str, Any]) -> str | None:
         if not value:

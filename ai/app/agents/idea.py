@@ -13,9 +13,10 @@ class IdeaAgent(BaseAgent):
 
     async def run(self, request: IdeaRequest) -> AgentResponse:
         profile = request.profile
+        guidance = (request.guidance or "").strip()
         budget = profile.budget_krw or 3_000_000
         candidate_limit = max(5, min(8, request.count + 3))
-        raw_candidates, generation, warnings = await self._candidate_pool(profile, candidate_limit)
+        raw_candidates, generation, warnings = await self._candidate_pool(profile, candidate_limit, guidance)
         candidates = [self._score_candidate(profile, budget, candidate) for candidate in raw_candidates]
         candidates.sort(key=lambda item: item["match_score"], reverse=True)
 
@@ -100,11 +101,12 @@ class IdeaAgent(BaseAgent):
         self,
         profile: StartupProfile,
         count: int,
+        guidance: str = "",
     ) -> tuple[list[dict[str, Any]], dict[str, Any], list[str]]:
         warnings: list[str] = []
         llm_diagnostics: dict[str, Any] | None = None
         if self.llm.is_enabled:
-            candidates, llm_diagnostics = await self._generate_candidates_with_llm(profile, count)
+            candidates, llm_diagnostics = await self._generate_candidates_with_llm(profile, count, guidance)
             if candidates:
                 return (
                     candidates,
@@ -118,21 +120,24 @@ class IdeaAgent(BaseAgent):
                     warnings,
                 )
             warnings.extend(llm_diagnostics.get("warnings", []) if llm_diagnostics else [])
-            warnings.append("idea_llm_generation_failed_no_recommendations")
+            warnings.append("idea_llm_generation_failed_used_fallback")
         else:
-            warnings.append("idea_llm_disabled_no_recommendations")
+            warnings.append("idea_llm_disabled_used_fallback")
 
+        # LLM이 후보를 못 만들면(비활성/실패/필터로 전부 탈락) 규칙 기반 폴백 후보로
+        # 흐름을 보장한다. 폴백 후보는 generated_by="rule_fallback"으로 표시돼 리포트/화면에서
+        # '검증 필요'로 구분된다.
+        fallback = self._fallback_candidates(profile, count)
         generation = {
-            "generated_by": "none",
-            "fallback_used": False,
+            "generated_by": "rule_fallback" if fallback else "none",
+            "fallback_used": bool(fallback),
             "llm_enabled": self.llm.is_enabled,
             "requested_count": count,
-            "candidate_count": 0,
-            "rule_fallback_disabled": True,
+            "candidate_count": len(fallback),
         }
         if llm_diagnostics:
             generation["llm_diagnostics"] = llm_diagnostics
-        return ([], generation, warnings)
+        return (fallback, generation, warnings)
 
     async def _empty_recommendation_response(
         self,
@@ -210,6 +215,7 @@ class IdeaAgent(BaseAgent):
         self,
         profile: StartupProfile,
         count: int,
+        guidance: str = "",
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         diagnostics: dict[str, Any] = {
             "attempted": True,
@@ -248,10 +254,14 @@ class IdeaAgent(BaseAgent):
             "  ]\n"
             "}\n\n"
             f"candidate_count: {count}\n"
-            f"profile: {json.dumps(profile.model_dump(), ensure_ascii=False)}"
         )
+        if guidance:
+            prompt += f"사용자가 요청한 재추천 방향(반드시 우선 반영해라): {guidance}\n"
+        prompt += f"profile: {json.dumps(profile.model_dump(), ensure_ascii=False)}"
         last_error: Exception | None = None
-        for attempt in range(1, 3):
+        # 속도를 위해 LLM 생성은 1회만 시도하고, 비면 즉시 규칙 기반 폴백으로 넘긴다.
+        max_attempts = 1
+        for attempt in range(1, max_attempts + 1):
             diagnostics["attempt"] = attempt
             try:
                 raw = await self.llm.complete(
@@ -267,7 +277,7 @@ class IdeaAgent(BaseAgent):
                 if not isinstance(ideas, list):
                     diagnostics["failure_reason"] = "missing_or_invalid_ideas_array"
                     diagnostics["parsed_keys"] = sorted(parsed) if isinstance(parsed, dict) else []
-                    if attempt == 1:
+                    if attempt < max_attempts:
                         continue
                     diagnostics["warnings"].append("idea_llm_generation_missing_ideas_array")
                     return [], diagnostics
@@ -282,17 +292,17 @@ class IdeaAgent(BaseAgent):
                     diagnostics["attempts"] = attempt
                     return candidates, diagnostics
                 diagnostics["failure_reason"] = "no_valid_candidates_after_sanitize"
-                if attempt == 1:
+                if attempt < max_attempts:
                     continue
                 diagnostics["warnings"].append("idea_llm_generation_no_valid_candidates")
                 return [], diagnostics
             except Exception as error:
                 last_error = error
-                if attempt == 1:
+                if attempt < max_attempts:
                     continue
 
         diagnostics["failure_reason"] = "exception"
-        diagnostics["attempts"] = 2
+        diagnostics["attempts"] = max_attempts
         diagnostics["error_type"] = last_error.__class__.__name__ if last_error else "UnknownError"
         diagnostics["error_message"] = self._debug_preview(str(last_error or ""), limit=1000)
         diagnostics["warnings"].append(f"idea_llm_generation_error:{diagnostics['error_type']}")
