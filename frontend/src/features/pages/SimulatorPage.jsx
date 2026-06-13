@@ -8,7 +8,7 @@ import { agents } from '../../shared/data/agents'
 import { AgentAvatar } from '../../shared/components/AgentAvatar'
 import { ChatInput } from '../chat/ChatInput'
 import { ChatRow } from '../chat/ChatRow'
-import { StatusProgressRow } from '../chat/StatusProgressRow'
+import { RotatingStatusProgress } from '../chat/RotatingStatusProgress'
 import { TypingRow } from '../chat/TypingRow'
 import {
   clearActiveProgressByRequest,
@@ -532,7 +532,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
             {messages
               .filter((message) => !message.metadata?.hidden)
               .map((message) => <ChatRow key={message.id} message={message} onOpenReport={go} />)}
-            {statusProgresses.map((progress) => <StatusProgressRow key={progress.id} progress={progress} />)}
+            <RotatingStatusProgress progresses={statusProgresses} />
             {typing && <TypingRow agent={typing} />}
           </div>
           {!!latestStatus && latestStatus.status === 'FAILED' && (

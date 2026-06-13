@@ -2756,6 +2756,29 @@
   color: #98a1b2;
 }
 
+.chat-progress-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Orchestrator는 에이전트들을 부르는 상위 역할이라 일반 Agent 상태와 다르게 강조한다. */
+.chat-progress-status.orchestrator {
+  margin: 2px 0 8px;
+  padding: 9px 12px;
+  background: var(--brand-tint);
+  border-left: 3px solid var(--brand);
+  border-radius: 10px;
+}
+
+.chat-progress-status.orchestrator .chat-progress-status-agent {
+  color: var(--brand);
+}
+
+.chat-progress-status.orchestrator .chat-progress-status-message {
+  color: var(--ink-2);
+}
+
 .chat-input {
   padding-top: 14px;
   background: linear-gradient(180deg, rgba(243, 244, 247, 0), var(--bg) 28%);

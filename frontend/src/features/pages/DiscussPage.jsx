@@ -10,7 +10,7 @@ import {
   resolveTypingAgent,
   upsertActiveProgress,
 } from '../chat/chatProgressState'
-import { StatusProgressRow } from '../chat/StatusProgressRow'
+import { RotatingStatusProgress } from '../chat/RotatingStatusProgress'
 import { TypingRow } from '../chat/TypingRow'
 import {
   createChatEventSource,
@@ -429,7 +429,7 @@ export const DiscussPage = ({ user, go }) => {
           </div>
         )}
         {items.map((item) => <ChatRow key={item.id} message={item} onOpenReport={go} />)}
-        {statusProgresses.map((progress) => <StatusProgressRow key={progress.id} progress={progress} />)}
+        <RotatingStatusProgress progresses={statusProgresses} />
         {typing && <TypingRow agent={typing} />}
       </div>
 
