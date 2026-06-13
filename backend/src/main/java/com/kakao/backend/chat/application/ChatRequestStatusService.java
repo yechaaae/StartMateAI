@@ -27,6 +27,12 @@ public class ChatRequestStatusService {
         return saved;
     }
 
+    public boolean exists(String requestId) {
+        return requestId != null
+                && !requestId.isBlank()
+                && chatRequestStatusRepository.findByRequestId(requestId).isPresent();
+    }
+
     public ChatRequestStatus markProcessing(String requestId) {
         ChatRequestStatus status = getByRequestId(requestId);
         status.markProcessing();

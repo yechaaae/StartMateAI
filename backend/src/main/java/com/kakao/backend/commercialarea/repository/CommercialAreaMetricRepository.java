@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CommercialAreaMetricRepository extends JpaRepository<CommercialAreaMetric, Long> {
 
-    Optional<CommercialAreaMetric> findBySidoAndSigunguAndDongAndIndustryLargeAndIndustryMediumAndIndustrySmall(
+    Optional<CommercialAreaMetric> findFirstBySidoAndSigunguAndDongAndIndustryLargeAndIndustryMediumAndIndustrySmallOrderByIdAsc(
             String sido,
             String sigungu,
             String dong,

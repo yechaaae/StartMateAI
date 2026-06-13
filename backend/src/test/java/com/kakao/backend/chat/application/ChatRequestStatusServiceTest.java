@@ -48,4 +48,17 @@ class ChatRequestStatusServiceTest {
         assertThat(status.getStatus()).isEqualTo("COMPLETED");
         verify(chatSseService).publishStatus(existing);
     }
+
+    @Test
+    void checksWhetherStatusExists() {
+        ChatRequestStatus existing = ChatRequestStatus.create("req-123", 10L, 100L, "QUEUED");
+
+        when(chatRequestStatusRepository.findByRequestId("req-123")).thenReturn(java.util.Optional.of(existing));
+        when(chatRequestStatusRepository.findByRequestId("req-missing")).thenReturn(java.util.Optional.empty());
+
+        assertThat(chatRequestStatusService.exists("req-123")).isTrue();
+        assertThat(chatRequestStatusService.exists("req-missing")).isFalse();
+        assertThat(chatRequestStatusService.exists("")).isFalse();
+        assertThat(chatRequestStatusService.exists(null)).isFalse();
+    }
 }

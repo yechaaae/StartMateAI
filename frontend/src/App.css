@@ -66,6 +66,35 @@
   height: 100%;
   overflow-y: auto;
   background: var(--bg);
+  scroll-snap-type: y proximity;
+  scroll-padding-top: 64px;
+  scroll-behavior: smooth;
+}
+
+.landing-snap {
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: calc(100vh - 64px);
+  box-sizing: border-box;
+}
+
+/* 짧은 섹션은 한 화면에 딱 맞추되, 콘텐츠가 길면 잘리지 않고 늘어나게 */
+.landing-team.landing-snap,
+.landing-features.landing-snap,
+.landing-final.landing-snap {
+  padding-top: 56px;
+  padding-bottom: 56px;
+}
+
+/* 스크롤 멀미 사용자에겐 스냅·부드러운 스크롤 비활성화 */
+@media (prefers-reduced-motion: reduce) {
+  .landing {
+    scroll-snap-type: none;
+    scroll-behavior: auto;
+  }
 }
 
 .landing-header {
@@ -126,6 +155,10 @@
   margin: 0 auto;
   padding: 78px 32px 42px;
   text-align: center;
+}
+
+.landing-hero.landing-snap {
+  align-items: center;
 }
 
 .hero-badge {
@@ -390,6 +423,56 @@
   color: var(--ink-3);
   font-size: 13.5px;
   line-height: 1.75;
+}
+
+/* team 섹션을 한 화면에 담기 위한 압축 (이 섹션 한정) */
+.landing-team .landing-section-heading {
+  margin-bottom: 18px;
+}
+
+.landing-team .landing-section-heading h2 {
+  font-size: 26px;
+}
+
+.landing-team .manager-card {
+  margin-bottom: 14px;
+  padding: 18px 22px;
+}
+
+.landing-team .manager-avatar {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+}
+
+.landing-team .manager-profile p {
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.landing-team .landing-agent-grid {
+  gap: 12px;
+}
+
+.landing-team .landing-agent-card {
+  min-height: 0;
+  padding: 16px;
+}
+
+.landing-team .landing-agent-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.landing-team .landing-agent-card h3 {
+  margin-top: 13px;
+  font-size: 15px;
+}
+
+.landing-team .landing-agent-card p {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .landing-features {
@@ -750,6 +833,55 @@
   font-weight: 800;
   box-shadow: 0 12px 26px rgba(79, 107, 240, .38);
 }
+
+.landing-final {
+  gap: 36px;
+}
+
+.landing-footer {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.landing-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.landing-footer-brand b {
+  display: block;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.landing-footer-brand span {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.landing-footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.landing-footer-bottom span:first-child {
+  font-weight: 700;
+  color: var(--ink-2);
+}
 .onboarding,
 .loading-page {
   display: grid;
@@ -770,6 +902,184 @@
 
 .loading-page p {
   color: var(--ink-3);
+}
+
+.generating-progress {
+  width: min(360px, 80%);
+  height: 8px;
+  margin-top: 24px;
+  border-radius: 999px;
+  background: #e7ebf4;
+  overflow: hidden;
+}
+
+.generating-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+  transition: width .5s ease;
+}
+
+/* ===== 온보딩 아이템 선택 모달 ===== */
+.onboarding-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(31, 38, 64, .45);
+  backdrop-filter: blur(2px);
+  animation: fadeIn .2s ease both;
+  overflow-y: auto;
+}
+
+.onboarding-modal {
+  position: relative;
+  width: min(680px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 30px;
+  border-radius: 20px;
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+  animation: fadeUp .28s cubic-bezier(.22, .7, .3, 1) both;
+}
+
+.onboarding-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: #f3f5fa;
+  color: var(--ink-3);
+}
+
+.onboarding-modal-state {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 28px 8px;
+  text-align: center;
+  color: var(--brand);
+}
+
+.onboarding-modal-state h2 {
+  margin: 14px 0 0;
+  color: var(--ink);
+  font-size: 19px;
+}
+
+.onboarding-modal-state p {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13.5px;
+}
+
+.onboarding-modal-head {
+  margin-bottom: 16px;
+}
+
+.onboarding-modal-head h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.onboarding-modal-head p {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13.5px;
+}
+
+.onboarding-modal-empty {
+  color: var(--ink-3);
+  font-size: 13.5px;
+}
+
+.onboarding-modal-items {
+  display: grid;
+  gap: 10px;
+}
+
+.onboarding-modal-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  text-align: left;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
+}
+
+.onboarding-modal-item:hover {
+  border-color: #cdd6fb;
+  box-shadow: 0 6px 18px rgba(31, 38, 64, .08);
+}
+
+.omi-rank {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--a-idea);
+  color: #fff;
+  font-weight: 900;
+}
+
+.omi-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.omi-body b {
+  font-size: 15px;
+}
+
+.omi-body small {
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.omi-score {
+  font-style: normal;
+  font-weight: 900;
+  font-size: 12.5px;
+  color: var(--a-idea);
+  white-space: nowrap;
+}
+
+.onboarding-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.onboarding-modal-actions .om-primary {
+  padding: 11px 18px;
+  border-radius: 11px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 800;
+}
+
+.onboarding-modal-actions .om-secondary {
+  padding: 11px 16px;
+  border-radius: 11px;
+  background: #f3f5fa;
+  color: var(--ink-2);
+  font-weight: 800;
 }
 
 .onboarding-card {
@@ -1802,6 +2112,25 @@
   color: var(--ink-3);
   font-size: 11px;
   font-weight: 700;
+}
+
+.workspace-empty {
+  margin: 4px 6px 8px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace-modal-list .workspace-create {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--brand-strong);
+  font-weight: 800;
+  font-size: 13px;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
 }
 
 .sidebar nav > button {
@@ -3619,6 +3948,41 @@
   font-size: 12px;
   font-weight: 600 !important;
   place-items: initial !important;
+}
+
+.idea-option-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.idea-option-evidence small,
+.idea-option-support small {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: #f4f6fb;
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.idea-option-support {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--brand);
+}
+
+.idea-option-support small {
+  max-width: 100%;
+  background: #eef3ff;
+  color: var(--brand);
 }
 
 .idea-option,
@@ -6492,6 +6856,35 @@ button:disabled {
   white-space: nowrap;
 }
 
+.idea-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.idea-option .idea-confirm {
+  justify-content: center;
+  padding: 9px 14px;
+  background: var(--a-idea);
+  color: #fff;
+  font-size: 13px;
+}
+
+.idea-option .idea-confirm:disabled {
+  opacity: .65;
+  cursor: wait;
+}
+
+.idea-option .idea-sim {
+  justify-content: center;
+  padding: 6px 10px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .sim-primary-btn {
   padding: 12px 20px;
   background: var(--a-finance);
@@ -6982,9 +7375,14 @@ button:disabled {
 
   .landing-team,
   .landing-features,
-  .landing-closing {
+  .landing-closing,
+  .landing-footer {
     padding-right: 18px;
     padding-left: 18px;
+  }
+
+  .landing-footer-bottom {
+    justify-content: flex-start;
   }
 
   .landing-section-heading h2 {

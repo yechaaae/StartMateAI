@@ -80,13 +80,15 @@ export const ItemReport = ({
   selectedIdeaRank,
   onSelectIdea,
 }) => {
-  const items = data.items ?? []
+  const items = useMemo(() => (data.items ?? []).filter((item) => {
+    const generatedBy = item?.generatedBy ?? item?.generated_by
+    return item && !['rule_fallback', 'guardrail'].includes(generatedBy)
+  }), [data.items])
 
   // 선택된 아이템(없으면 첫 번째). 이 아이템의 location/analysis로 지도와 상권 지표를 보여준다.
   const selectedItem = useMemo(() => {
-    const list = data.items ?? []
-    return list.find((item) => item.rank === selectedIdeaRank) ?? list[0] ?? null
-  }, [data.items, selectedIdeaRank])
+    return items.find((item) => item.rank === selectedIdeaRank) ?? items[0] ?? null
+  }, [items, selectedIdeaRank])
 
   const mapLocation = selectedItem?.location ?? data.location
   const mapAnalysis = selectedItem?.analysis ?? data.analysis ?? []
@@ -107,6 +109,11 @@ export const ItemReport = ({
       category: item.category || '추천 아이템',
       location: item.location ?? data.location,
       estimatedInitialCost: item.estimatedInitialCost,
+      analysis: item.analysis ?? [],
+      evidence: item.evidence ?? [],
+      scoreBreakdown: item.scoreBreakdown ?? null,
+      supportPrograms: item.supportPrograms ?? [],
+      commercialArea: item.commercialArea ?? null,
     })
   }
 
@@ -157,6 +164,19 @@ export const ItemReport = ({
                     <b>{item.title}</b>
                     <p>{item.reason}</p>
                     {item.location && <span className="idea-option-loc"><Icon name="pin" size={12} /> {item.location}</span>}
+                    {!!item.evidence?.length && (
+                      <div className="idea-option-evidence">
+                        {item.evidence.slice(0, 3).map((evidence) => (
+                          <small key={evidence}>{evidence}</small>
+                        ))}
+                      </div>
+                    )}
+                    {!!item.supportPrograms?.length && (
+                      <div className="idea-option-support">
+                        <Icon name="doc" size={12} />
+                        <small>{item.supportPrograms[0].title}</small>
+                      </div>
+                    )}
                   </div>
                   <em>적합도 {item.score}</em>
                   <button

@@ -633,7 +633,7 @@ public class CommercialAreaService {
 
     private void upsertMetric(CommercialAreaRequest request, int totalStores, int directCompetitors) {
         CommercialAreaMetric metric = metricRepository
-                .findBySidoAndSigunguAndDongAndIndustryLargeAndIndustryMediumAndIndustrySmall(
+                .findFirstBySidoAndSigunguAndDongAndIndustryLargeAndIndustryMediumAndIndustrySmallOrderByIdAsc(
                         normalizeSido(request.sido()),
                         request.sigungu(),
                         request.dong(),

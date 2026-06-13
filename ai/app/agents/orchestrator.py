@@ -998,10 +998,10 @@ class OrchestratorAgent:
     def _contextual_policy_followup(self, request: ChatRequest) -> bool:
         message = request.message or ""
         text = message.lower()
-        if self._explicit_policy_request(message):
-            return True
         if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "주변 점포", "주변 가게", "임대료"]):
             return False
+        if self._explicit_policy_request(message):
+            return True
         supportish = any(
             keyword in text
             for keyword in [
@@ -1955,7 +1955,7 @@ class OrchestratorAgent:
             return True
         # 기능 페이지인데 게이트가 off-topic으로 판단하면(feature_output=False) 기능 양식 결과를 붙이지 않는다(자유 답변).
         # 자유 채팅(비기능)일 때만 아래 내용 기반 추론으로 결과를 붙인다.
-        if state.get("feature_key"):
+        if state.get("feature_key") in FEATURE_REPORT_TEAMS:
             return False
         if state.get("mode") == "collaboration":
             return True

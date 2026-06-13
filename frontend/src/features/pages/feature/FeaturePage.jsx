@@ -41,6 +41,7 @@ import { buildOperationFeedbackPayload } from '../../reports/operationFeedbackLo
 import { buildFeatureSavedReport } from '../../reports/savedReportPayload'
 import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from '../featureChatContext'
 import { buildFeaturePageTheme } from './featurePageTheme'
+import { ItemGeneratingState } from './ItemGeneratingState'
 import './FeaturePage.css'
 
 const FEATURE_TARGETS = {
@@ -212,10 +213,8 @@ export const FeaturePage = ({
         if (reportData) {
           applyReportData(reportData)
           setAiReportStatus('ready')
-          // 저장된 아이템 리포트가 있으면 선택 화면을 건너뛰고 추천 결과를 바로 보여준다.
-          if (id === 'item') {
-            setItemFlowStep('recommend')
-          }
+          // 아이템 페이지(드롭다운 '아이템 추가하기')는 항상 추천/직접입력 선택 화면부터 보여준다.
+          // (회원가입 직후 아이템 선택은 별도 모달에서 처리하므로 여기서 자동 점프하지 않는다.)
         } else if (id === 'operation') {
           // 운영 피드백은 사용자가 직접 입력하는 폼이므로 AI 생성 없이 빈 폼을 바로 보여준다.
           setAiReportStatus('ready')
@@ -836,6 +835,8 @@ export const FeaturePage = ({
             onRequestOperationFeedback={handleOperationFeedbackRequest}
             operationFeedbackSaving={savingReport}
           />
+        ) : id === 'item' && aiReportStatus === 'loading' ? (
+          <ItemGeneratingState agentId={feature.agent} />
         ) : (
           <div className="ai-report-state">
             <AgentAvatar id={feature.agent} size={56} active={aiReportStatus === 'loading'} />

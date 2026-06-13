@@ -53,6 +53,43 @@ FEATURE_CTA_LABELS: dict[str, str] = {
     "SNS": "SNS 마케팅 리포트 보기",
 }
 
+SUPPORT_MATCH_STOP_TERMS = {
+    "사업",
+    "사업화",
+    "창업",
+    "예비창업",
+    "예비창업자",
+    "지원",
+    "지원사업",
+    "정부",
+    "정부지원",
+    "공고",
+    "모집",
+    "기업",
+    "대상",
+    "참가",
+    "선정",
+    "프로그램",
+    "자금",
+    "지역",
+    "기반",
+    "관련",
+    "조건",
+    "사용자",
+    "아이템",
+    "서비스",
+    "운영",
+    "검토",
+    "가능",
+    "필요",
+    "grant",
+    "mentoring",
+    "startup",
+    "business",
+    "program",
+    "support",
+}
+
 
 def feature_key_from_request(request: ChatRequest) -> str:
     context = request.context or {}
@@ -466,29 +503,444 @@ def _item_report(request: ChatRequest, results: dict[str, AgentResponse]) -> dic
     if not recommendations and isinstance(idea.get("evidence"), dict):
         recommendations = [_dict(idea["evidence"].get("top_idea"))]
 
-    items = []
-    for index, item in enumerate(recommendations[:3], start=1):
-        items.append({
-            "rank": index,
-            "title": str(item.get("title") or f"추천 아이템 {index}"),
-            "score": int(item.get("match_score") or item.get("score") or max(70, 94 - index * 5)),
-            "reason": str(item.get("reason") or item.get("validation_method") or idea.get("recommendation") or "현재 프로필과 예산에 맞는 후보입니다."),
-            "category": str(item.get("business_type") or item.get("category") or "AI 추천 아이템"),
-            "estimatedInitialCost": item.get("estimated_initial_cost_krw"),
-        })
+    grounding = _item_grounding(results)
+    region = (
+        grounding["commercial_area"].get("area_label")
+        or request.profile.region
+        or _nested(request.context, "currentResult", "location")
+        or "선택 지역"
+    )
+    items = _ground_item_recommendations(
+        recommendations=recommendations,
+        idea=idea,
+        request=request,
+        grounding=grounding,
+        region=region,
+    )
+    missing_evidence = list(grounding["missing_evidence"])
+    if not items:
+        missing_evidence.append("아이템 후보")
+    elif grounding["support_matches"] and not any(item.get("supportPrograms") for item in items):
+        missing_evidence.append("아이템-지원사업 직접 매칭")
 
-    region = request.profile.region or _nested(request.context, "currentResult", "location") or "선택 지역"
     return {
         "location": region,
-        "analysis": [
-            ["프로필 적합도", f"{int(idea.get('score') or 82)}점"],
-            ["예상 초기자금", _money(finance.get("initial_cash_needed_krw"))],
-            ["손익분기", f"하루 {finance.get('break_even_units_per_day') or '-'}건"],
-            ["주요 리스크", _first(_list(idea.get("risks")), "초기 고객 검증 필요")],
-        ],
-        "items": items or [
-            {"rank": 1, "title": "AI 추천 창업 아이템", "score": 80, "reason": idea.get("recommendation") or "추가 정보 입력 후 더 정교하게 추천할 수 있습니다."},
-        ],
+        "analysis": _item_report_analysis(idea, finance, grounding, items),
+        "items": items,
+        "dataSources": grounding["data_sources"],
+        "missingEvidence": _unique_lines(missing_evidence),
+    }
+
+
+def _item_grounding(results: dict[str, AgentResponse]) -> dict[str, Any]:
+    commercial = _commercial_area_metrics(_data(results, "commercial_area"))
+    support_matches = _policy_matches(_data(results, "policy"))
+    data_sources = []
+    missing_evidence = []
+
+    if commercial.get("available"):
+        data_sources.append("상권 데이터")
+    else:
+        missing_evidence.append("상권 데이터")
+
+    if support_matches:
+        data_sources.append("지원사업 추천")
+    else:
+        missing_evidence.append("지원사업 추천")
+
+    return {
+        "commercial_area": commercial,
+        "support_matches": support_matches,
+        "data_sources": data_sources,
+        "missing_evidence": missing_evidence,
+    }
+
+
+def _ground_item_recommendations(
+    *,
+    recommendations: list[Any],
+    idea: dict[str, Any],
+    request: ChatRequest,
+    grounding: dict[str, Any],
+    region: str,
+) -> list[dict[str, Any]]:
+    items = []
+    for index, raw_item in enumerate(recommendations, start=1):
+        item = _dict(raw_item)
+        if _is_template_candidate(item):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+
+        base_score = _safe_int(
+            item.get("match_score")
+            or item.get("score")
+            or (idea.get("score") if index == 1 else None),
+            0,
+        )
+        category = str(item.get("business_type") or item.get("category") or "AI 추천 아이템")
+        score_data = _grounded_item_score(item, base_score, grounding)
+        item_analysis = _item_analysis_for_candidate(item, score_data, grounding)
+        support_programs = _matched_support_programs(item, grounding["support_matches"])
+        evidence = _grounding_evidence(score_data, support_programs, grounding)
+        reason = _grounded_item_reason(item, idea, evidence)
+
+        items.append({
+            "rank": index,
+            "title": title,
+            "score": score_data["grounded_score"],
+            "baseScore": base_score,
+            "reason": reason,
+            "category": category,
+            "location": str(item.get("location") or region),
+            "estimatedInitialCost": item.get("estimated_initial_cost_krw"),
+            "analysis": item_analysis,
+            "evidence": evidence,
+            "scoreBreakdown": score_data["breakdown"],
+            "supportPrograms": support_programs,
+            "commercialArea": _public_commercial_area(grounding["commercial_area"]),
+            "generatedBy": item.get("generated_by"),
+            "feasibilityLabel": item.get("feasibility_label"),
+            "validationMethod": item.get("validation_method"),
+            "first30Days": _list(item.get("first_30_days")),
+            "risks": _list(item.get("risks")),
+        })
+
+    items.sort(key=lambda value: (value["score"], value["baseScore"]), reverse=True)
+    for rank, item in enumerate(items[:3], start=1):
+        item["rank"] = rank
+    return items[:3]
+
+
+def _grounded_item_score(
+    item: dict[str, Any],
+    base_score: int,
+    grounding: dict[str, Any],
+) -> dict[str, Any]:
+    commercial = grounding["commercial_area"]
+    support_matches = _matched_support_programs(item, grounding["support_matches"])
+    commercial_adjustment = _commercial_area_adjustment(item, commercial)
+    support_adjustment = _support_program_adjustment(support_matches)
+    missing_evidence_adjustment = _missing_evidence_adjustment(item, grounding)
+    grounded_score = max(0, min(100, base_score + commercial_adjustment + support_adjustment + missing_evidence_adjustment))
+    return {
+        "grounded_score": grounded_score,
+        "breakdown": {
+            "base_score": base_score,
+            "commercial_area_adjustment": commercial_adjustment,
+            "support_program_adjustment": support_adjustment,
+            "missing_evidence_adjustment": missing_evidence_adjustment,
+            "grounded_score": grounded_score,
+        },
+    }
+
+
+def _is_template_candidate(item: dict[str, Any]) -> bool:
+    generated_by = str(item.get("generated_by") or item.get("generatedBy") or "").strip().lower()
+    return generated_by in {"rule_fallback", "guardrail"}
+
+
+def _commercial_area_adjustment(item: dict[str, Any], commercial: dict[str, Any]) -> int:
+    if not commercial.get("available"):
+        return 0
+
+    relevant = _commercial_area_relevant(item)
+    level = str(commercial.get("competition_level") or "").lower()
+    direct = _safe_int(commercial.get("direct_competitors"), 0)
+    adjustment = 0
+
+    if relevant:
+        if level == "high":
+            adjustment -= 14
+        elif level == "medium":
+            adjustment -= 6
+        elif level == "low":
+            adjustment += 5
+
+        if direct >= 100:
+            adjustment -= 6
+        elif direct >= 30:
+            adjustment -= 3
+        elif 0 < direct <= 10:
+            adjustment += 2
+    elif level == "high":
+        adjustment += 3
+
+    return adjustment
+
+
+def _support_program_adjustment(matches: list[dict[str, Any]]) -> int:
+    if not matches:
+        return 0
+    top_score = _safe_int(matches[0].get("score"), 0)
+    direct = bool(matches[0].get("keywordOverlap"))
+    if top_score >= 85 and direct:
+        return 7
+    if top_score >= 70 and direct:
+        return 5
+    return 0
+
+
+def _missing_evidence_adjustment(item: dict[str, Any], grounding: dict[str, Any]) -> int:
+    penalty = 0
+    if _commercial_area_relevant(item) and "상권 데이터" in grounding["missing_evidence"]:
+        penalty -= 3
+    if "지원사업 추천" in grounding["missing_evidence"]:
+        penalty -= 2
+    return penalty
+
+
+def _item_analysis_for_candidate(
+    item: dict[str, Any],
+    score_data: dict[str, Any],
+    grounding: dict[str, Any],
+) -> list[list[str]]:
+    analysis = [
+        ["근거 반영 점수", f"{score_data['grounded_score']}점"],
+        ["기본 적합도", f"{score_data['breakdown']['base_score']}점"],
+    ]
+    commercial = grounding["commercial_area"]
+    if commercial.get("available"):
+        analysis.append(["상권 경쟁도", str(commercial.get("competition_level") or "-")])
+        direct = commercial.get("direct_competitors")
+        if isinstance(direct, (int, float)):
+            analysis.append(["직접 경쟁점", f"{int(direct):,}개"])
+    else:
+        analysis.append(["상권 근거", "데이터 없음"])
+
+    matches = _matched_support_programs(item, grounding["support_matches"])
+    if matches:
+        analysis.append(["지원사업 근거", f"{matches[0]['title']} ({matches[0]['score']}점)"])
+    else:
+        analysis.append(["지원사업 근거", "매칭 없음"])
+    return analysis
+
+
+def _grounding_evidence(
+    score_data: dict[str, Any],
+    support_programs: list[dict[str, Any]],
+    grounding: dict[str, Any],
+) -> list[str]:
+    evidence = []
+    commercial = grounding["commercial_area"]
+    commercial_delta = score_data["breakdown"]["commercial_area_adjustment"]
+    support_delta = score_data["breakdown"]["support_program_adjustment"]
+    missing_delta = score_data["breakdown"]["missing_evidence_adjustment"]
+
+    if commercial.get("available"):
+        level = commercial.get("competition_level") or "unknown"
+        direct = commercial.get("direct_competitors")
+        direct_text = f", 직접 경쟁점 {int(direct):,}개" if isinstance(direct, (int, float)) else ""
+        evidence.append(f"상권 {level}{direct_text} 반영({commercial_delta:+d})")
+    else:
+        evidence.append("상권 데이터 없음")
+
+    if support_programs:
+        evidence.append(f"지원사업 {support_programs[0]['score']}점 매칭 반영({support_delta:+d})")
+    else:
+        evidence.append("지원사업 매칭 없음")
+
+    if missing_delta:
+        evidence.append(f"근거 부족 보정({missing_delta:+d})")
+    return evidence
+
+
+def _grounded_item_reason(item: dict[str, Any], idea: dict[str, Any], evidence: list[str]) -> str:
+    base = str(
+        item.get("reason")
+        or item.get("validation_method")
+        or idea.get("recommendation")
+        or "아이템 후보입니다."
+    ).strip()
+    evidence_text = " / ".join(evidence[:3])
+    if evidence_text:
+        return _limit_text(f"{base} 근거: {evidence_text}", 420)
+    return _limit_text(base, 420)
+
+
+def _item_report_analysis(
+    idea: dict[str, Any],
+    finance: dict[str, Any],
+    grounding: dict[str, Any],
+    items: list[dict[str, Any]],
+) -> list[list[str]]:
+    analysis = [
+        ["프로필 적합도", f"{int(idea.get('score') or 0)}점"],
+        ["예상 초기자금", _money(finance.get("initial_cash_needed_krw"))],
+        ["손익분기", f"하루 {finance.get('break_even_units_per_day') or '-'}건"],
+    ]
+    commercial = grounding["commercial_area"]
+    if commercial.get("available"):
+        analysis.append(["상권 경쟁도", str(commercial.get("competition_level") or "-")])
+        direct = commercial.get("direct_competitors")
+        if isinstance(direct, (int, float)):
+            analysis.append(["직접 경쟁점", f"{int(direct):,}개"])
+
+    support_matches = [
+        program
+        for item in items
+        for program in _list(item.get("supportPrograms"))
+    ]
+    if support_matches:
+        analysis.append(["지원사업 후보", f"{support_matches[0]['title']} ({support_matches[0]['score']}점)"])
+    analysis.append(["주요 리스크", _first(_list(idea.get("risks")), "초기 고객 검증 필요")])
+    if grounding["missing_evidence"]:
+        analysis.append(["부족 근거", ", ".join(grounding["missing_evidence"])])
+    return analysis
+
+
+def _policy_matches(policy: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_matches = _list(policy.get("matches")) or _list(policy.get("match_summary"))
+    matches = []
+    for item in raw_matches:
+        match = _dict(item)
+        title = str(match.get("title") or "").strip()
+        if not title:
+            continue
+        matches.append({
+            "id": match.get("id") or title,
+            "title": title,
+            "score": _safe_int(match.get("eligibility_score") or match.get("score"), 0),
+            "summary": str(match.get("summary") or "").strip(),
+            "region": str(match.get("region") or match.get("region_condition") or "").strip(),
+            "amount": match.get("support_amount"),
+            "due": match.get("application_end_date") or match.get("deadline") or match.get("due"),
+            "url": match.get("url"),
+            "source": match.get("source_note"),
+            "supportType": match.get("support_type"),
+            "whyMatched": _list(match.get("why_matched")),
+        })
+    matches.sort(key=lambda value: value["score"], reverse=True)
+    return matches
+
+
+def _matched_support_programs(item: dict[str, Any], support_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not support_matches:
+        return []
+    item_terms = _item_terms(item)
+    scored = []
+    for match in support_matches:
+        match_terms = _item_terms(match)
+        overlap = _meaningful_support_overlap(item_terms, match_terms)
+        if not overlap:
+            continue
+        score = _safe_int(match.get("score"), 0) + min(10, len(overlap) * 3)
+        scored.append({
+            **match,
+            "score": max(0, min(100, score)),
+            "keywordOverlap": overlap,
+            "matchBasis": "아이템 키워드 일치",
+        })
+    scored.sort(key=lambda value: value["score"], reverse=True)
+    return scored[:2]
+
+
+def _meaningful_support_overlap(item_terms: set[str], match_terms: set[str]) -> list[str]:
+    return sorted(
+        term
+        for term in item_terms & match_terms
+        if _is_meaningful_support_term(term)
+    )
+
+
+def _is_meaningful_support_term(term: str) -> bool:
+    normalized = str(term or "").strip().lower()
+    if len(normalized) < 2:
+        return False
+    return normalized not in SUPPORT_MATCH_STOP_TERMS
+
+
+def _item_terms(item: dict[str, Any]) -> set[str]:
+    raw_values = [
+        item.get("title"),
+        item.get("summary"),
+        item.get("reason"),
+        item.get("category"),
+        item.get("business_type"),
+        item.get("supportType"),
+        item.get("region"),
+        item.get("target_customer"),
+        *(_list(item.get("keywords"))),
+        *(_list(item.get("why_fit"))),
+        *(_list(item.get("whyMatched"))),
+    ]
+    text = " ".join(str(value or "") for value in raw_values).lower()
+    tokens = {token for token in re_split_terms(text) if len(token) >= 2}
+    for keyword in [
+        "카페",
+        "커피",
+        "푸드",
+        "외식",
+        "한식",
+        "디저트",
+        "소상공인",
+        "로컬",
+        "sns",
+        "콘텐츠",
+        "마케팅",
+        "기술",
+        "서비스",
+        "창업",
+        "예비창업",
+        "청년",
+        "온라인",
+        "오프라인",
+        "팝업",
+        "예약판매",
+    ]:
+        if keyword in text:
+            tokens.add(keyword)
+    return tokens
+
+
+def re_split_terms(text: str) -> list[str]:
+    separators = ",/|()[]{}<>·&+:-_\"'“”‘’\n\r\t"
+    normalized = str(text or "")
+    for separator in separators:
+        normalized = normalized.replace(separator, " ")
+    return [
+        token.strip(" .!?;，。！？")
+        for token in normalized.split()
+        if token.strip(" .!?;，。！？")
+    ]
+
+
+def _commercial_area_relevant(item: dict[str, Any]) -> bool:
+    business_type = str(item.get("business_type") or item.get("category") or "").lower()
+    text = " ".join(
+        str(value or "")
+        for value in [
+            item.get("title"),
+            business_type,
+            item.get("category"),
+            item.get("target_customer"),
+            item.get("reason"),
+            " ".join(map(str, _list(item.get("channels")))),
+            " ".join(map(str, _list(item.get("keywords")))),
+        ]
+    ).lower()
+    if business_type in {"food", "cafe", "popup"}:
+        return True
+    if business_type in {"content", "service"}:
+        return any(keyword in text for keyword in ["팝업", "공유주방", "매장 창업", "직접 매장", "오프라인 판매"])
+    return any(
+        keyword in text
+        for keyword in ["food", "cafe", "popup", "카페", "커피", "푸드", "외식", "식당", "매장", "팝업", "오프라인", "공유주방", "상권"]
+    )
+
+
+def _public_commercial_area(commercial: dict[str, Any]) -> dict[str, Any] | None:
+    if not commercial.get("available"):
+        return None
+    return {
+        "areaLabel": commercial.get("area_label"),
+        "industryLabel": commercial.get("industry_label"),
+        "competitionLevel": commercial.get("competition_level"),
+        "totalStores": commercial.get("total_stores"),
+        "directCompetitors": commercial.get("direct_competitors"),
+        "similarCompetitors": commercial.get("similar_competitors"),
+        "source": commercial.get("source"),
     }
 
 
@@ -788,17 +1240,53 @@ def _agent_discussion(review: dict[str, Any]) -> dict[str, Any]:
 def _commercial_area_metrics(data: dict[str, Any]) -> dict[str, Any]:
     payload = _dict(data.get("payload"))
     area = _dict(payload.get("commercial_area"))
+    available = bool(
+        data.get("reference_data_used")
+        or payload.get("reference_data_used")
+        or area
+        or payload.get("competition_level")
+        or payload.get("direct_competitors") is not None
+        or data.get("competition_level")
+        or data.get("direct_competitors") is not None
+    )
     return {
+        "available": available,
+        "area_label": (
+            payload.get("area")
+            or area.get("areaLabel")
+            or area.get("area")
+            or data.get("area")
+        ),
+        "industry_label": (
+            payload.get("industry")
+            or area.get("industryLabel")
+            or area.get("industry")
+            or data.get("industry")
+        ),
+        "total_stores": _safe_int(
+            payload.get("total_stores")
+            or area.get("totalStores")
+            or data.get("total_stores"),
+            0,
+        ),
         "competition_level": (
             payload.get("competition_level")
             or area.get("competitionLevel")
             or data.get("competition_level")
         ),
-        "direct_competitors": (
+        "direct_competitors": _safe_int(
             payload.get("direct_competitors")
             or area.get("directCompetitors")
-            or data.get("direct_competitors")
+            or data.get("direct_competitors"),
+            0,
         ),
+        "similar_competitors": _safe_int(
+            payload.get("similar_competitors")
+            or area.get("similarCompetitors")
+            or data.get("similar_competitors"),
+            0,
+        ),
+        "source": _first(_list(payload.get("reference_sources")), "backend.commercial_area") if available else None,
     }
 
 
@@ -898,6 +1386,20 @@ def _number(value: Any) -> str:
         return f"{int(float(value)):,}"
     except (TypeError, ValueError):
         return str(value)
+
+
+def _safe_int(value: Any, fallback: int = 0) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _limit_text(value: Any, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
 
 
 def _unique_lines(values: list[str]) -> list[str]:
