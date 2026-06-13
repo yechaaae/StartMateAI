@@ -16,6 +16,7 @@ import { SimulatorPage } from '../features/pages/SimulatorPage'
 import { WorkspacePreparing } from '../features/pages/WorkspacePreparing'
 import { OnboardingItemModal } from '../features/pages/OnboardingItemModal'
 import { decodeHtmlEntities } from '../shared/lib/text'
+import { pregenerateFeatureReport } from '../features/pages/feature/pregenerateReport'
 import { pathToRoute, routeToPath } from './routePaths'
 
 const publicRoutes = new Set(['landing', 'login', 'signup'])
@@ -214,6 +215,24 @@ export default function App() {
       await refreshWorkspaces()
       setWorkspace(created)
       setFeatureWorkspace((prev) => ({ ...prev, selectedIdea: created.selectedIdea }))
+      // SNS 홍보 멘트를 미리 생성해 둔다(백엔드가 SavedResult 자동 저장 → 탭 진입 시 즉시 표시).
+      // fire-and-forget: 홈 진입을 막지 않는다.
+      pregenerateFeatureReport('SNS', {
+        userId: user?.id ?? null,
+        featureId: 'sns',
+        currentResult: {
+          startupProfile,
+          campaignContext: { selectedIdea, selectedSupportProgram: null, operationFocus: null, planDraft: null },
+          campaignDraft: {
+            topic: selectedIdea.title,
+            channel: 'INSTAGRAM_REELS',
+            tone: 'FRIENDLY',
+            objective: 'CONVERSION',
+            tags: [],
+          },
+          contextPriority: ['campaignDraft', 'campaignContext', 'startupProfile'],
+        },
+      })
     } catch {
       // 실패 시 메모리 상태로라도 반영
       const fallback = {
@@ -235,7 +254,7 @@ export default function App() {
       setPreparing(null)
       setRoute('home')
     }
-  }, [refreshWorkspaces])
+  }, [refreshWorkspaces, user, startupProfile])
 
   const handleFeatureWorkspaceChange = useCallback((patch) => {
     setFeatureWorkspace((prev) => {
