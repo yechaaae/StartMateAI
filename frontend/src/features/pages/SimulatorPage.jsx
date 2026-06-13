@@ -29,8 +29,8 @@ import {
   normalizeAgentProgressMessage,
   normalizeChatMessage,
   normalizeStatusEvent,
-  upsertMessage,
 } from '../chat/chatMappers'
+import { useChatMessageQueue } from '../chat/useChatMessageQueue'
 import { buildSimulationSavedReport } from '../reports/savedReportPayload'
 
 const steps = ['위치 탐색', '가정값 설정', '리포트 확인']
@@ -99,7 +99,14 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
   const [location, setLocation] = useState(null)
   const [assumption, setAssumption] = useState(null)
   const [report, setReport] = useState(null)
-  const [messages, setMessages] = useState([welcomeMessage])
+  const {
+    messages,
+    pushImmediate,
+    enqueue,
+    flush,
+    reset: resetMessages,
+    isDraining,
+  } = useChatMessageQueue([welcomeMessage])
   const [room, setRoom] = useState(null)
   const [busy, setBusy] = useState(false)
   const [chatLoading, setChatLoading] = useState(false)
@@ -198,7 +205,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
         if (!active) return
 
         const nextMessages = history.messages.map(normalizeChatMessage)
-        setMessages([welcomeMessage, ...nextMessages])
+        resetMessages([welcomeMessage, ...nextMessages])
       } catch (error) {
         if (active) setChatError(error.message ?? '이전 시뮬레이션 대화를 불러오지 못했습니다.')
       } finally {
@@ -215,9 +222,15 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
       const nextMessage = normalizeChatMessage(payload.message)
       const nextReportData = reportDataFromMessage(nextMessage)
       if (nextReportData) {
+        // 리포트 패널 갱신은 도착 즉시(채팅 말풍선 순서만 큐가 통제).
         applyAiReportData(nextReportData)
       }
-      setMessages((prev) => upsertMessage(prev, nextMessage))
+      // 내 메시지는 즉시, 에이전트 답변은 큐를 거쳐 토론 뒤에 표시.
+      if (nextMessage.role === 'user') {
+        pushImmediate(nextMessage)
+      } else {
+        enqueue(nextMessage)
+      }
     })
 
     eventSource.addEventListener('chat-status', (event) => {
@@ -247,7 +260,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
       setActiveProgressMap((prev) => upsertActiveProgress(prev, nextProgress))
 
       if (nextProgress.viewType !== 'status' && nextProgress.agent && nextProgress.message) {
-        setMessages((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
+        enqueue(normalizeAgentProgressMessage(nextProgress))
       }
     })
 
@@ -366,6 +379,8 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
     if (!room?.roomId) return null
     if (!hidden) setBusy(true)
     setChatError('')
+    // 이전 턴이 아직 드립 중이면 즉시 비워 현재로 스냅하고 새 턴 시작.
+    flush()
 
     try {
       const messageMetadata = { source: 'simulator-page', featureId: 'simulator' }
@@ -395,7 +410,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
         })
       } else {
         messageMetadata.requestId = response.requestId
-        setMessages((prev) => upsertMessage(prev, {
+        pushImmediate({
           id: response.messageId,
           role: 'user',
           senderType: response.senderType,
@@ -405,7 +420,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
           text: response.content,
           metadata: messageMetadata,
           createdAt: null,
-        }))
+        })
         setStatusMap((prev) => ({
           ...prev,
           [response.requestId]: {
@@ -533,7 +548,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
               .filter((message) => !message.metadata?.hidden)
               .map((message) => <ChatRow key={message.id} message={message} onOpenReport={go} />)}
             <RotatingStatusProgress progresses={statusProgresses} />
-            {typing && <TypingRow agent={typing} />}
+            {(typing || isDraining) && <TypingRow agent={typing || 'finance'} />}
           </div>
           {!!latestStatus && latestStatus.status === 'FAILED' && (
             <div className={`chat-status-banner ${latestStatus.status?.toLowerCase()}`}>
