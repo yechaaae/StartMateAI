@@ -50,3 +50,7 @@ export const features = {
 }
 
 export const featureOrder = ['item', 'simulator', 'support', 'plan', 'operation', 'sns']
+
+// 메인(home) 하단 기능 메뉴 그룹. 워크스페이스가 곧 아이템이므로 'item'은 제외한다.
+export const preStartupFeatures = ['simulator', 'support', 'plan'] // 창업 전 3
+export const postStartupFeatures = ['operation', 'sns'] // 창업 후 2
