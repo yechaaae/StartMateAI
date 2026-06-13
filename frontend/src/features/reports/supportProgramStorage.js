@@ -1,4 +1,5 @@
-export const SUPPORT_PROGRAM_STORAGE_KEY = 'startmate.supportProgramRecommendations'
+// v2: 개별 저장 구조로 전환하면서 키를 올려 기존에 누적된 저장분을 비운다(처음엔 아무것도 저장되지 않은 상태).
+export const SUPPORT_PROGRAM_STORAGE_KEY = 'startmate.supportProgramRecommendations.v2'
 
 const toStableId = (program) => program.id ?? program.title
 

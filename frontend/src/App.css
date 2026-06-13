@@ -7135,6 +7135,12 @@ button:disabled {
   color: var(--ink);
 }
 
+.support-view-toggle {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .support-program-buttons {
   display: flex;
   gap: 8px;
@@ -7153,6 +7159,12 @@ button:disabled {
 
 .support-save-btn:hover {
   background: #f6f7fa;
+}
+
+.support-save-btn.saved {
+  border-color: #dbe1fb;
+  background: #f7f9ff;
+  color: var(--brand);
 }
 
 /* 사업계획서 상단: 보조할 사업 + 작성 전략 */
