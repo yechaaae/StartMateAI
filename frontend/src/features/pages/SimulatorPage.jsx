@@ -8,6 +8,7 @@ import { agents } from '../../shared/data/agents'
 import { AgentAvatar } from '../../shared/components/AgentAvatar'
 import { ChatInput } from '../chat/ChatInput'
 import { FloatingChat } from '../chat/FloatingChat'
+import { buildDailySimulation } from '../simulator/simulationCalculations'
 import {
   clearActiveProgressByRequest,
   listActiveProgresses,
@@ -58,6 +59,12 @@ const simulationReportFromReportData = (reportData) => {
   if (reportData?.report?.metrics && reportData?.report?.summary) return reportData.report
   return null
 }
+
+const firstNonBlank = (...values) => (
+  values
+    .map((value) => String(value ?? '').trim())
+    .find(Boolean) ?? ''
+)
 
 // 가정값 제안 응답(저장 안 함)에서 가정값을 읽는다. shouldCreateResult 여부와 무관.
 const assumptionFromMessage = (message) => {
@@ -131,6 +138,12 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
   const agentDisplayName = `${agent.label} 에이전트`
   const idea = workspace?.selectedIdea
   const showChat = step === 3 && report
+  const initialMapRegion = useMemo(() => firstNonBlank(
+    startupProfile?.businessRegion,
+    workspace?.selectedIdea?.location,
+    workspace?.selectedIdea?.region,
+    startupProfile?.residenceRegion,
+  ), [startupProfile, workspace])
 
   useEffect(() => {
     let active = true
@@ -325,8 +338,8 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
     const nextReport = simulationReportFromReportData(reportData)
     if (!nextReport) return
     setReport(nextReport)
-    if (reportData.location) setLocation(reportData.location)
-    if (reportData.assumption) setAssumption(reportData.assumption)
+    if (reportData.location || nextReport.location) setLocation(reportData.location ?? nextReport.location)
+    if (reportData.assumption || nextReport.assumption) setAssumption(reportData.assumption ?? nextReport.assumption)
     setStep(3)
   }
 
@@ -376,52 +389,13 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
 
   const handleRunSimulation = (form) => {
     setAssumption(form)
-
-    const metrics = []
-    let cumulativeProfit = 0
-    let totalRevenue = 0
-    let totalCost = 0
-    let bepDay = null
-
-    for (let day = 1; day <= 30; day += 1) {
-      const progress = day / 30
-      const weekdayBoost = [0, 6, 4, 2, 5, 9, 11][day % 7]
-      const baseOrders = Math.floor(form.expectedDailyOrders * (0.58 + 0.42 * progress))
-      const orders = Math.max(0, baseOrders + weekdayBoost - 4)
-      const revenue = orders * form.pricePerOrder
-      const variableCost = Math.round(revenue * form.variableCostRate)
-      const fixedCost = Math.round((form.monthlyRent + form.laborCost + form.marketingCost + form.otherFixedCost) / form.operatingDays)
-      const profit = revenue - variableCost - fixedCost
-
-      cumulativeProfit += profit
-      totalRevenue += revenue
-      totalCost += variableCost + fixedCost
-
-      if (!bepDay && cumulativeProfit >= 0) bepDay = day
-
-      metrics.push({
-        day,
-        orders,
-        revenue,
-        variableCost,
-        fixedCost,
-        profit,
-        cumulativeProfit,
-        cashBalance: form.initialBudget + cumulativeProfit,
-      })
-    }
+    const simulation = buildDailySimulation(form)
 
     setReport({
       location,
       assumption: form,
-      metrics,
-      summary: {
-        totalRevenue,
-        totalCost,
-        totalProfit: totalRevenue - totalCost,
-        bepDay,
-        cashShortageRisk: form.initialBudget + cumulativeProfit < form.monthlyRent ? '높음' : '낮음',
-      },
+      metrics: simulation.metrics,
+      summary: simulation.summary,
     })
     setStep(3)
   }
@@ -617,7 +591,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
 
               <Stepper step={step} onJump={setStep} />
 
-              {step === 1 && <RoadviewPicker onSelect={handleLocationSelect} />}
+              {step === 1 && <RoadviewPicker initialRegion={initialMapRegion} onSelect={handleLocationSelect} />}
               {step === 2 && (
                 <AssumptionForm
                   location={location}
