@@ -43,6 +43,7 @@ import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from '../fe
 import { applicationFormForContext } from '../../reports/applicationFormSchemas'
 import { buildFeaturePageTheme } from './featurePageTheme'
 import { ItemGeneratingState } from './ItemGeneratingState'
+import { PlanWritingState } from './PlanWritingState'
 import './FeaturePage.css'
 
 const FEATURE_TARGETS = {
@@ -176,6 +177,8 @@ export const FeaturePage = ({
   // 사업계획서 기능에서 사용자가 붙여넣는 공고문(있으면 그 내용에 맞춰 초안을 재생성한다).
   // 경북 사회적경제 창업학교 공고로 진입하면 고정 공고문이 기본값으로 들어온다.
   const [announcement, setAnnouncement] = useState(featureSeed.announcement ?? '')
+  // 공고로 신청서를 '작성하는 척' 보여주는 로딩(약 10초).
+  const [planWriting, setPlanWriting] = useState(false)
   const {
     messages,
     pushImmediate,
@@ -205,6 +208,7 @@ export const FeaturePage = ({
   const hiddenRequestIdsRef = useRef(new Set())
   const autoGenerationKeysRef = useRef(new Set())
   const savedMenuRef = useRef(null)
+  const planWritingStartedRef = useRef(false)
 
   const applyReportData = useCallback((reportData) => {
     setData(reportData)
@@ -622,6 +626,17 @@ export const FeaturePage = ({
     }
   }, [applicationForm, workspace, workspaceContext, startupProfile])
 
+  // 공고로 plan에 진입하면(신청서 폼 모드) 약 10초간 '작성 중' 로딩을 보여준 뒤 결과를 노출한다.
+  useEffect(() => {
+    if (id !== 'plan' || !applicationForm || planWritingStartedRef.current) {
+      return undefined
+    }
+    planWritingStartedRef.current = true
+    setPlanWriting(true)
+    const timer = window.setTimeout(() => setPlanWriting(false), 10000)
+    return () => window.clearTimeout(timer)
+  }, [id, applicationForm])
+
   const sendFeatureMessage = async (text, { hidden = false, currentResultOverride = null } = {}) => {
     if (!room?.roomId) {
       return null
@@ -1034,6 +1049,8 @@ export const FeaturePage = ({
             onSubmit={handleItemInputSubmit}
             onBack={() => setItemFlowStep('choice')}
           />
+        ) : id === 'plan' && planWriting ? (
+          <PlanWritingState agentId={feature.agent} durationMs={10000} />
         ) : aiReportStatus === 'ready' ? (
           <>
           <Report
