@@ -51,7 +51,14 @@ class GMSClient:
                 json=payload,
             )
             response.raise_for_status()
-            return self._extract_content(response.json())
+            if not response.content:
+                return fallback
+            try:
+                data = response.json()
+            except ValueError:
+                return fallback
+            content = self._extract_content(data).strip()
+            return content or fallback
 
     def _build_payload(self, system_prompt: str, user_prompt: str, temperature: float) -> dict[str, Any]:
         if self._uses_gemini_generate_content():

@@ -1,6 +1,7 @@
 package com.kakao.backend.seed.api;
 
 import com.kakao.backend.commercialarea.service.CommercialAreaService;
+import com.kakao.backend.policy.dto.SupportProgramSyncResponse;
 import com.kakao.backend.policy.service.SupportProgramService;
 import com.kakao.backend.seed.dto.SeedImportResponse;
 import com.kakao.backend.seed.service.SeedKnowledgeService;
@@ -29,7 +30,8 @@ public class SeedController {
     @PostMapping("/import")
     public SeedImportResponse importSeeds() {
         int seedItems = seedKnowledgeService.importDefaultItems();
-        int supportPrograms = supportProgramService.upsertDemoPrograms();
+        SupportProgramSyncResponse supportSync = supportProgramService.sync("all");
+        int supportPrograms = supportSync.upsertedBySource().values().stream().mapToInt(Integer::intValue).sum();
         int stores = commercialAreaService.importCsv(null, null).imported();
         return new SeedImportResponse(seedItems, supportPrograms, stores);
     }

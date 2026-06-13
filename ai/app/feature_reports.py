@@ -396,16 +396,21 @@ def _support_report(results: dict[str, AgentResponse]) -> dict[str, Any]:
     matches = _list(policy.get("matches")) or _list(policy.get("match_summary"))
     items = []
     for item in matches[:5]:
-        title = str(item.get("title") or "지원사업 후보")
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
         items.append({
             "id": item.get("id") or title,
             "title": title,
-            "score": int(item.get("eligibility_score") or item.get("score") or 70),
-            "region": str(item.get("region") or item.get("source_note") or "전국"),
-            "due": str(item.get("due") or item.get("deadline") or "일정 확인"),
-            "docs": _list(item.get("required_documents")) or ["사업계획서", "자격 증빙"],
+            "score": int(item.get("eligibility_score") or item.get("score") or 0),
+            "region": str(item.get("region") or item.get("region_condition") or ""),
+            "due": str(item.get("due") or item.get("deadline") or item.get("application_end_date") or ""),
+            "docs": _list(item.get("required_documents")),
             "summary": item.get("summary"),
             "url": item.get("url"),
+            "amount": item.get("support_amount"),
+            "organization": item.get("organization"),
+            "source": item.get("source_note"),
         })
     return {"list": items}
 

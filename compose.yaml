@@ -113,8 +113,12 @@ services:
       DATA_GO_KR_SERVICE_KEY: ${DATA_GO_KR_SERVICE_KEY:-}
       BIZINFO_API_KEY: ${BIZINFO_API_KEY:-}
       YOUTH_CENTER_API_KEY: ${YOUTH_CENTER_API_KEY:-}
+      STARTMATE_EXTERNAL_API_RETRIES: ${STARTMATE_EXTERNAL_API_RETRIES:-1}
+      STARTMATE_EXTERNAL_API_TIMEOUT_MS: ${STARTMATE_EXTERNAL_API_TIMEOUT_MS:-5000}
       STARTMATE_INTERNAL_TOOL_TOKEN: ${STARTMATE_INTERNAL_TOOL_TOKEN:-startmate-local-internal-token}
       STARTMATE_COMMERCIAL_AREA_CSV_PATH: ${STARTMATE_COMMERCIAL_AREA_CSV_PATH:-/data/commercial-area/commercial_area.zip}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
     volumes:
       - ${STARTMATE_COMMERCIAL_AREA_DATA_DIR:-./backend/data/raw}:/data/commercial-area:ro
     ports:
@@ -123,6 +127,10 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+        VITE_CHAT_USER_ID: ${VITE_CHAT_USER_ID:-1}
+        VITE_KAKAO_MAP_KEY: ${VITE_KAKAO_MAP_KEY:-}
     depends_on:
       - backend
     ports:

@@ -55,10 +55,9 @@ if settings.support_rag_chroma_enabled:
         embedding_provider=settings.rag_embedding_provider,
     )
 else:
-    retriever = SupportProgramRetriever.from_default(
+    retriever = SupportProgramRetriever(
+        programs=[],
         retrieval_mode=settings.rag_retrieval_mode,
-        vector_store_path=settings.rag_vector_store_path or None,
-        embedding_dimensions=settings.support_rag_embedding_dimensions,
     )
 legal_retriever = LegalRetriever(
     chroma_path=settings.rag_chroma_path,
@@ -101,7 +100,7 @@ async def health() -> dict[str, object]:
         "mock_llm": settings.use_mock_llm,
         "gms_configured": llm.is_configured,
         "rag_retrieval_mode": retriever.retrieval_mode,
-        "rag_vector_store": retriever.vector_store is not None,
+        "rag_vector_store": getattr(retriever, "vector_store", None) is not None,
         "legal_vector_store_count": legal_retriever.count(),
     }
 

@@ -41,11 +41,15 @@ public class AiChatExternalReferenceDataService {
         String message = command.message() != null ? command.message().getContent() : "";
 
         if (shouldAttachSupportPrograms(command, message)) {
-            List<RecommendedProgramResponse> programs = supportProgramService.recommendWithDemoFallback(
-                    toSupportRecommendationRequest(command.startupProfile(), message, command.currentResult())
-            );
-            if (!programs.isEmpty()) {
-                externalData.put("supportPrograms", supportProgramsPayload(programs));
+            try {
+                List<RecommendedProgramResponse> programs = supportProgramService.recommend(
+                        toSupportRecommendationRequest(command.startupProfile(), message, command.currentResult())
+                );
+                if (!programs.isEmpty()) {
+                    externalData.put("supportPrograms", supportProgramsPayload(programs));
+                }
+            } catch (IllegalStateException ignored) {
+                // No imported policy data yet; avoid injecting synthetic recommendations as external evidence.
             }
         }
 
@@ -127,7 +131,7 @@ public class AiChatExternalReferenceDataService {
         );
 
         return new CommercialAreaRequest(
-                firstNonBlank(sidoFrom(region), "서울"),
+                sidoFrom(region),
                 firstNonBlank(sigunguFrom(region), containsAny(message, List.of("마포")) ? "마포구" : null),
                 firstNonBlank(dongFrom(region), containsAny(message, List.of("연남")) ? "연남동" : null),
                 null,
@@ -153,6 +157,12 @@ public class AiChatExternalReferenceDataService {
         item.put("title", program.title());
         item.put("source", program.source());
         item.put("summary", program.summary());
+        item.put("regionCondition", program.regionCondition());
+        item.put("supportAmount", program.supportAmount());
+        item.put("requiredDocuments", program.requiredDocuments());
+        item.put("organization", program.organization());
+        item.put("supportType", program.supportType());
+        item.put("status", program.status());
         item.put("matchScore", program.matchScore());
         item.put("matchReasons", program.matchReasons());
         item.put("cautionReasons", program.cautionReasons());
@@ -223,7 +233,7 @@ public class AiChatExternalReferenceDataService {
         return numbers.stream()
                 .filter(number -> number >= 19 && number <= 80)
                 .findFirst()
-                .orElse(27);
+                .orElse(null);
     }
 
     private String sidoFrom(String raw) {

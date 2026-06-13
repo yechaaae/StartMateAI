@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface SupportProgramRepository extends JpaRepository<SupportProgram, Long> {
 
     Optional<SupportProgram> findBySourceAndSourceId(String source, String sourceId);
+
+    long countBySourceNot(String source);
 }
