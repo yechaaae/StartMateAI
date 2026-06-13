@@ -2588,6 +2588,8 @@
 .chat-panel {
   flex: 1;
   overflow-y: auto;
+  /* 활성(타이핑) 아바타의 ringPulse 글로우(좌측 최대 8px)가 잘리지 않도록 좌측 여유 확보 */
+  padding-left: 10px;
   padding-right: 4px;
 }
 
