@@ -55,7 +55,9 @@ export const getVisibleOnboardingFields = (stepIndex, form) => {
 }
 
 export const getOnboardingProgress = (stepIndex, stage) => {
-  const total = getOnboardingStepCount(stage)
+  // stage 미선택(0단계 초입)에도 안정적인 전체 단계 수를 보여주기 위해
+  // 창업 전 흐름(4단계)을 기본값으로 사용한다. 창업 후를 고르면 1단계만 늘어난다.
+  const total = getOnboardingStepCount(stage || 'PRE_STARTUP')
   const current = Math.min(stepIndex + 1, total)
 
   return {

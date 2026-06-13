@@ -68,6 +68,8 @@ test('post-startup flow asks for current business info instead of initial budget
 })
 
 test('reports progress relative to the selected stage step count', () => {
+  // stage 미선택 시에도 "1/1"이 아니라 창업 전 흐름(4단계) 기준으로 보여준다
+  assert.deepEqual(getOnboardingProgress(0, ''), { current: 1, total: 4, percent: 25 })
   assert.deepEqual(getOnboardingProgress(0, 'PRE_STARTUP'), { current: 1, total: 4, percent: 25 })
   assert.deepEqual(getOnboardingProgress(3, 'PRE_STARTUP'), { current: 4, total: 4, percent: 100 })
   assert.deepEqual(getOnboardingProgress(4, 'POST_STARTUP'), { current: 5, total: 5, percent: 100 })
