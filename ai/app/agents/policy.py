@@ -225,7 +225,12 @@ class PolicyAgent(BaseAgent):
             domain_adjustment = self._domain_adjustment(haystack, request)
 
             if "backend_match_score" in score_breakdown:
-                adjusted_score = max(0, min(100, base_score + domain_adjustment))
+                adjusted_score = self._score_with_location_caps(
+                    base_score + domain_adjustment,
+                    location_score,
+                    haystack,
+                    region_terms,
+                )
                 adjusted["eligibility_score"] = adjusted_score
                 adjusted["fit_level"] = self._fit_level(int(adjusted_score))
                 adjusted["score_breakdown"] = {
@@ -241,16 +246,12 @@ class PolicyAgent(BaseAgent):
                 reranked.append(adjusted)
                 continue
 
-            final_score = base_score + location_score + domain_adjustment
-
-            if location_score <= 0 and self._has_other_specific_region(haystack, region_terms):
-                final_score = min(final_score, 45)
-            elif location_score <= 0:
-                final_score = min(final_score, 65)
-            elif location_score == 25:
-                final_score = min(final_score, 90)
-            elif location_score < 20:
-                final_score = min(final_score, 75)
+            final_score = self._score_with_location_caps(
+                base_score + location_score + domain_adjustment,
+                location_score,
+                haystack,
+                region_terms,
+            )
 
             adjusted["eligibility_score"] = max(0, min(100, final_score))
             adjusted["fit_level"] = self._fit_level(int(adjusted["eligibility_score"]))
@@ -275,6 +276,26 @@ class PolicyAgent(BaseAgent):
             reverse=True,
         )
         return reranked[: request.limit]
+
+    def _score_with_location_caps(
+        self,
+        score: int,
+        location_score: int,
+        haystack: str,
+        region_terms: list[str],
+    ) -> int:
+        final_score = score
+        if location_score <= 0 and self._has_other_specific_region(haystack, region_terms):
+            final_score = min(final_score, 35)
+        elif location_score <= 0 and region_terms:
+            final_score = min(final_score, 55)
+        elif location_score == 10:
+            final_score = min(final_score, 82)
+        elif location_score == 25:
+            final_score = min(final_score, 90)
+        elif location_score < 20:
+            final_score = min(final_score, 75)
+        return max(0, min(100, int(final_score)))
 
     def _domain_adjustment(self, haystack: str, request: PolicyRequest) -> int:
         query = f"{request.query or ''} {' '.join(request.profile.interests)} {' '.join(request.profile.preferred_business_types)}".lower()
@@ -466,7 +487,7 @@ class PolicyAgent(BaseAgent):
             return f"{region}와 같은 광역권 조건이 공고와 맞을 가능성이 있습니다."
         if location_score >= 10:
             return "전국 대상 공고라 지역 제한 리스크가 낮습니다."
-        return f"{region} 직접 대상 공고가 아니어서 우선순위를 낮췄습니다."
+        return f"{region} 기준으로 신청 가능성이 낮거나 불명확해 우선순위를 크게 낮췄습니다."
 
     def _has_other_specific_region(self, haystack: str, region_terms: list[str]) -> bool:
         known_regions = ["서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"]
@@ -566,27 +587,42 @@ class PolicyAgent(BaseAgent):
         return "idea"
 
     def _industry_large(self, raw: str) -> str | None:
-        return "음식점업" if self._contains_any(raw, ["카페", "커피", "음식", "식당", "디저트"]) else None
+        return "음식점업" if self._contains_any(raw, ["카페", "커피", "음식", "식당", "디저트", "도시락", "요식", "외식", "푸드"]) else None
 
     def _industry_medium(self, raw: str) -> str | None:
-        return "커피점/카페" if self._contains_any(raw, ["카페", "커피"]) else None
+        if self._contains_any(raw, ["카페", "커피"]):
+            return "커피점/카페"
+        if self._contains_any(raw, ["도시락", "요식", "외식", "푸드", "음식"]):
+            return "한식/간편식"
+        return None
 
     def _industry_small(self, raw: str) -> str | None:
-        return "카페" if self._contains_any(raw, ["카페", "커피"]) else None
+        if self._contains_any(raw, ["카페", "커피"]):
+            return "카페"
+        if self._contains_any(raw, ["도시락"]):
+            return "도시락"
+        return None
 
     def _sido_from(self, raw: str | None) -> str | None:
         text = raw or ""
+        if any(keyword in text for keyword in ["구미", "구미시", "경북", "경상북도"]):
+            return "경북"
         for sido in ["서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종"]:
+            if sido in text:
+                return sido
+        for sido in ["경기", "강원", "충북", "충남", "전북", "전남", "경남", "제주"]:
             if sido in text:
                 return sido
         return None
 
     def _sigungu_from(self, raw: str | None) -> str | None:
         text = raw or ""
+        if "구미" in text:
+            return "구미시"
         if "마포" in text:
             return "마포구"
         for token in text.replace(",", " ").split():
-            if token.endswith(("구", "군")):
+            if token.endswith(("시", "구", "군")):
                 return token
         return None
 

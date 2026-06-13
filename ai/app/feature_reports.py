@@ -142,6 +142,7 @@ def build_feature_result(
     if not report_data:
         return None
     report_data = _with_agent_review(feature_key, report_data, results, agent_review)
+    report_data = _with_cross_agent_conflicts(feature_key, report_data, results, agent_review)
 
     payload = {
         "reportType": FEATURE_REPORT_TYPES[feature_key],
@@ -170,6 +171,125 @@ def build_feature_result(
         "referenceId": _nested(request.context, "rabbitmq", "roomId"),
         "payload": payload,
     }
+
+
+def _with_cross_agent_conflicts(
+    feature_key: str,
+    report_data: dict[str, Any],
+    results: dict[str, AgentResponse],
+    agent_review: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if feature_key != "ITEM":
+        return report_data
+    items = [item for item in _list(report_data.get("items")) if isinstance(item, dict)]
+    if not items:
+        return report_data
+
+    adjustment = _item_conflict_adjustment(results, agent_review)
+    penalty = int(adjustment.get("penalty") or 0)
+    if penalty <= 0:
+        return report_data
+
+    target_title = str(adjustment.get("target_title") or "").strip()
+    notes = _list(adjustment.get("notes"))
+    applied = False
+    for index, item in enumerate(items):
+        title = str(item.get("title") or "")
+        should_apply = index == 0
+        if target_title:
+            should_apply = target_title in title or title in target_title or index == 0
+        if not should_apply:
+            continue
+        original = int(item.get("originalScore") or item.get("score") or 0)
+        item["originalScore"] = original
+        item["score"] = max(0, original - penalty)
+        item["conflictPenalty"] = penalty
+        item["conflictNotes"] = notes
+        item["validationStatus"] = "needs_validation"
+        if notes:
+            reason = str(item.get("reason") or "").strip()
+            if notes[0] not in reason:
+                item["reason"] = f"{reason} 단, {notes[0]}".strip()
+        applied = True
+        break
+
+    if applied:
+        items.sort(key=lambda item: int(item.get("score") or 0), reverse=True)
+        for rank, item in enumerate(items, start=1):
+            item["rank"] = rank
+        report_data["items"] = items
+
+        analysis = _list(report_data.get("analysis"))
+        if notes:
+            _append_metric(analysis, "Agent 충돌 반영", notes[0])
+        report_data["analysis"] = analysis
+    return report_data
+
+
+def _item_conflict_adjustment(
+    results: dict[str, AgentResponse],
+    agent_review: dict[str, Any] | None,
+) -> dict[str, Any]:
+    finance = _data(results, "finance")
+    review = _dict(agent_review)
+    challenges = _list(review.get("challenges"))
+    penalty = 0
+    notes: list[str] = []
+    target_title = str(finance.get("item_name") or "").strip()
+
+    monthly_profit = finance.get("monthly_profit_krw")
+    if isinstance(monthly_profit, (int, float)) and monthly_profit < 0:
+        penalty += 15
+        notes.append(f"재무 Agent가 월 손익 {_money(monthly_profit)}으로 음수를 감지했습니다.")
+
+    break_even = finance.get("break_even_units_per_day")
+    expected = finance.get("expected_daily_customers")
+    if isinstance(break_even, (int, float)) and isinstance(expected, (int, float)) and expected > 0 and break_even > expected:
+        penalty += 10 if break_even <= expected * 2 else 15
+        notes.append(f"손익분기 {int(break_even)}개/day가 현재 예상 {int(expected)}개/day보다 높습니다.")
+
+    budget = _dict(finance.get("budget_analysis"))
+    funding_gap = budget.get("funding_gap_krw")
+    if isinstance(funding_gap, (int, float)) and funding_gap > 0:
+        penalty += 10
+        notes.append(f"예산 대비 부족액 {_money(funding_gap)}이 있습니다.")
+
+    if str(finance.get("risk_grade") or "").upper() == "C":
+        penalty += 8
+        notes.append("재무 Agent 위험 등급이 C라 보수적으로 조정했습니다.")
+
+    for challenge in challenges:
+        if not isinstance(challenge, dict):
+            continue
+        source = str(challenge.get("source_intent") or "")
+        target = str(challenge.get("target_intent") or "")
+        if source == "finance" and target in {"idea", "orchestrator"}:
+            penalty += 10
+            issue = str(challenge.get("issue") or "").strip()
+            proposal = str(challenge.get("proposal") or "").strip()
+            if issue:
+                notes.append(issue)
+            if proposal:
+                notes.append(proposal)
+            break
+
+    return {
+        "penalty": min(35, penalty),
+        "notes": _unique_text(notes)[:4],
+        "target_title": target_title,
+    }
+
+
+def _unique_text(values: list[Any]) -> list[str]:
+    seen = set()
+    result: list[str] = []
+    for value in values:
+        text = " ".join(str(value or "").split())
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
 
 
 def _chat_card(feature_key: str, response: AgentResponse, report_data: dict[str, Any]) -> dict[str, Any]:
