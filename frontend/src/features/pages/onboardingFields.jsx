@@ -53,7 +53,7 @@ export const TagField = ({ targetName, label, name, value, onChange, placeholder
   )
 }
 
-// ===== 지역 선택 (시/도 → 시·군·구 → 읍·면·동 단계 선택) =====
+// ===== 지역 선택 (시·도 | 시·구·군 | 동·읍·면 3단 컬럼 + 검색) =====
 // 행정구역 데이터는 모달을 처음 열 때 동적 import로 lazy-load 한다(약 66KB).
 // 세부 주소·건물은 다루지 않고 "동" 단위 지역까지만 저장한다.
 let regionsCache = null
@@ -64,30 +64,54 @@ const loadRegions = async () => {
   return regionsCache
 }
 
-// 동 드롭다운의 "전체"(시·군·구 전체) 선택을 나타내는 sentinel 값.
-const ALL_DONG = '__ALL__'
+// 시·도 표시·저장용 짧은 이름 (예: 서울특별시 → 서울)
+const SIDO_SHORT = {
+  서울특별시: '서울', 부산광역시: '부산', 대구광역시: '대구', 인천광역시: '인천',
+  광주광역시: '광주', 대전광역시: '대전', 울산광역시: '울산', 세종특별자치시: '세종',
+  경기도: '경기', 충청북도: '충북', 충청남도: '충남', 전라북도: '전북', 전라남도: '전남',
+  경상북도: '경북', 경상남도: '경남', 제주특별자치도: '제주', 강원특별자치도: '강원',
+}
+const shortSido = (full) => SIDO_SHORT[full] || full
 
-// 시·군·구가 시·도와 같은 경우(세종)는 시·군·구를 생략하고 합친다.
-const joinRegion = (sido, sigungu, dong) => (
-  [sido, sigungu !== sido ? sigungu : '', dong].filter(Boolean).join(' ')
+// 저장 문자열은 "짧은시도 시군구 동" 형태 (세종은 시·군·구 생략).
+const joinRegion = (sidoFull, sigungu, dong) => (
+  [shortSido(sidoFull), sigungu && sigungu !== sidoFull ? sigungu : '', dong].filter(Boolean).join(' ')
 )
 
-// 저장된 문자열을 다시 시/도·구·동으로 분해해 모달을 열 때 이전 선택을 복원한다(best-effort).
+// 저장된 문자열을 분해해 모달을 열 때 컬럼 선택을 복원한다(best-effort).
 const parseRegionValue = (value, regions) => {
-  const empty = { sido: '', sigungu: '', dong: '' }
-  if (!value || !regions) return empty
-  const sido = Object.keys(regions).find((name) => value.startsWith(name))
-  if (!sido) return empty
-  const rest = value.slice(sido.length).trim()
-  const sigunguList = Object.keys(regions[sido])
-  const sigungu = sigunguList.find((sg) => sg !== sido && rest.startsWith(sg))
-  if (sigungu) {
-    const dong = rest.slice(sigungu.length).trim()
-    return { sido, sigungu, dong: regions[sido][sigungu].includes(dong) ? dong : '' }
+  if (!value || !regions) return { sido: '', sigungu: '' }
+  const tokens = value.trim().split(/\s+/)
+  const sido = Object.keys(regions).find((full) => shortSido(full) === tokens[0])
+  if (!sido) return { sido: '', sigungu: '' }
+  const keys = Object.keys(regions[sido])
+  let sigungu = ''
+  if (tokens.length >= 2) {
+    if (keys.includes(tokens[1])) sigungu = tokens[1]
+    else if (keys.length === 1) sigungu = keys[0] // 세종
   }
-  // 세종 등 시·군·구가 1개뿐인 경우
-  const onlySigungu = sigunguList.length === 1 ? sigunguList[0] : ''
-  return { sido, sigungu: onlySigungu, dong: onlySigungu && regions[sido][onlySigungu].includes(rest) ? rest : '' }
+  return { sido, sigungu }
+}
+
+// 검색: "시 구 동" 라벨에 검색어(공백 무시)가 포함되는 후보를 최대 60개까지 모은다.
+const searchRegions = (regions, query) => {
+  const q = query.replace(/\s+/g, '')
+  if (!q) return []
+  const out = []
+  for (const sidoFull of Object.keys(regions)) {
+    const ss = shortSido(sidoFull)
+    for (const sg of Object.keys(regions[sidoFull])) {
+      const sgName = sg !== sidoFull ? sg : ''
+      for (const dong of regions[sidoFull][sg]) {
+        const itemLabel = [ss, sgName, dong].filter(Boolean).join(' ')
+        if (itemLabel.replace(/\s+/g, '').includes(q)) {
+          out.push(itemLabel)
+          if (out.length >= 60) return out
+        }
+      }
+    }
+  }
+  return out
 }
 
 export const AddressField = ({ targetName, label, value, onChange, placeholder }) => {
@@ -95,9 +119,11 @@ export const AddressField = ({ targetName, label, value, onChange, placeholder }
   const [regions, setRegions] = useState(regionsCache)
   const [sido, setSido] = useState('')
   const [sigungu, setSigungu] = useState('')
+  const [query, setQuery] = useState('')
 
   const openModal = async () => {
     setOpen(true)
+    setQuery('')
     const data = regions || (await loadRegions())
     if (!regions) setRegions(data)
     const parsed = parseRegionValue(value, data)
@@ -107,23 +133,29 @@ export const AddressField = ({ targetName, label, value, onChange, placeholder }
 
   const closeModal = () => setOpen(false)
 
-  const sidoList = regions ? Object.keys(regions) : []
-  const sigunguList = regions && sido ? Object.keys(regions[sido]) : []
-  const dongList = regions && sido && sigungu ? regions[sido][sigungu] : []
-
-  const onSido = (next) => {
-    setSido(next)
-    // 시·군·구가 1개뿐이면(세종 등) 자동 선택해 바로 동 선택으로 넘어가게 한다.
-    const list = Object.keys(regions[next])
-    setSigungu(list.length === 1 ? list[0] : '')
-  }
-
-  const onDong = (next) => {
-    if (!next) return
-    // "전체"는 동 없이 시·군·구까지만 저장한다.
-    onChange(next === ALL_DONG ? joinRegion(sido, sigungu, '') : joinRegion(sido, sigungu, next))
+  const commit = (next) => {
+    onChange(next)
     setOpen(false)
   }
+
+  const pickSido = (full) => {
+    setSido(full)
+    // 세종처럼 시·군·구가 1개(시·도와 동일)뿐이면 자동 선택해 동 컬럼을 바로 채운다.
+    const keys = Object.keys(regions[full])
+    setSigungu(keys.length === 1 ? keys[0] : '')
+  }
+
+  const resetSelection = () => {
+    setSido('')
+    setSigungu('')
+    setQuery('')
+  }
+
+  const sidoList = regions ? Object.keys(regions) : []
+  const sigunguList = regions && sido ? Object.keys(regions[sido]).filter((sg) => sg !== sido) : []
+  const dongList = regions && sido && sigungu ? regions[sido][sigungu] : []
+  const results = regions ? searchRegions(regions, query) : []
+  const dongAllLabel = sigungu && sigungu !== sido ? sigungu : shortSido(sido)
 
   // Esc로 닫기
   useEffect(() => {
@@ -173,44 +205,105 @@ export const AddressField = ({ targetName, label, value, onChange, placeholder }
             </button>
             <div className="onboarding-modal-head">
               <h2>{label} 선택</h2>
-              <p>시/도 → 시·군·구 → 읍·면·동 순서로 골라주세요. 동 단위까지만 저장됩니다.</p>
+              <p>지역을 클릭해 고르거나 위에서 검색하세요. 동 단위까지만 저장됩니다.</p>
             </div>
 
             {!regions ? (
               <p className="region-loading">지역 정보를 불러오는 중…</p>
             ) : (
-              <div className="region-selects">
-                <label className="region-select">
-                  <span>시 / 도</span>
-                  <select value={sido} onChange={(event) => onSido(event.target.value)}>
-                    <option value="" disabled>선택</option>
-                    {sidoList.map((name) => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </label>
-                <label className="region-select">
-                  <span>시 · 군 · 구</span>
-                  <select
-                    value={sigungu}
-                    onChange={(event) => setSigungu(event.target.value)}
-                    disabled={!sido}
-                  >
-                    <option value="" disabled>선택</option>
-                    {sigunguList.map((name) => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </label>
-                <label className="region-select">
-                  <span>읍 · 면 · 동</span>
-                  <select
-                    value=""
-                    onChange={(event) => onDong(event.target.value)}
-                    disabled={!sigungu}
-                  >
-                    <option value="" disabled>선택</option>
-                    {sigungu && <option value={ALL_DONG}>{sigungu} 전체</option>}
-                    {dongList.map((name) => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </label>
-              </div>
+              <>
+                <div className="region-search">
+                  <Icon name="compass" size={16} />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="지역명 검색 (예: 해운대구, 우동)"
+                  />
+                </div>
+
+                {query.trim() ? (
+                  <div className="region-results">
+                    {results.length === 0 ? (
+                      <p className="region-results-empty">검색 결과가 없어요.</p>
+                    ) : (
+                      results.map((item) => (
+                        <button type="button" key={item} className="region-result" onClick={() => commit(item)}>
+                          {item}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  <div className="region-columns">
+                    <div className="region-col">
+                      <div className="region-col-head">시·도</div>
+                      <div className="region-col-list">
+                        {sidoList.map((full) => (
+                          <button
+                            type="button"
+                            key={full}
+                            className={sido === full ? 'region-col-item on' : 'region-col-item'}
+                            onClick={() => pickSido(full)}
+                          >
+                            {shortSido(full)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="region-col">
+                      <div className="region-col-head">시·구·군</div>
+                      <div className="region-col-list">
+                        {sido ? (
+                          <>
+                            <button type="button" className="region-col-item" onClick={() => commit(shortSido(sido))}>
+                              {shortSido(sido)} 전체
+                            </button>
+                            {sigunguList.map((sg) => (
+                              <button
+                                type="button"
+                                key={sg}
+                                className={sigungu === sg ? 'region-col-item on' : 'region-col-item'}
+                                onClick={() => setSigungu(sg)}
+                              >
+                                {sg}
+                              </button>
+                            ))}
+                          </>
+                        ) : (
+                          <p className="region-col-empty">시·도를 먼저 선택하세요</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="region-col region-col-dong">
+                      <div className="region-col-head">동·읍·면</div>
+                      <div className="region-col-list">
+                        {sigungu ? (
+                          <>
+                            <button type="button" className="region-col-item" onClick={() => commit(joinRegion(sido, sigungu, ''))}>
+                              {dongAllLabel} 전체
+                            </button>
+                            {dongList.map((dong) => (
+                              <button type="button" key={dong} className="region-col-item" onClick={() => commit(joinRegion(sido, sigungu, dong))}>
+                                {dong}
+                              </button>
+                            ))}
+                          </>
+                        ) : (
+                          <p className="region-col-empty">시·구·군을 먼저 선택하세요</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="region-modal-foot">
+                  <button type="button" className="region-modal-reset" onClick={resetSelection}>
+                    초기화
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>,

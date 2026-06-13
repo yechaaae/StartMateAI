@@ -329,7 +329,7 @@ export const Onboarding = ({ onComplete }) => {
           <div className="onboarding-input-grid">
             <TextField targetName="currentItemName" label="현재 아이템 / 사업명" name="currentItemName" value={form.currentItemName} onChange={update} placeholder="예: 구남로 수제 쿠키" />
             <TextField targetName="currentIndustry" label="업종" name="currentIndustry" value={form.currentIndustry} onChange={update} placeholder="예: 카페, 디저트, 음식점" />
-            <AddressField targetName="businessRegion" label="사업장 위치" name="businessRegion" value={form.businessRegion} onChange={(next) => select('businessRegion', next)} placeholder="예: 부산 해운대구 (클릭하여 직접 입력)" />
+            <AddressField targetName="businessRegion" label="사업장 위치" name="businessRegion" value={form.businessRegion} onChange={(next) => select('businessRegion', next)} placeholder="클릭하여 직접 입력 또는 선택" />
           </div>
           <OptionSection
             targetName="operatingPeriod"
@@ -384,9 +384,9 @@ export const Onboarding = ({ onComplete }) => {
         <div className="onboarding-input-grid">
           <TagField targetName="major" label="전공 또는 보유 역량" name="major" value={form.major} onChange={(next) => select('major', next)} placeholder="예: 시각디자인 (엔터로 추가)" max={10} />
           <TagField targetName="interestField" label="관심 분야" name="interestField" value={form.interestField} onChange={(next) => select('interestField', next)} placeholder="예: F&B (엔터로 추가)" max={10} />
-          <AddressField targetName="residenceRegion" label="거주 지역" name="residenceRegion" value={form.residenceRegion} onChange={(next) => select('residenceRegion', next)} placeholder="예: 부산 해운대구 (클릭하여 직접 입력)" />
+          <AddressField targetName="residenceRegion" label="거주 지역" name="residenceRegion" value={form.residenceRegion} onChange={(next) => select('residenceRegion', next)} placeholder="클릭하여 직접 입력 또는 선택" />
           {currentStepFields.includes('businessRegion') && (
-            <AddressField targetName="businessRegion" label="창업 희망 지역" name="businessRegion" value={form.businessRegion} onChange={(next) => select('businessRegion', next)} placeholder="예: 부산 해운대구 (클릭하여 직접 입력)" />
+            <AddressField targetName="businessRegion" label="창업 희망 지역" name="businessRegion" value={form.businessRegion} onChange={(next) => select('businessRegion', next)} placeholder="클릭하여 직접 입력 또는 선택" />
           )}
           {currentStepFields.includes('initialBudget') && (
             <BudgetField targetName="initialBudget" label="초기 예산" name="initialBudget" value={form.initialBudget} onChange={(next) => select('initialBudget', next)} />
