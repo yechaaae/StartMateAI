@@ -214,8 +214,6 @@ class PolicyAgent(BaseAgent):
 
     def _rerank_for_query(self, matches: list[dict], request: PolicyRequest) -> list[dict]:
         region_terms = self._region_terms(request)
-        if not region_terms:
-            return matches
 
         reranked = []
         for item in matches:
@@ -224,20 +222,26 @@ class PolicyAgent(BaseAgent):
             score_breakdown = adjusted.get("score_breakdown") or {}
             haystack = self._match_text(adjusted)
             location_score = self._location_score(haystack, region_terms)
+            domain_adjustment = self._domain_adjustment(haystack, request)
 
             if "backend_match_score" in score_breakdown:
+                adjusted_score = max(0, min(100, base_score + domain_adjustment))
+                adjusted["eligibility_score"] = adjusted_score
+                adjusted["fit_level"] = self._fit_level(int(adjusted_score))
                 adjusted["score_breakdown"] = {
                     **score_breakdown,
                     "location_fit": location_score,
+                    "domain_adjustment": domain_adjustment,
                 }
                 adjusted["why_matched"] = self._unique([
                     *(adjusted.get("why_matched") or []),
                     self._location_reason(location_score, region_terms),
+                    self._domain_reason(domain_adjustment),
                 ])
                 reranked.append(adjusted)
                 continue
 
-            final_score = base_score + location_score
+            final_score = base_score + location_score + domain_adjustment
 
             if location_score <= 0 and self._has_other_specific_region(haystack, region_terms):
                 final_score = min(final_score, 45)
@@ -253,10 +257,12 @@ class PolicyAgent(BaseAgent):
             adjusted["score_breakdown"] = {
                 **score_breakdown,
                 "location_fit": location_score,
+                "domain_adjustment": domain_adjustment,
             }
             adjusted["why_matched"] = self._unique([
                 *(adjusted.get("why_matched") or []),
                 self._location_reason(location_score, region_terms),
+                self._domain_reason(domain_adjustment),
             ])
             reranked.append(adjusted)
 
@@ -269,6 +275,37 @@ class PolicyAgent(BaseAgent):
             reverse=True,
         )
         return reranked[: request.limit]
+
+    def _domain_adjustment(self, haystack: str, request: PolicyRequest) -> int:
+        query = f"{request.query or ''} {' '.join(request.profile.interests)} {' '.join(request.profile.preferred_business_types)}".lower()
+        food_intent = any(keyword in query for keyword in ["카페", "디저트", "메뉴", "도시락", "식품", "요식", "음식", "f&b", "food"])
+        content_intent = any(keyword in query for keyword in ["sns", "콘텐츠", "마케팅", "홍보", "브랜딩"])
+        tech_intent = any(keyword in query for keyword in ["전자", "공학", "ai", "로봇", "소프트웨어", "앱", "기술"])
+        text = haystack.lower()
+        tech_program = any(keyword in text for keyword in ["로봇", "공간컴퓨팅", "항공우주", "ict", "ai", "sw", "소프트웨어", "디바이스"])
+        food_program = any(keyword in text for keyword in ["식품", "외식", "푸드", "카페", "로컬", "소상공인", "전통시장"])
+        content_program = any(keyword in text for keyword in ["콘텐츠", "마케팅", "브랜딩", "홍보", "크리에이터"])
+
+        if food_intent and tech_program and not food_program:
+            return -28
+        if content_intent and tech_program and not content_program:
+            return -18
+        if tech_intent and tech_program:
+            return 12
+        if food_intent and food_program:
+            return 12
+        if content_intent and content_program:
+            return 12
+        return 0
+
+    def _domain_reason(self, adjustment: int) -> str:
+        if adjustment <= -20:
+            return "추천 아이템 도메인과 공고 분야가 달라 보조 후보로 낮췄습니다."
+        if adjustment < 0:
+            return "아이템-공고 분야 적합도가 높지 않아 점수를 보수적으로 조정했습니다."
+        if adjustment > 0:
+            return "아이템/프로필 분야와 공고 분야가 일부 일치합니다."
+        return "아이템-공고 분야 적합도는 중립으로 보았습니다."
 
     def _detailed_summary(self, matches: list[dict], request: PolicyRequest) -> str:
         if not matches:
@@ -409,6 +446,8 @@ class PolicyAgent(BaseAgent):
         ) + " " + chunks
 
     def _location_score(self, haystack: str, region_terms: list[str]) -> int:
+        if not region_terms:
+            return 0
         if any(term and term in haystack for term in region_terms):
             return 40
         if any(term in region_terms for term in ["구미", "구미시"]) and any(term in haystack for term in ["경북", "경상북도"]):
@@ -418,6 +457,8 @@ class PolicyAgent(BaseAgent):
         return -20
 
     def _location_reason(self, location_score: int, region_terms: list[str]) -> str:
+        if not region_terms:
+            return "지역 정보가 없어 지역 적합도는 중립으로 보았습니다."
         region = region_terms[0] if region_terms else "요청 지역"
         if location_score >= 40:
             return f"공고명 또는 조건에 {region} 지역 관련 표현이 직접 포함되어 있습니다."

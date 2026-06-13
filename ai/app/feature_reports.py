@@ -109,6 +109,9 @@ def _is_idea_recommendation_request(message: str) -> bool:
     text = (message or "").lower()
     if any(keyword in text for keyword in ["사업계획", "사업 계획", "계획서", "business plan"]):
         return False
+    if any(keyword in text for keyword in ["지원사업", "정부지원", "정부 지원", "공고", "보조금", "지원금"]):
+        if not ("아니라" in text and any(item in text for item in ["아이템", "사업 아이템", "창업 아이템"])):
+            return False
     return any(
         keyword in text
         for keyword in [

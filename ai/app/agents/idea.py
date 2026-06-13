@@ -16,10 +16,16 @@ class IdeaAgent(BaseAgent):
         budget = profile.budget_krw or 3_000_000
         candidate_limit = max(5, min(8, request.count + 3))
         raw_candidates, generation, warnings = await self._candidate_pool(profile, candidate_limit)
+        raw_candidates = self._merge_candidates(
+            raw_candidates,
+            self._guardrail_candidates(profile, budget),
+        )
         candidates = [self._score_candidate(profile, budget, candidate) for candidate in raw_candidates]
         candidates.sort(key=lambda item: item["match_score"], reverse=True)
 
-        selected = candidates[: request.count]
+        selected = self._select_diverse_candidates(candidates, request.count)
+        if not selected:
+            selected = candidates[: request.count]
         top = selected[0]
         missing_inputs = self._missing_inputs(profile)
         ranking_basis = [
@@ -39,6 +45,7 @@ class IdeaAgent(BaseAgent):
                 "top_idea": top,
                 "ranking_basis": ranking_basis,
                 "generation": generation,
+                "quality_checks": self._quality_checks(selected),
             },
             score=int(top["match_score"]),
             risks=top["risks"],
@@ -54,6 +61,7 @@ class IdeaAgent(BaseAgent):
                 "all_candidates": candidates,
                 "generation": generation,
                 "ranking_basis": ranking_basis,
+                "quality_checks": self._quality_checks(selected),
                 "decision_rules": [
                     "예산 초과 후보는 감점",
                     "전공/경험/관심 키워드가 겹치면 가점",
@@ -187,6 +195,9 @@ class IdeaAgent(BaseAgent):
                 diagnostics["warnings"].append("idea_llm_generation_missing_ideas_array")
                 return [], diagnostics
 
+            prompt_guardrails = self._idea_prompt_guardrails()
+            if prompt_guardrails and isinstance(parsed, dict):
+                diagnostics["guardrails"] = prompt_guardrails
             candidates = self._sanitize_candidates(ideas, profile, source="llm")[:count]
             diagnostics["parsed_idea_count"] = len(ideas)
             diagnostics["sanitized_candidate_count"] = len(candidates)
@@ -200,6 +211,14 @@ class IdeaAgent(BaseAgent):
             diagnostics["error_message"] = self._debug_preview(str(error), limit=1000)
             diagnostics["warnings"].append(f"idea_llm_generation_error:{error.__class__.__name__}")
             return [], diagnostics
+
+    def _idea_prompt_guardrails(self) -> list[str]:
+        return [
+            "Use the user's major as execution capability, not as a forced product theme.",
+            "Prefer low-fixed-cost MVPs that can collect customer evidence within 30 days.",
+            "Titles must sound like real customer-facing offers.",
+            "Do not recommend full offline stores when the budget only supports a test.",
+        ]
 
     def _debug_preview(self, value: Any, *, limit: int = 800) -> str:
         text = self._redact_sensitive(str(value)).replace("\r", "\\r").replace("\n", "\\n")
@@ -254,10 +273,248 @@ class IdeaAgent(BaseAgent):
                 "risks": self._normalize_risks(item.get("risks")),
                 "generated_by": source,
             }
+            candidate.update(self._candidate_enrichment(candidate, profile))
             if not candidate["keywords"]:
                 candidate["keywords"] = self._keywords_from_candidate(candidate)
             candidates.append(candidate)
         return candidates
+
+    def _merge_candidates(self, primary: list[dict[str, Any]], fallback: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in [*primary, *fallback]:
+            title = str(item.get("title") or "").strip()
+            key = re.sub(r"\s+", " ", title.lower())
+            if not title or key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+        return merged
+
+    def _select_diverse_candidates(self, candidates: list[dict[str, Any]], count: int) -> list[dict[str, Any]]:
+        selected: list[dict[str, Any]] = []
+        used_types: set[str] = set()
+        used_strategies: set[str] = set()
+        major_driven_count = 0
+        for candidate in candidates:
+            strategy = str(candidate.get("strategy") or "")
+            business_type = str(candidate.get("business_type") or "")
+            if self._is_major_driven_candidate(candidate) and major_driven_count >= 1:
+                continue
+            if len(selected) < count and strategy not in used_strategies:
+                selected.append(candidate)
+                used_strategies.add(strategy)
+                used_types.add(business_type)
+                if self._is_major_driven_candidate(candidate):
+                    major_driven_count += 1
+        for candidate in candidates:
+            if len(selected) >= count:
+                break
+            business_type = str(candidate.get("business_type") or "")
+            if candidate in selected:
+                continue
+            if self._is_major_driven_candidate(candidate) and major_driven_count >= 1:
+                continue
+            if business_type in used_types and len(selected) < max(2, count - 1):
+                continue
+            selected.append(candidate)
+            used_types.add(business_type)
+            if self._is_major_driven_candidate(candidate):
+                major_driven_count += 1
+        for candidate in candidates:
+            if len(selected) >= count:
+                break
+            if candidate not in selected:
+                if self._is_major_driven_candidate(candidate) and major_driven_count >= 1:
+                    continue
+                selected.append(candidate)
+                if self._is_major_driven_candidate(candidate):
+                    major_driven_count += 1
+        for candidate in candidates:
+            if len(selected) >= count:
+                break
+            if candidate not in selected:
+                selected.append(candidate)
+        return selected[:count]
+
+    def _is_major_driven_candidate(self, candidate: dict[str, Any]) -> bool:
+        text = " ".join(
+            [
+                str(candidate.get("title") or ""),
+                str(candidate.get("reason") or ""),
+                " ".join(map(str, candidate.get("keywords") or [])),
+                " ".join(map(str, candidate.get("why_fit") or [])),
+            ]
+        ).lower()
+        return any(
+            keyword in text
+            for keyword in ["전자", "공학", "전기", "ai", "스마트", "로봇", "부품", "기기", "자동화", "소프트웨어"]
+        )
+
+    def _candidate_enrichment(self, candidate: dict[str, Any], profile: StartupProfile) -> dict[str, Any]:
+        budget = profile.budget_krw or 3_000_000
+        estimated_cost = int(candidate.get("estimated_initial_cost_krw") or budget)
+        business_type = str(candidate.get("business_type") or "other")
+        fixed_cost = str(candidate.get("fixed_cost_level") or "medium")
+        difficulty = str(candidate.get("difficulty") or "")
+        if estimated_cost <= budget and fixed_cost == "low":
+            strategy = "safe"
+        elif estimated_cost <= int(budget * 1.6):
+            strategy = "growth"
+        else:
+            strategy = "experiment"
+
+        if estimated_cost <= budget:
+            feasibility_label = "within_budget"
+        elif estimated_cost <= int(budget * 1.5):
+            feasibility_label = "needs_trimmed_mvp"
+        else:
+            feasibility_label = "needs_support_or_pivot"
+
+        return {
+            "strategy": strategy,
+            "feasibility_label": feasibility_label,
+            "customer_problem": self._customer_problem(candidate),
+            "mvp_variant": self._mvp_variant(candidate, budget),
+            "execution_note": self._execution_note(candidate, profile),
+            "quality_flags": self._candidate_quality_flags(candidate, profile),
+            "difficulty": difficulty or candidate.get("difficulty"),
+            "business_type": business_type,
+        }
+
+    def _guardrail_candidates(self, profile: StartupProfile, budget: int) -> list[dict[str, Any]]:
+        region = profile.region or "로컬"
+        channels = profile.preferred_channels or ["SNS", "오프라인"]
+        items: list[dict[str, Any]] = [
+            {
+                "title": f"{region} 소상공인 SNS 숏폼 대행",
+                "business_type": "content",
+                "target_customer": f"{region} 소상공인",
+                "reason": "초기 장비와 재고 부담이 낮고, 샘플 콘텐츠로 30일 안에 유료 전환 가능성을 확인할 수 있습니다.",
+                "why_fit": ["소자본으로 시작 가능", "지역 매장 네트워크와 결합 가능"],
+                "keywords": ["SNS", "콘텐츠", "로컬", "소상공인"],
+                "channels": channels,
+                "estimated_initial_cost_krw": min(max(500_000, int(budget * 0.6)), 1_200_000),
+                "fixed_cost_level": "low",
+                "difficulty": "쉬움",
+                "first_30_days": ["가게 20곳 리스트업", "샘플 콘텐츠 3개 제작", "유료 패키지 1건 제안"],
+                "validation_method": "상담 전환율과 유료 패키지 제안 수락률을 봅니다.",
+                "risks": ["초기 포트폴리오가 약하면 전환이 낮을 수 있습니다."],
+            },
+            {
+                "title": f"{region} 직장인 대상 소량 예약 도시락",
+                "business_type": "food",
+                "target_customer": f"{region} 직장인과 1인 가구",
+                "reason": "매장 임대 없이 사전 예약 수량만큼 테스트해 재고와 고정비를 줄일 수 있습니다.",
+                "why_fit": ["예약판매로 수요 검증 가능", "초기 메뉴를 작게 시작 가능"],
+                "keywords": ["푸드", "예약판매", "로컬"],
+                "channels": channels,
+                "estimated_initial_cost_krw": min(max(700_000, int(budget * 0.9)), 1_500_000),
+                "fixed_cost_level": "low",
+                "difficulty": "중간",
+                "first_30_days": ["메뉴 2개 선정", "사전예약 폼 오픈", "20식 판매 여부 확인"],
+                "validation_method": "예약 수량, 재구매 의사, 원가율을 측정합니다.",
+                "risks": ["식품 제조/판매 신고와 위생 요건 확인이 필요합니다."],
+            },
+            {
+                "title": f"{region} 예비창업자 지원사업 서류 체크 서비스",
+                "business_type": "service",
+                "target_customer": "예비창업자와 초기 창업자",
+                "reason": "지식 기반 서비스라 초기 비용이 낮고, 무료 체크리스트로 고객 반응을 빠르게 볼 수 있습니다.",
+                "why_fit": ["온라인 판매 가능", "지원사업 데이터와 연결 가능"],
+                "keywords": ["지원사업", "서류", "체크리스트", "창업"],
+                "channels": ["온라인", "SNS"],
+                "estimated_initial_cost_krw": min(max(300_000, int(budget * 0.5)), 900_000),
+                "fixed_cost_level": "low",
+                "difficulty": "중간",
+                "first_30_days": ["공고 10개 분석", "체크리스트 템플릿 제작", "예비창업자 5명 인터뷰"],
+                "validation_method": "템플릿 다운로드와 유료 상담 신청 수를 봅니다.",
+                "risks": ["공고 정보 정확도와 책임 범위를 명확히 고지해야 합니다."],
+            },
+        ]
+        if profile.major and any(term in profile.major.lower() for term in ["전자", "공학", "컴퓨터", "소프트웨어", "ai"]):
+            items.append(
+                {
+                    "title": f"{region} 소상공인 디지털 운영 진단",
+                    "business_type": "service",
+                    "target_customer": f"{region} 작은 매장",
+                    "reason": "전공 역량을 상품명에 억지로 붙이지 않고, 예약/결제/홍보 동선 개선이라는 실제 문제 해결에 씁니다.",
+                    "why_fit": ["전공은 실행 역량으로 활용", "방문 인터뷰로 빠른 검증 가능"],
+                    "keywords": ["운영진단", "디지털", "소상공인", "로컬"],
+                    "channels": channels,
+                    "estimated_initial_cost_krw": min(max(400_000, int(budget * 0.7)), 1_000_000),
+                    "fixed_cost_level": "low",
+                    "difficulty": "중간",
+                    "first_30_days": ["매장 10곳 인터뷰", "문제 체크리스트 제작", "유료 진단 1건 제안"],
+                    "validation_method": "진단 제안 수락률과 반복 요청 여부를 봅니다.",
+                    "risks": ["서비스 범위를 좁히지 않으면 작업량이 커질 수 있습니다."],
+                }
+            )
+        return self._sanitize_candidates(items, profile, source="guardrail")
+
+    def _customer_problem(self, candidate: dict[str, Any]) -> str:
+        business_type = str(candidate.get("business_type") or "")
+        if business_type in {"food", "cafe", "popup"}:
+            return "가까운 곳에서 믿고 살 수 있는 간편한 메뉴가 필요합니다."
+        if business_type == "content":
+            return "작은 매장이 꾸준히 홍보할 콘텐츠와 실행 시간이 부족합니다."
+        if business_type == "service":
+            return "창업자나 소상공인이 반복 업무를 혼자 정리하기 어렵습니다."
+        if business_type == "commerce":
+            return "작게 검증 가능한 틈새 상품과 구매 채널이 필요합니다."
+        return "고객의 반복 불편을 작게 해결할 수 있는지 검증해야 합니다."
+
+    def _mvp_variant(self, candidate: dict[str, Any], budget: int) -> dict[str, Any]:
+        estimated = int(candidate.get("estimated_initial_cost_krw") or budget)
+        if estimated <= budget:
+            return {
+                "name": "원안 MVP",
+                "budget_krw": estimated,
+                "change": "현재 예산 안에서 30일 테스트를 바로 설계할 수 있습니다.",
+            }
+        trimmed = max(300_000, min(budget, int(estimated * 0.55)))
+        return {
+            "name": "축소 MVP",
+            "budget_krw": trimmed,
+            "change": "재고, 장비, 공간비를 줄이고 예약/상담/샘플 판매로 먼저 검증합니다.",
+        }
+
+    def _execution_note(self, candidate: dict[str, Any], profile: StartupProfile) -> str:
+        major = profile.major or ""
+        if major and any(term in major.lower() for term in ["전자", "공학", "컴퓨터", "소프트웨어", "ai"]):
+            return "전공은 상품 컨셉이 아니라 자동화, 데이터 정리, 운영 개선 역량으로 반영했습니다."
+        if profile.experiences:
+            return "기존 경험은 고객 접점과 실행 속도를 높이는 근거로 반영했습니다."
+        return "경험 정보가 부족해 30일 고객 반응 검증 가능성을 더 크게 반영했습니다."
+
+    def _candidate_quality_flags(self, candidate: dict[str, Any], profile: StartupProfile) -> list[str]:
+        flags: list[str] = []
+        budget = profile.budget_krw or 3_000_000
+        estimated = int(candidate.get("estimated_initial_cost_krw") or 0)
+        if estimated > budget:
+            flags.append("budget_over_mvp_needed")
+        if candidate.get("fixed_cost_level") == "high":
+            flags.append("high_fixed_cost")
+        if not candidate.get("validation_method"):
+            flags.append("missing_validation_method")
+        if self._looks_like_forced_major_blend(str(candidate.get("title") or ""), candidate, profile):
+            flags.append("forced_major_blend")
+        return flags
+
+    def _quality_checks(self, candidates: list[dict[str, Any]]) -> dict[str, Any]:
+        return {
+            "count": len(candidates),
+            "strategies": self._ordered_unique([str(item.get("strategy") or "") for item in candidates]),
+            "within_budget": sum(1 for item in candidates if item.get("feasibility_label") == "within_budget"),
+            "needs_trimmed_mvp": sum(1 for item in candidates if item.get("feasibility_label") == "needs_trimmed_mvp"),
+            "quality_flags": self._ordered_unique(
+                [
+                    flag
+                    for item in candidates
+                    for flag in item.get("quality_flags", [])
+                ]
+            ),
+        }
 
     def _fallback_candidates(self, profile: StartupProfile, count: int) -> list[dict[str, Any]]:
         region = profile.region or "거주 지역"

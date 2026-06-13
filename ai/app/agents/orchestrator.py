@@ -583,6 +583,15 @@ class OrchestratorAgent:
                     "reason": profile_gate_reason,
                     "original_plan": plan_meta,
                 }
+            else:
+                normalized_plan = self._normalize_plan_for_request(request, plan)
+                if normalized_plan != plan:
+                    plan_meta = {
+                        "source": "intent_normalizer",
+                        "reason": self._normalization_reason(request, plan, normalized_plan),
+                        "original_plan": plan_meta,
+                    }
+                    plan = normalized_plan
 
         if plan == ["collaboration"]:
             if effective_profile is None:
@@ -612,6 +621,34 @@ class OrchestratorAgent:
             "progress_lock": asyncio.Lock(),
             "progress_last_at": time.monotonic(),
         }
+
+    def _normalize_plan_for_request(self, request: ChatRequest, plan: list[str]) -> list[str]:
+        normalized = self._unique(plan)
+        if self._is_idea_recommendation_request(request.message):
+            normalized = [intent for intent in normalized if intent not in {"policy", "plan"}]
+            if "idea" not in normalized:
+                normalized.append("idea")
+            normalized = [intent for intent in normalized if intent != "finance"]
+            if "profile" in normalized:
+                ordered = ["profile", "idea", *[intent for intent in normalized if intent not in {"profile", "idea"}]]
+            else:
+                ordered = ["idea", *[intent for intent in normalized if intent != "idea"]]
+            return self._unique(ordered)[:3]
+        return normalized[:3]
+
+    def _normalization_reason(self, request: ChatRequest, original: list[str], normalized: list[str]) -> str:
+        if self._is_idea_recommendation_request(request.message):
+            removed = [intent for intent in original if intent not in normalized]
+            if removed:
+                return f"idea_request_keeps_policy_or_plan_as_followup_only:removed={','.join(removed)}"
+            return "idea_request_primary_agent_order"
+        return "minimal_agent_plan"
+
+    def _should_include_finance_for_idea_request(self, request: ChatRequest) -> bool:
+        text = (request.message or "").lower()
+        if request.profile.budget_krw is not None:
+            return True
+        return any(keyword in text for keyword in ["예산", "돈", "비용", "만원", "원으로", "가능", "현실"])
 
     def _collaboration_initial_plan(self, request: ChatRequest, effective_profile) -> tuple[list[str], str]:
         gate_reason = self._profile_gate_reason(request, effective_profile, ["collaboration"])
@@ -673,8 +710,6 @@ class OrchestratorAgent:
             return ""
 
         missing = []
-        if effective_profile.available_hours_per_week is None:
-            missing.append("available_hours_per_week")
         if not effective_profile.interests:
             missing.append("interests")
         if not effective_profile.region:
@@ -748,6 +783,10 @@ class OrchestratorAgent:
             )
         if intent == "finance":
             finance_assumption, finance_extraction = await self._finance_assumption_from_request(request)
+            if state.get("finance_item_name"):
+                finance_assumption = finance_assumption.model_copy(
+                    update={"item_name": str(state["finance_item_name"])}
+                )
             response = await self.finance_agent.run(
                 FinanceRequest(profile=effective_profile, assumption=finance_assumption)
             )
@@ -782,19 +821,62 @@ class OrchestratorAgent:
 
         if "idea" in results:
             text = state["request"].message.lower()
-            if "finance" not in results and any(keyword in text for keyword in ["가능", "현실", "돈", "비용", "예산", "손익", "수익", "시작"]):
+            if (
+                "finance" not in results
+                and (
+                    state["request"].profile.budget_krw is not None
+                    or any(keyword in text for keyword in ["가능", "현실", "돈", "비용", "예산", "손익", "수익", "시작", "만원", "원으로"])
+                )
+            ):
+                state["finance_item_name"] = self._top_idea_title(results["idea"])
                 state["followup_meta"]["finance"] = "idea_result_needs_feasibility_check"
                 followups.append("finance")
-            if "policy" not in results and any(keyword in text for keyword in ["지원", "정부", "사업", "창업", "자금"]):
+            if (
+                "policy" not in results
+                and self._explicit_policy_request(state["request"].message)
+            ):
+                state["policy_query"] = self._policy_query_from_idea(state["request"].message, results["idea"])
                 state["followup_meta"]["policy"] = "idea_result_needs_support_program_check"
                 followups.append("policy")
 
         finance = results.get("finance")
-        if finance and "policy" not in results and self._should_follow_up_policy(finance):
+        if (
+            finance
+            and "policy" not in results
+            and self._should_follow_up_policy(finance)
+            and self._policy_followup_allowed(state, finance)
+        ):
             state["policy_query"] = self._policy_query_from_finance(state["request"].message, finance)
             state["followup_meta"]["policy"] = self._finance_policy_trigger_reason(finance)
             followups.append("policy")
         return self._unique(followups)
+
+    def _top_idea_title(self, idea_response: AgentResponse) -> str:
+        top = self._pick_top_idea(idea_response)
+        return str(top.get("title") or "추천 창업 아이템")
+
+    def _policy_query_from_idea(self, message: str, idea_response: AgentResponse) -> str:
+        title = self._top_idea_title(idea_response)
+        return f"{title} 관련 창업 지원사업. 사용자 질문: {message}"
+
+    def _explicit_policy_request(self, message: str) -> bool:
+        text = (message or "").lower()
+        if "지원사업" in text and "아니라" in text and any(keyword in text for keyword in ["아이템", "사업 아이템", "창업 아이템"]):
+            return False
+        return any(keyword in text for keyword in ["지원사업", "정부지원", "정부 지원", "공고", "보조금", "지원금", "사업화 자금"])
+
+    def _policy_followup_allowed(self, state: dict[str, Any], finance_response: AgentResponse) -> bool:
+        request: ChatRequest = state["request"]
+        if self._explicit_policy_request(request.message):
+            return True
+        if not self._is_idea_recommendation_request(request.message):
+            return True
+        data = finance_response.data or {}
+        budget = data.get("budget_analysis") or {}
+        funding_gap = budget.get("funding_gap_krw") or 0
+        profile_budget = request.profile.budget_krw or 0
+        threshold = max(500_000, int(profile_budget * 0.15)) if profile_budget else 1_000_000
+        return isinstance(funding_gap, (int, float)) and funding_gap >= threshold
 
     def _should_wait_for_profile_answer(self, state: dict[str, Any]) -> bool:
         if set(state.get("results", {}).keys()) != {"profile"}:
@@ -882,6 +964,9 @@ class OrchestratorAgent:
         text = (message or "").lower()
         if any(keyword in text for keyword in ["사업계획", "사업 계획", "계획서", "business plan"]):
             return False
+        if any(keyword in text for keyword in ["지원사업", "정부지원", "정부 지원", "공고", "보조금", "지원금"]):
+            if not ("아니라" in text and any(item in text for item in ["아이템", "사업 아이템", "창업 아이템"])):
+                return False
         return any(
             keyword in text
             for keyword in [
