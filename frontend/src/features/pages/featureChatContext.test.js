@@ -1,7 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from './featureChatContext.js'
-import { PINNED_GYEONGBUK_SOCIAL_PROGRAM_TITLE } from '../reports/supportProgramSearch.js'
 
 test('buildFeatureSeed reflects selected support for plan page', () => {
   const seed = buildFeatureSeed('plan', {
@@ -45,21 +44,6 @@ test('buildWorkspacePatch stores selected idea and support program', () => {
   assert.equal(supportPatch.selectedSupportProgram.title, '지원사업 B')
   assert.equal(supportPatch.supportSearchMode, 'PROFILE_ONLY')
   assert.equal(supportPatch.supportUserGoal, 'EASY_PREP')
-})
-
-test('buildWorkspacePatch can select the pinned support program even before searching', () => {
-  const supportPatch = buildWorkspacePatch({
-    featureId: 'support',
-    data: {
-      list: [],
-    },
-    selectedSupportTitle: PINNED_GYEONGBUK_SOCIAL_PROGRAM_TITLE,
-    supportSearchMode: 'PROFILE_IDEA',
-    supportUserGoal: 'HIGH_MATCH',
-  })
-
-  assert.equal(supportPatch.selectedSupportProgram.title, PINNED_GYEONGBUK_SOCIAL_PROGRAM_TITLE)
-  assert.equal(supportPatch.selectedSupportProgram.score, 91)
 })
 
 test('buildCurrentResult for support includes startup profile and linked idea', () => {

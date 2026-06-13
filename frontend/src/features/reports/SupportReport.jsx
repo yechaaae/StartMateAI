@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Card } from '../../shared/components/Card'
 import { Icon } from '../../shared/components/Icon'
 import { AgentReview } from './AgentReview'
-import { withPinnedGyeongbukSocialProgram } from './supportProgramSearch'
 
 const SEARCH_MODES = [
   ['PROFILE_IDEA', '프로필 + 아이템'],
@@ -178,7 +177,7 @@ export const SupportReport = ({
     if (supportSearchLoading) setView('results')
   }, [supportSearchLoading])
 
-  const programs = withPinnedGyeongbukSocialProgram(data.list ?? [], { force: true })
+  const programs = data.list ?? []
   const fundingPrograms = programs.filter(isFundingProgram)
   const programPrograms = programs.filter((program) => !isFundingProgram(program))
 

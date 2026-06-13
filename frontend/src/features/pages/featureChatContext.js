@@ -1,5 +1,4 @@
 import { cloneReport } from '../../shared/data/reports.js'
-import { withPinnedGyeongbukSocialProgram } from '../reports/supportProgramSearch.js'
 
 const clone = (value) => JSON.parse(JSON.stringify(value))
 
@@ -8,8 +7,7 @@ const findSelectedIdea = (data, selectedIdeaRank) => (
 )
 
 const findSelectedSupportProgram = (data, selectedSupportTitle) => (
-  withPinnedGyeongbukSocialProgram(data.list ?? [], { force: true })
-    .find((item) => item.title === selectedSupportTitle) ?? null
+  (data.list ?? []).find((item) => item.title === selectedSupportTitle) ?? null
 )
 
 const buildPlanSections = (data) => (
