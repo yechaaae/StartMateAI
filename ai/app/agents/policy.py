@@ -225,12 +225,7 @@ class PolicyAgent(BaseAgent):
             domain_adjustment = self._domain_adjustment(haystack, request)
 
             if "backend_match_score" in score_breakdown:
-                adjusted_score = self._score_with_location_caps(
-                    base_score + domain_adjustment,
-                    location_score,
-                    haystack,
-                    region_terms,
-                )
+                adjusted_score = max(0, min(100, base_score))
                 adjusted["eligibility_score"] = adjusted_score
                 adjusted["fit_level"] = self._fit_level(int(adjusted_score))
                 adjusted["score_breakdown"] = {
