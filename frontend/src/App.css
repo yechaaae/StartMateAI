@@ -985,7 +985,7 @@
 
 .onboarding-field textarea {
   min-height: 128px;
-  resize: vertical;
+  resize: none;
   line-height: 1.6;
 }
 
@@ -1108,7 +1108,7 @@
 
 .form-grid textarea {
   min-height: 112px;
-  resize: vertical;
+  resize: none;
   line-height: 1.55;
 }
 
@@ -3828,7 +3828,7 @@ details p {
 }
 
 .operation-field textarea {
-  resize: vertical;
+  resize: none;
 }
 
 .operation-card-head {
@@ -4816,7 +4816,7 @@ details p {
 .sns-thread-textarea {
   min-height: 190px;
   line-height: 1.55;
-  resize: vertical;
+  resize: none;
 }
 
 .sns-counter {

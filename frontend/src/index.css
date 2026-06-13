@@ -66,6 +66,10 @@ textarea {
   font: inherit;
 }
 
+textarea {
+  resize: none;
+}
+
 button {
   border: 0;
   color: inherit;
