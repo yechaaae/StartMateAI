@@ -15,16 +15,6 @@ const landingSpecialists = [
   { id: 'legal', name: '창업 법률 전문가', icon: 'scales', description: '인허가·계약·세무 등 창업에 필요한 법률 리스크를 점검해요.' },
 ]
 
-// TODO: 실제 팀원 정보로 교체하세요 (이름·역할 자리표시자)
-const teamMembers = [
-  { id: 'm1', name: '황예찬', role: 'Leader/AI' },
-  { id: 'm2', name: '권기범', role: 'Web Developer' },
-  { id: 'm3', name: '이성훈', role: 'Web Developer' },
-  { id: 'm4', name: '홍현기', role: 'Web Developer' },
-  { id: 'm5', name: '이용문', role: 'AI' },
-]
-
-// TODO: 실제 팀명·해커톤명으로 교체하세요
 const teamInfo = {
   teamName: '구미청년들',
   hackathon: 'SSAFY X KAKAO TECH BOOTCAMP AI HACKATHON',
@@ -269,21 +259,6 @@ export const Landing = ({ go, user, onLogout }) => {
             <div>
               <b>StartMate AI</b>
               <span>분야별 AI 전문가가 함께하는 창업 워크스페이스</span>
-            </div>
-          </div>
-
-          <div className="landing-footer-team">
-            <span className="landing-footer-label">TEAM</span>
-            <div className="landing-footer-members">
-              {teamMembers.map((member) => (
-                <div className="landing-footer-member" key={member.id}>
-                  <span className="landing-footer-avatar">{member.name.slice(0,1)}</span>
-                  <div>
-                    <b>{member.name}</b>
-                    <small>{member.role}</small>
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
 
