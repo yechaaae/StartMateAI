@@ -229,6 +229,7 @@ class IdeaAgent(BaseAgent):
             title = str(item.get("title") or "").strip()
             if not title or title in seen_titles:
                 continue
+            title = self._normalize_forced_major_title(title, item, profile)
             seen_titles.add(title)
 
             estimated_cost = self._coerce_money(item.get("estimated_initial_cost_krw"))
@@ -411,9 +412,10 @@ class IdeaAgent(BaseAgent):
             + testability * 0.05
         )
         result = dict(candidate)
+        realism_penalty = self._realism_penalty(profile, candidate)
         result.update(
             {
-                "match_score": max(0, min(100, weighted_score)),
+                "match_score": max(0, min(100, weighted_score - realism_penalty)),
                 "score_breakdown": score_breakdown,
                 "matched_keywords": keyword_overlap,
                 "matched_channels": channel_overlap,
@@ -421,7 +423,68 @@ class IdeaAgent(BaseAgent):
                 "risk": " / ".join(candidate["risks"]),
             }
         )
+        if realism_penalty:
+            result["score_breakdown"]["realism_penalty"] = realism_penalty
+            result["risks"] = self._ordered_unique(
+                [
+                    *result.get("risks", []),
+                    "전공/경험 키워드가 아이템 컨셉에 과하게 섞이지 않도록 고객 관점의 상품명과 판매 방식을 다시 좁혀야 합니다.",
+                ]
+            )
         return result
+
+    def _normalize_forced_major_title(
+        self,
+        title: str,
+        item: dict[str, Any],
+        profile: StartupProfile,
+    ) -> str:
+        if not self._looks_like_forced_major_blend(title, item, profile):
+            return title
+        business_type = self._normalize_business_type(item.get("business_type"), item)
+        region = profile.region or "로컬"
+        if business_type in {"food", "cafe", "popup"}:
+            if "도시락" in title or "식사" in title or "lunch" in title.lower():
+                return f"{region} 직장인 대상 소량 예약 도시락"
+            if "디저트" in title or "카페" in title or "음료" in title:
+                return f"{region} 카페 메뉴 소량 예약판매"
+            return f"{region} 소량 예약판매형 푸드 테스트"
+        if business_type == "service":
+            return f"{region} 소상공인 운영 문제 진단 서비스"
+        return title
+
+    def _looks_like_forced_major_blend(
+        self,
+        title: str,
+        item: dict[str, Any],
+        profile: StartupProfile,
+    ) -> bool:
+        major_text = f"{profile.major or ''} {' '.join(profile.experiences)}".lower()
+        if not any(keyword in major_text for keyword in ["전자", "공학", "전기", "컴퓨터", "소프트웨어", "ai", "개발"]):
+            return False
+        title_text = title.lower()
+        has_major_word = any(keyword in title_text for keyword in ["전자", "공학", "전기", "ai", "스마트", "테크", "기술"])
+        if not has_major_word:
+            return False
+        consumer_food_words = ["도시락", "식사", "반찬", "디저트", "음료", "카페", "베이커리", "lunch", "dessert"]
+        service_words = ["수리", "진단", "자동화", "개발", "설치", "교육", "컨설팅", "튜터링"]
+        is_food = any(keyword in title_text for keyword in consumer_food_words)
+        is_actual_tech_service = any(keyword in title_text for keyword in service_words)
+        business_type = self._normalize_business_type(item.get("business_type"), item)
+        return is_food and business_type in {"food", "cafe", "popup"} and not is_actual_tech_service
+
+    def _realism_penalty(self, profile: StartupProfile, candidate: dict[str, Any]) -> int:
+        penalty = 0
+        if self._looks_like_forced_major_blend(str(candidate.get("title") or ""), candidate, profile):
+            penalty += 28
+        title = str(candidate.get("title") or "").lower()
+        reason = str(candidate.get("reason") or "").lower()
+        text = f"{title} {reason}"
+        if any(keyword in text for keyword in ["컨셉", "테마"]) and any(keyword in text for keyword in ["전자", "공학", "기술"]):
+            penalty += 12
+        if candidate.get("business_type") in {"food", "cafe", "popup"} and "식품" not in " ".join(candidate.get("risks", [])):
+            penalty += 4
+        return min(45, penalty)
 
     def _missing_inputs(self, profile: StartupProfile) -> list[str]:
         missing_inputs = []

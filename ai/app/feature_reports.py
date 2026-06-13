@@ -80,6 +80,8 @@ def feature_key_for_result(
     intents = {key for key in results.keys() if key}
     response_intent = (response.intent or "").lower()
 
+    if "idea" in intents and _is_idea_recommendation_request(request.message):
+        return "ITEM"
     if response_intent in {"collaboration", "roadmap"} or len(intents) >= 4:
         return "PLAN"
     if "simulation" in intents or response_intent == "simulation":
@@ -101,6 +103,25 @@ def feature_key_for_result(
             "finance": "SIMULATOR",
         }.get(response_intent, "")
     return ""
+
+
+def _is_idea_recommendation_request(message: str) -> bool:
+    text = (message or "").lower()
+    if any(keyword in text for keyword in ["사업계획", "사업 계획", "계획서", "business plan"]):
+        return False
+    return any(
+        keyword in text
+        for keyword in [
+            "아이템 추천",
+            "창업 아이템",
+            "사업아이템",
+            "사업 아이템",
+            "뭐 창업",
+            "무슨 창업",
+            "추천해줘",
+            "추천 해줘",
+        ]
+    )
 
 
 def build_feature_result(
