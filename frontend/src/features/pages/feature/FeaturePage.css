@@ -5,6 +5,8 @@
 
 .feature-page .report-area > .feature-page-header,
 .feature-page .report-area > .report-stack,
+.feature-page .report-area > .support-report-stack,
+.feature-page .report-area > .sns-report-stack,
 .feature-page .report-area > .card {
   max-width: 920px;
   margin-left: auto;
