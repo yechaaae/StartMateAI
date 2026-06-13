@@ -13,6 +13,7 @@ import { SavedPage } from '../features/pages/SavedPage'
 import { SignupPage } from '../features/pages/SignupPage'
 import { SimulatorPage } from '../features/pages/SimulatorPage'
 import { WorkspacePreparing } from '../features/pages/WorkspacePreparing'
+import { OnboardingItemModal } from '../features/pages/OnboardingItemModal'
 import { pathToRoute, routeToPath } from './routePaths'
 
 const publicRoutes = new Set(['landing', 'login', 'signup'])
@@ -55,6 +56,8 @@ export default function App() {
   const [itemEntryNonce, setItemEntryNonce] = useState(0)
   // 아이템 선택 직후 워크스페이스를 만드는 동안 보여주는 짧은 준비 로딩 (null이면 비활성)
   const [preparing, setPreparing] = useState(null)
+  // 회원가입 직후 아이템(추천/직접입력)을 고르는 모달 흐름
+  const [itemModal, setItemModal] = useState(false)
   const [checkingSession, setCheckingSession] = useState(
     () => !publicRoutes.has(route) || localStorage.getItem(LOGIN_HINT_KEY) === 'true',
   )
@@ -142,10 +145,13 @@ export default function App() {
     setProfileStatus(status)
     const resolvedProfile = nextProfile ?? await refreshStartupProfile()
     setStartupProfile(resolvedProfile)
-    // 처음 가입 직후 창업 아이템이 없으면 '추천 받기 / 직접 입력' 선택 화면을 먼저 보여준다.
+    // 처음 가입 직후 창업 아이템이 없으면 home으로 가지 않고 '추천/직접입력' 모달을 띄운다.
     // (창업 후로 이미 운영 아이템을 입력했다면 홈으로 바로 이동)
     const hasItem = Boolean(resolvedProfile?.currentItemName && resolvedProfile.currentItemName.trim())
-    setRoute(hasItem ? 'home' : 'item')
+    setRoute('home')
+    if (!hasItem) {
+      setItemModal(true)
+    }
   }
 
   const handleLogout = async () => {
@@ -290,6 +296,23 @@ export default function App() {
     )
   } else {
     page = <HomePage go={setRoute} workspace={workspace} />
+  }
+
+  if (itemModal) {
+    return (
+      <div className="app-root">
+        <OnboardingItemModal
+          stage={startupProfile?.stage}
+          user={user}
+          startupProfile={startupProfile}
+          onSelect={(item) => {
+            setItemModal(false)
+            handleCreateWorkspaceFromItem(item)
+          }}
+          onClose={() => setItemModal(false)}
+        />
+      </div>
+    )
   }
 
   if (preparing) {
