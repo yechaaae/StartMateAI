@@ -198,7 +198,12 @@ export default function App() {
       if (reportData?.items?.length) {
         try {
           await savedResultApi.save(
-            buildFeatureSavedReport({ featureId: 'item', data: reportData, selectedIdeaRank: item.rank ?? null }),
+            buildFeatureSavedReport({
+              featureId: 'item',
+              workspaceId: target.id,
+              data: reportData,
+              selectedIdeaRank: item.rank ?? null,
+            }),
           )
         } catch {
           /* 리포트 저장 실패는 워크스페이스 생성 흐름을 막지 않는다 */
