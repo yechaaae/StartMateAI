@@ -107,6 +107,11 @@ export const ItemReport = ({
       category: item.category || '추천 아이템',
       location: item.location ?? data.location,
       estimatedInitialCost: item.estimatedInitialCost,
+      analysis: item.analysis ?? [],
+      evidence: item.evidence ?? [],
+      scoreBreakdown: item.scoreBreakdown ?? null,
+      supportPrograms: item.supportPrograms ?? [],
+      commercialArea: item.commercialArea ?? null,
     })
   }
 
@@ -157,6 +162,19 @@ export const ItemReport = ({
                     <b>{item.title}</b>
                     <p>{item.reason}</p>
                     {item.location && <span className="idea-option-loc"><Icon name="pin" size={12} /> {item.location}</span>}
+                    {!!item.evidence?.length && (
+                      <div className="idea-option-evidence">
+                        {item.evidence.slice(0, 3).map((evidence) => (
+                          <small key={evidence}>{evidence}</small>
+                        ))}
+                      </div>
+                    )}
+                    {!!item.supportPrograms?.length && (
+                      <div className="idea-option-support">
+                        <Icon name="doc" size={12} />
+                        <small>{item.supportPrograms[0].title}</small>
+                      </div>
+                    )}
                   </div>
                   <em>적합도 {item.score}</em>
                   <button
