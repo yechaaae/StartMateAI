@@ -40,6 +40,7 @@ export const Report = ({
   onSubmitAnnouncement,
   announcementLoading,
   applicationForm,
+  formDefaults,
   onRequestOperationFeedback,
   operationFeedbackSaving,
   onCampaignControlChange,
@@ -93,6 +94,7 @@ export const Report = ({
         onSubmitAnnouncement={onSubmitAnnouncement}
         announcementLoading={announcementLoading}
         applicationForm={applicationForm}
+        formDefaults={formDefaults}
       />
     )
   }

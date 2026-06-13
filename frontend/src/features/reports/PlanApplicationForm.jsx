@@ -7,38 +7,41 @@ const aiValueFromSections = (aiSource, sections) => {
   return match ? String(match[1] ?? '') : ''
 }
 
-const initialValues = (form, sections) => {
+// 항목 초기값: AI 생성 답변 > 프로필 기반 기본값 > 빈 값.
+const initialValues = (form, sections, defaults) => {
   const values = {}
   for (const field of form.fields) {
+    const fallback = defaults?.[field.key] ?? ''
     if (field.type === 'checkboxGroup') {
       values[field.key] = field.defaultAll ? [...(field.options ?? [])] : []
     } else if (field.type === 'consent') {
       values[field.key] = true
+    } else if (field.aiSource) {
+      values[field.key] = aiValueFromSections(field.aiSource, sections) || fallback
     } else {
-      values[field.key] = aiValueFromSections(field.aiSource, sections)
+      values[field.key] = fallback
     }
   }
   return values
 }
 
-// 신청서 전체를 '항목: 값' 텍스트로 직렬화(전체 복사용).
 const serialize = (form, values) =>
   form.fields
     .map((field) => {
       const value = values[field.key]
       if (field.type === 'consent') return `${field.label}: ${value ? (field.consentText ?? '동의 함') : '미동의'}`
       if (field.type === 'checkboxGroup') return `${field.label}: ${(value ?? []).join(', ')}`
-      return `${field.label}: ${value ?? ''}`
+      return `${field.label}\n${value ?? ''}`
     })
     .join('\n\n')
 
-export const PlanApplicationForm = ({ form, sections, loading = false }) => {
-  const [values, setValues] = useState(() => initialValues(form, sections))
+export const PlanApplicationForm = ({ form, sections, defaults = null, loading = false }) => {
+  const [values, setValues] = useState(() => initialValues(form, sections, defaults))
   const [copied, setCopied] = useState(false)
-
-  // AI 생성 답변이 도착/변경되면 해당 칸을 채운다. 사용자가 이미 직접 고쳤으면 덮어쓰지 않는다.
-  const aiKey = useMemo(() => JSON.stringify(sections ?? []), [sections])
   const [aiTouchedKeys, setAiTouchedKeys] = useState({})
+
+  // AI 생성 답변이 도착/변경되면 해당 칸을 채운다. 사용자가 직접 고친 칸은 덮어쓰지 않는다.
+  const aiKey = useMemo(() => JSON.stringify(sections ?? []), [sections])
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setValues((prev) => {
@@ -82,6 +85,18 @@ export const PlanApplicationForm = ({ form, sections, loading = false }) => {
 
   return (
     <div className="plan-appform">
+      {form.analysis && (
+        <section className="plan-analysis">
+          <h3 className="plan-analysis-title">{form.analysis.title}</h3>
+          {form.analysis.sections.map(([title, body]) => (
+            <div className="plan-analysis-row" key={title}>
+              <h4>{title}</h4>
+              <p>{body}</p>
+            </div>
+          ))}
+        </section>
+      )}
+
       <div className="plan-appform-head">
         <h3>{form.title}</h3>
         {form.description && <p>{form.description}</p>}
@@ -109,7 +124,7 @@ export const PlanApplicationForm = ({ form, sections, loading = false }) => {
           {field.type === 'textarea' && (
             <textarea
               className="plan-appform-textarea"
-              rows={4}
+              rows={5}
               value={values[field.key] ?? ''}
               placeholder={loading ? 'AI가 답변을 작성하고 있어요…' : field.placeholder ?? ''}
               onChange={(event) => setField(field.key, event.target.value)}
@@ -162,7 +177,7 @@ export const PlanApplicationForm = ({ form, sections, loading = false }) => {
 
       <div className="plan-appform-actions">
         <button type="button" className="om-primary" onClick={copyAll}>
-          {copied ? '복사됨!' : '신청서 전체 복사'}
+          {copied ? '복사됨!' : '작성 내용 복사'}
         </button>
       </div>
     </div>

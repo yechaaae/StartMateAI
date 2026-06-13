@@ -5100,6 +5100,44 @@ summary {
   justify-content: flex-end;
 }
 
+/* 공고 분석 리포트 */
+.plan-analysis {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  background: var(--surface-2, #f7f8fa);
+  border: 1px solid var(--line, #e6e8ec);
+  border-radius: 14px;
+}
+
+.plan-analysis-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.plan-analysis-row {
+  padding: 8px 0;
+  border-top: 1px solid var(--line, #e6e8ec);
+}
+
+.plan-analysis-row:first-of-type {
+  border-top: none;
+}
+
+.plan-analysis-row h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--brand, #2d6cdf);
+}
+
+.plan-analysis-row p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  white-space: pre-line;
+}
+
 details p {
   color: var(--ink-2);
   line-height: 1.75;

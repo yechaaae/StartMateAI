@@ -574,6 +574,26 @@ export const FeaturePage = ({
   const applicationForm = id === 'plan'
     ? applicationFormForContext({ program: workspaceContext?.selectedSupportProgram, announcement })
     : null
+  // 신청 항목(창업여부·창업 아이템·지원동기)의 프로필 기반 기본값. LLM이 꺼져 있어도 비지 않게 채운다.
+  // (LLM이 켜져 있으면 AI 생성 답변이 이 값을 덮어쓴다.)
+  const planFormDefaults = useMemo(() => {
+    if (!applicationForm) return null
+    const idea = workspaceContext?.selectedIdea ?? null
+    const ideaTitle = idea?.title || startupProfile?.currentItemName || '준비 중인 창업 아이템'
+    const ideaReason = idea?.reason || ''
+    const isExisting = Boolean(startupProfile?.currentItemName && startupProfile.currentItemName.trim())
+    return {
+      startupStatus: isExisting ? '기 창업자' : '예비창업자',
+      item:
+        `${ideaTitle}${ideaReason ? `\n\n${ideaReason}` : ''}\n\n`
+        + '지역 주민과 이웃에게 도움이 되는 사회적 가치를 중심에 두고, 수익과 사회적 기여를 함께 추구하는 모델로 운영할 계획입니다.',
+      motivation:
+        `${ideaTitle} 창업을 준비하며 사회적경제에 대한 기초·실무 역량과 사업화 자금이 필요합니다. `
+        + '경북형 사회적경제 창업학교의 실무 교육(20시간), 우수팀 사업화 자금(최대 5천만원), '
+        + '사회적경제기업 전환 컨설팅과 네트워킹을 통해 아이템을 체계적으로 다듬고, '
+        + '지역 기반의 사회적 가치를 지속가능하게 실현하고자 지원합니다.',
+    }
+  }, [applicationForm, workspaceContext, startupProfile])
 
   const sendFeatureMessage = async (text, { hidden = false, currentResultOverride = null } = {}) => {
     if (!room?.roomId) {
@@ -1027,6 +1047,7 @@ export const FeaturePage = ({
             operationFeedbackSaving={savingReport}
             onCampaignControlChange={handleCampaignControlChange}
             applicationForm={applicationForm}
+            formDefaults={planFormDefaults}
           />
         ) : id === 'item' && aiReportStatus === 'loading' ? (
           <ItemGeneratingState agentId={feature.agent} />

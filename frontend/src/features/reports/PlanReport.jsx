@@ -51,24 +51,19 @@ export const PlanReport = ({
   onSubmitAnnouncement,
   announcementLoading = false,
   applicationForm = null,
+  formDefaults = null,
 }) => {
   // 신청서 양식이 연결되면 plan UI가 '그 신청서 폼'으로 바뀐다.
+  // 이 모드에서는 공고 분석 리포트 + (창업여부·창업 아이템·지원동기) 자동 작성 항목만 보여준다.
   if (applicationForm) {
     return (
       <div className="report-stack">
         <AgentReview review={data.agentReview} />
         <Card>
-          {onSubmitAnnouncement && (
-            <AnnounceBlock
-              announcement={announcement}
-              onSubmitAnnouncement={onSubmitAnnouncement}
-              announcementLoading={announcementLoading}
-              label="공고문 수정해서 다시 작성"
-            />
-          )}
           <PlanApplicationForm
             form={applicationForm}
             sections={data.sections}
+            defaults={formDefaults}
             loading={announcementLoading}
           />
         </Card>
