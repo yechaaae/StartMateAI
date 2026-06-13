@@ -23,8 +23,6 @@ const REGION_BASES = [
   ['TARGET_AREA', '창업 희망 지역'],
 ]
 
-const SAVED_PAGE_SIZE = 3
-
 // 자금성 지원(사업) vs 비자금성 지원(프로그램) 분류
 const FUNDING_TYPES = new Set(['grant', 'loan', 'voucher', 'fund'])
 const PROGRAM_TYPES = new Set(['education', 'mentoring', 'space', 'consulting', 'program'])
@@ -54,10 +52,10 @@ const getProgramId = (program) => program.id ?? program.title
 const SupportProgramCard = ({
   program,
   selected,
+  saved,
   actionLabel,
   onAction,
-  onSave,
-  onDelete,
+  onToggleSave,
 }) => {
   const amount = formatAmount(program.amount)
   const docs = getDocs(program)
@@ -66,16 +64,6 @@ const SupportProgramCard = ({
 
   return (
     <article className={selected ? 'support-program-card selected' : 'support-program-card'}>
-      {onDelete && (
-        <button
-          className="support-card-delete"
-          onClick={() => onDelete(program)}
-          type="button"
-          aria-label={`${program.title} 삭제`}
-        >
-          ×
-        </button>
-      )}
       <div className="support-program-top">
         <div>
           <h4>
@@ -102,9 +90,14 @@ const SupportProgramCard = ({
           {(program.tags ?? []).map((tag) => <span key={tag}>{tag}</span>)}
         </div>
         <div className="support-program-buttons">
-          {onSave && (
-            <button type="button" className="support-save-btn" onClick={() => onSave(program)}>
-              저장
+          {onToggleSave && (
+            <button
+              type="button"
+              className={saved ? 'support-save-btn saved' : 'support-save-btn'}
+              aria-pressed={saved}
+              onClick={() => onToggleSave(program, saved)}
+            >
+              {saved ? '저장됨' : '저장'}
             </button>
           )}
           <button onClick={onAction} type="button">
@@ -116,7 +109,18 @@ const SupportProgramCard = ({
   )
 }
 
-const ResultBox = ({ title, description, programs, selectedSupportTitle, onSelectSupport, onSaveSupportProgram, go }) => (
+const ResultBox = ({
+  title,
+  description,
+  programs,
+  selectedSupportTitle,
+  onSelectSupport,
+  savedIdSet,
+  onToggleSave,
+  emptyTitle = '해당하는 결과가 없어요',
+  emptyDescription = '조건을 바꿔 다시 추천을 받아보세요.',
+  go,
+}) => (
   <Card className="support-results-card">
     <div className="support-results-head">
       <div>
@@ -127,8 +131,8 @@ const ResultBox = ({ title, description, programs, selectedSupportTitle, onSelec
     </div>
     {programs.length === 0 ? (
       <div className="support-empty-state">
-        <b>해당하는 결과가 없어요</b>
-        <p>조건을 바꿔 다시 추천을 받아보세요.</p>
+        <b>{emptyTitle}</b>
+        <p>{emptyDescription}</p>
       </div>
     ) : (
       <div className="support-program-list">
@@ -137,12 +141,13 @@ const ResultBox = ({ title, description, programs, selectedSupportTitle, onSelec
             key={getProgramId(program)}
             program={program}
             selected={selectedSupportTitle === program.title}
+            saved={savedIdSet?.has(getProgramId(program))}
             actionLabel="이 공고로 사업계획서 작성"
             onAction={() => {
               onSelectSupport?.(program.title)
               go('plan')
             }}
-            onSave={onSaveSupportProgram}
+            onToggleSave={onToggleSave}
           />
         ))}
       </div>
@@ -164,12 +169,12 @@ export const SupportReport = ({
   supportSearchLoading,
   supportHasSearched,
   onRunSupportSearch,
-  savedSupportPrograms = [],
   onSaveSupportProgram,
-  onDeleteSavedSupportProgram,
+  onDeleteSupportProgram,
+  savedSupportPrograms = [],
+  supportViewMode = 'all',
+  onChangeSupportViewMode,
 }) => {
-  const [savedPage, setSavedPage] = useState(1)
-  const [deleteTarget, setDeleteTarget] = useState(null)
   // 조건 선택 화면 ↔ 추천 결과 화면 (시뮬레이션처럼 페이지가 바뀐다)
   const [view, setView] = useState(supportHasSearched ? 'results' : 'condition')
 
@@ -178,30 +183,31 @@ export const SupportReport = ({
     if (supportSearchLoading) setView('results')
   }, [supportSearchLoading])
 
-  const programs = withPinnedGyeongbukSocialProgram(data.list ?? [], { force: true })
-  const fundingPrograms = programs.filter(isFundingProgram)
-  const programPrograms = programs.filter((program) => !isFundingProgram(program))
+  // 헤더 드롭다운 등에서 '저장한 결과' 뷰로 전환되면 결과 화면을 보여준다.
+  useEffect(() => {
+    if (supportViewMode === 'saved') setView('results')
+  }, [supportViewMode])
+
+  // 'saved' 뷰에서는 사용자가 저장한 항목만 그대로 보여준다(자동 고정 핀 미적용).
+  const isSavedView = supportViewMode === 'saved'
+  const sourceList = isSavedView
+    ? savedSupportPrograms
+    : withPinnedGyeongbukSocialProgram(data.list ?? [], { force: true })
+  const fundingPrograms = sourceList.filter(isFundingProgram)
+  const programPrograms = sourceList.filter((program) => !isFundingProgram(program))
+
+  // 저장 여부 판정용 id 집합(저장소의 toStableId = id ?? title 과 동일 기준).
+  const savedIdSet = new Set((savedSupportPrograms ?? []).map((program) => program.id ?? program.title))
+
+  // 카드의 저장 버튼: 저장돼 있으면 해제, 아니면 개별 저장.
+  const handleToggleSave = (program, saved) => {
+    if (saved) onDeleteSupportProgram?.(program)
+    else onSaveSupportProgram?.(program)
+  }
 
   const runSearch = () => {
     setView('results')
     onRunSupportSearch?.()
-  }
-
-  const historicalPrograms = savedSupportPrograms
-  const totalSavedPages = Math.max(1, Math.ceil(historicalPrograms.length / SAVED_PAGE_SIZE))
-  const visibleSavedPage = Math.min(savedPage, totalSavedPages)
-  const pagedSavedPrograms = historicalPrograms.slice(
-    (visibleSavedPage - 1) * SAVED_PAGE_SIZE,
-    visibleSavedPage * SAVED_PAGE_SIZE,
-  )
-
-  const closeDeleteAlert = () => setDeleteTarget(null)
-  const confirmDelete = () => {
-    if (!deleteTarget) {
-      return
-    }
-    onDeleteSavedSupportProgram?.(getProgramId(deleteTarget))
-    closeDeleteAlert()
   }
 
   return (
@@ -276,61 +282,6 @@ export const SupportReport = ({
               {supportSearchLoading ? '지원사업을 살펴보는 중...' : '추천 결과 확인하기'}
             </button>
           </Card>
-
-          <Card className="support-results-card">
-            <div className="support-results-head">
-              <div>
-                <h3>저장한 추천 목록</h3>
-                <p>추천 결과에서 저장한 지원사업을 다시 볼 수 있습니다. 필요 없는 항목은 목록에서 삭제하세요.</p>
-              </div>
-              <span>{historicalPrograms.length}개</span>
-            </div>
-
-            {!historicalPrograms.length && (
-              <div className="support-empty-state">
-                <b>아직 보관된 추천사업이 없습니다</b>
-                <p>추천 결과를 확인하면 다음에 다시 볼 수 있도록 이 목록에 남겨둘게요.</p>
-              </div>
-            )}
-
-            {!!historicalPrograms.length && (
-              <>
-                <div className="support-program-list">
-                  {pagedSavedPrograms.map((program) => (
-                    <SupportProgramCard
-                      key={getProgramId(program)}
-                      program={program}
-                      selected={selectedSupportTitle === program.title}
-                      actionLabel="이 공고로 사업계획서 작성"
-                      onAction={() => {
-                        onSelectSupport?.(program.title)
-                        go('plan')
-                      }}
-                      onDelete={setDeleteTarget}
-                    />
-                  ))}
-                </div>
-
-                <div className="support-pagination">
-                  <button
-                    onClick={() => setSavedPage((page) => Math.max(1, page - 1))}
-                    disabled={visibleSavedPage <= 1}
-                    type="button"
-                  >
-                    이전
-                  </button>
-                  <span>{visibleSavedPage} / {totalSavedPages}</span>
-                  <button
-                    onClick={() => setSavedPage((page) => Math.min(totalSavedPages, page + 1))}
-                    disabled={visibleSavedPage >= totalSavedPages}
-                    type="button"
-                  >
-                    다음
-                  </button>
-                </div>
-              </>
-            )}
-          </Card>
         </>
       )}
 
@@ -340,10 +291,26 @@ export const SupportReport = ({
             <button type="button" className="support-back-btn" onClick={() => setView('condition')}>
               <Icon name="arrow" size={15} style={{ transform: 'rotate(180deg)' }} /> 조건 다시 선택
             </button>
-            <span className="support-results-title">추천 결과</span>
+            <span className="support-results-title">{isSavedView ? '저장한 결과' : '추천 결과'}</span>
+            <div className="support-view-toggle">
+              <button
+                type="button"
+                className={isSavedView ? 'support-filter' : 'support-filter on'}
+                onClick={() => onChangeSupportViewMode?.('all')}
+              >
+                전체 추천
+              </button>
+              <button
+                type="button"
+                className={isSavedView ? 'support-filter on' : 'support-filter'}
+                onClick={() => onChangeSupportViewMode?.('saved')}
+              >
+                저장한 결과{savedSupportPrograms.length ? ` ${savedSupportPrograms.length}` : ''}
+              </button>
+            </div>
           </div>
 
-          <AgentReview review={data.agentReview} />
+          {!isSavedView && <AgentReview review={data.agentReview} />}
 
           {supportSearchLoading ? (
             <Card className="support-results-card">
@@ -355,39 +322,32 @@ export const SupportReport = ({
           ) : (
             <>
               <ResultBox
-                title="추천 지원사업"
+                title={isSavedView ? '저장한 지원사업' : '추천 지원사업'}
                 description="자금·사업화 등 직접 지원 위주의 공고입니다. 청년 대상 사업이 위로 정렬됩니다."
                 programs={fundingPrograms}
                 selectedSupportTitle={selectedSupportTitle}
                 onSelectSupport={onSelectSupport}
-                onSaveSupportProgram={onSaveSupportProgram}
+                savedIdSet={savedIdSet}
+                onToggleSave={handleToggleSave}
+                emptyTitle={isSavedView ? '저장한 지원사업이 아직 없어요' : undefined}
+                emptyDescription={isSavedView ? "추천 카드의 '저장'을 눌러 담아보세요." : undefined}
                 go={go}
               />
               <ResultBox
-                title="추천 지원 프로그램"
+                title={isSavedView ? '저장한 지원 프로그램' : '추천 지원 프로그램'}
                 description="교육·멘토링·공간 등 역량/실행을 돕는 프로그램입니다."
                 programs={programPrograms}
                 selectedSupportTitle={selectedSupportTitle}
                 onSelectSupport={onSelectSupport}
-                onSaveSupportProgram={onSaveSupportProgram}
+                savedIdSet={savedIdSet}
+                onToggleSave={handleToggleSave}
+                emptyTitle={isSavedView ? '저장한 지원 프로그램이 아직 없어요' : undefined}
+                emptyDescription={isSavedView ? "추천 카드의 '저장'을 눌러 담아보세요." : undefined}
                 go={go}
               />
             </>
           )}
         </>
-      )}
-
-      {deleteTarget && (
-        <div className="support-alert-backdrop" role="presentation">
-          <div className="support-alert" role="dialog" aria-modal="true" aria-labelledby="support-delete-title">
-            <h3 id="support-delete-title">저장된 추천사업을 삭제할까요?</h3>
-            <p>{deleteTarget.title} 항목이 지난 추천 목록에서 삭제됩니다.</p>
-            <div>
-              <button onClick={closeDeleteAlert} type="button">취소</button>
-              <button onClick={confirmDelete} type="button">삭제</button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   )
