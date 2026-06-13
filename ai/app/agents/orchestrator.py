@@ -1601,8 +1601,8 @@ class OrchestratorAgent:
         request = state["request"]
         if self._should_create_feature_result(request):
             return True
-        if feature_key_from_request(request):
-            return True
+        if feature_key_from_request(request) in FEATURE_REPORT_TEAMS:
+            return False
         if state.get("mode") == "collaboration":
             return True
         if len(state.get("results", {})) > 1:
