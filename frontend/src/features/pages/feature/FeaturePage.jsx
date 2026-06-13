@@ -107,6 +107,26 @@ const reportDataFromMessage = (message, featureId) => {
   return payload.reportData
 }
 
+// 사업계획서는 생성 시 자동 저장되는 결과 대신, 사용자가 '리포트 저장'을 누른 결과만
+// '저장한 결과'에 보여준다. 명시적으로 저장한 id를 로컬에 기록해 목록을 필터링한다.
+const explicitSavedKey = (featureId) => `sm_saved_${featureId}_ids`
+const readExplicitSavedIds = (featureId) => {
+  try {
+    return new Set((JSON.parse(localStorage.getItem(explicitSavedKey(featureId)) || '[]')).map(String))
+  } catch {
+    return new Set()
+  }
+}
+const addExplicitSavedId = (featureId, savedId) => {
+  try {
+    const ids = readExplicitSavedIds(featureId)
+    ids.add(String(savedId))
+    localStorage.setItem(explicitSavedKey(featureId), JSON.stringify([...ids]))
+  } catch {
+    /* 로컬 저장 실패는 무시 */
+  }
+}
+
 export const FeaturePage = ({
   id,
   go,
@@ -212,9 +232,14 @@ export const FeaturePage = ({
   const refreshSavedReports = useCallback(async () => {
     try {
       const response = await savedResultApi.list()
-      const items = (response?.results ?? []).filter(
+      let items = (response?.results ?? []).filter(
         (item) => String(item.sourceFeature ?? '').toLowerCase() === id,
       )
+      // plan은 사용자가 명시적으로 저장한 결과만 노출(자동 저장분 제외).
+      if (id === 'plan') {
+        const explicit = readExplicitSavedIds(id)
+        items = items.filter((item) => explicit.has(String(item.id)))
+      }
       setSavedReports(items)
     } catch {
       /* 저장 목록 조회 실패는 무시 */
@@ -718,7 +743,7 @@ export const FeaturePage = ({
     try {
       setSavingReport(true)
       setError('')
-      await savedResultApi.save(buildFeatureSavedReport({
+      const saved = await savedResultApi.save(buildFeatureSavedReport({
         featureId: id,
         data,
         currentResult,
@@ -730,6 +755,10 @@ export const FeaturePage = ({
         focusedSectionTitle,
         planGoal,
       }))
+      // plan: 명시적으로 저장한 결과만 목록에 남기기 위해 저장된 id를 기록한다.
+      if (id === 'plan' && saved?.id != null) {
+        addExplicitSavedId(id, saved.id)
+      }
       await refreshSavedReports()
       setSavedMenuOpen(true) // 저장한 결과를 우측 상단 드롭다운에서 바로 확인.
     } catch (nextError) {
@@ -913,25 +942,6 @@ export const FeaturePage = ({
           <div className="report-title-actions">
             {id === 'sns' ? null : (
               <>
-                {id === 'plan' && (
-                <div className="plan-header-meta">
-                <div>
-                  <small>보조할 사업</small>
-                  <b>{data?.target || '선택한 사업'}</b>
-                </div>
-                <div>
-                  <small>작성 전략</small>
-                  <b>
-                    {{
-                      ALIGN_SUPPORT: '공고 요건에 맞춰 보완',
-                      STRENGTHEN_SECTION: '핵심 문단 강화',
-                      REWRITE_TONE: '문체 다듬기',
-                      CHECK_GAPS: '빠진 항목 점검',
-                    }[planGoal] || '공고 요건에 맞춰 보완'}
-                  </b>
-                </div>
-              </div>
-                )}
                 <div className="sim-saved-menu" ref={savedMenuRef}>
                   <button
                     type="button"
@@ -964,12 +974,8 @@ export const FeaturePage = ({
                             }}
                           >
                             <b>{item.title}</b>
-                            {(item.createdAt || item.savedAt || item.summary || item.region) && (
-                              <small>
-                                {item.createdAt || item.savedAt ? (item.createdAt ?? item.savedAt).slice(0, 10) : ''}
-                                {item.region ? ` · ${item.region}` : ''}
-                                {item.summary ? ` · ${item.summary}` : ''}
-                              </small>
+                            {(item.createdAt || item.savedAt) && (
+                              <small>{(item.createdAt ?? item.savedAt).slice(0, 10)}</small>
                             )}
                           </button>
                         ))
@@ -978,7 +984,7 @@ export const FeaturePage = ({
                   )}
                 </div>
                 {/* 운영 피드백은 폼 내부 저장 버튼을 쓰고, 아이템은 추천 화면일 때만 생성/저장 버튼을 보여준다. */}
-                {id !== 'support' && id !== 'operation' && !(id === 'item' && itemFlowStep !== 'recommend') && (
+                {id !== 'support' && id !== 'operation' && id !== 'plan' && !(id === 'item' && itemFlowStep !== 'recommend') && (
                   <>
                     <button
                       type="button"
@@ -995,7 +1001,7 @@ export const FeaturePage = ({
                             : 'AI 리포트 갱신'}
                       </span>
                     </button>
-                    {aiReportStatus === 'ready' && (
+                    {aiReportStatus === 'ready' && id !== 'plan' && (
                       <button
                         type="button"
                         className="secondary-chip"
@@ -1029,6 +1035,7 @@ export const FeaturePage = ({
             onBack={() => setItemFlowStep('choice')}
           />
         ) : aiReportStatus === 'ready' ? (
+          <>
           <Report
             id={id}
             data={data}
@@ -1071,6 +1078,20 @@ export const FeaturePage = ({
             applicationForm={applicationForm}
             formDefaults={planFormDefaults}
           />
+          {id === 'plan' && (
+            <div className="plan-save-bar">
+              <button
+                type="button"
+                className="om-primary"
+                onClick={handleSaveReport}
+                disabled={savingReport}
+              >
+                <Icon name="bookmark" size={15} />
+                <span>{savingReport ? '저장 중…' : '리포트 저장'}</span>
+              </button>
+            </div>
+          )}
+          </>
         ) : id === 'item' && aiReportStatus === 'loading' ? (
           <ItemGeneratingState agentId={feature.agent} />
         ) : (

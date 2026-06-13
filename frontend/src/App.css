@@ -5228,6 +5228,12 @@ summary {
   justify-content: flex-end;
 }
 
+.plan-save-bar {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* 공고 분석 리포트 */
 .plan-analysis {
   margin-bottom: 18px;
