@@ -565,7 +565,7 @@ export const FeaturePage = ({
   )
   const resolvedIdeaId = workspaceContext?.selectedIdea?.rank ?? selectedIdeaRank ?? null
 
-  const sendFeatureMessage = async (text, { hidden = false } = {}) => {
+  const sendFeatureMessage = async (text, { hidden = false, currentResultOverride = null } = {}) => {
     if (!room?.roomId) {
       return null
     }
@@ -592,7 +592,9 @@ export const FeaturePage = ({
         currentResultId: null,
         selectedIdeaId: resolvedIdeaId,
         candidateAgents: [],
-        currentResult,
+        // 칩 변경처럼 방금 바뀐 입력으로 즉시 재생성할 때는 최신 data로 만든 결과를 직접 넘긴다
+        // (memo된 currentResult는 setData 직후 한 렌더 동안 이전 값이라 stale).
+        currentResult: currentResultOverride ?? currentResult,
       })
 
       if (hidden) {
@@ -791,6 +793,33 @@ export const FeaturePage = ({
       .catch(() => setAiReportStatus('error'))
   }
 
+  // SNS 홍보 자동화: 톤/목적 칩을 바꾸면 그 값을 에이전트에 넘겨 멘트를 다시 생성한다.
+  const handleCampaignControlChange = (patch) => {
+    if (!room?.roomId || aiReportStatus === 'loading') {
+      return
+    }
+    const nextData = { ...data, ...patch }
+    setData(nextData)
+    setAiReportStatus('loading')
+    // setData는 비동기라 memo된 currentResult가 아직 이전 값이므로, 새 data로 직접 결과를 만들어 넘긴다.
+    const overrideResult = buildCurrentResult({
+      featureId: id,
+      data: nextData,
+      selectedIdeaRank,
+      selectedSupportTitle,
+      selectedOperationSuggestionTitle,
+      supportSearchMode,
+      supportUserGoal,
+      supportRegionBasis,
+      focusedSectionTitle,
+      planGoal,
+      workspaceContext,
+      startupProfile,
+    })
+    sendFeatureMessage(GENERATE_REPORT_PROMPT, { hidden: true, currentResultOverride: overrideResult })
+      .catch(() => setAiReportStatus('error'))
+  }
+
   // 직접 입력한 아이템으로 새 워크스페이스를 생성한다(워크스페이스 = 아이템).
   const handleItemInputSubmit = (item) => {
     onCreateWorkspace?.(item)
@@ -823,7 +852,7 @@ export const FeaturePage = ({
                   </b>
                 </div>
               </div>
-            ) : id === 'support' ? null : (
+            ) : id === 'support' || id === 'sns' ? null : (
               <>
                 <div className="sim-saved-menu" ref={savedMenuRef}>
                   <button
@@ -945,6 +974,7 @@ export const FeaturePage = ({
             onChangePlanGoal={setPlanGoal}
             onRequestOperationFeedback={handleOperationFeedbackRequest}
             operationFeedbackSaving={savingReport}
+            onCampaignControlChange={handleCampaignControlChange}
           />
         ) : id === 'item' && aiReportStatus === 'loading' ? (
           <ItemGeneratingState agentId={feature.agent} />

@@ -37,6 +37,7 @@ export const Report = ({
   onChangePlanGoal,
   onRequestOperationFeedback,
   operationFeedbackSaving,
+  onCampaignControlChange,
 }) => {
   if (id === 'item') {
     return (
@@ -98,5 +99,5 @@ export const Report = ({
       />
     )
   }
-  return <SnsReport data={data} setData={setData} />
+  return <SnsReport data={data} setData={setData} onCampaignControlChange={onCampaignControlChange} />
 }

@@ -41,9 +41,18 @@ const Chip = ({ active, children, onClick }) => (
   </button>
 )
 
-export const SnsReport = ({ data, setData }) => {
+export const SnsReport = ({ data, setData, onCampaignControlChange }) => {
+  // 톤/목적 칩을 바꾸면 그 값을 에이전트에 넘겨 멘트를 다시 생성한다.
+  // (재생성 핸들러가 없으면 로컬 data만 갱신하던 기존 동작으로 폴백)
+  const changeCampaignControl = (patch) => {
+    if (onCampaignControlChange) {
+      onCampaignControlChange(patch)
+    } else {
+      setData((current) => ({ ...current, ...patch }))
+    }
+  }
+
   const [account, setAccount] = useState({ connected: false })
-  const [logs, setLogs] = useState([])
   const [draftText, setDraftText] = useState(() => buildThreadText(data))
   const [loading, setLoading] = useState(true)
   const [publishing, setPublishing] = useState(false)
@@ -60,13 +69,9 @@ export const SnsReport = ({ data, setData }) => {
       try {
         setLoading(true)
         setError('')
-        const [accountResponse, logsResponse] = await Promise.all([
-          threadsApi.account(),
-          threadsApi.logs(),
-        ])
+        const accountResponse = await threadsApi.account()
         if (!active) return
         setAccount(accountResponse)
-        setLogs(logsResponse.logs ?? [])
       } catch (nextError) {
         if (!active) return
         setError(nextError.message ?? 'Threads 상태를 불러오지 못했습니다.')
@@ -109,10 +114,8 @@ export const SnsReport = ({ data, setData }) => {
       setPublishing(true)
       setMessage('')
       setError('')
-      const response = await threadsApi.publish({ text: draftText })
-      setMessage(`Threads 게시 완료: ${response.platformPostId}`)
-      const logsResponse = await threadsApi.logs()
-      setLogs(logsResponse.logs ?? [])
+      await threadsApi.publish({ text: draftText })
+      setMessage('Threads 게시 완료')
     } catch (nextError) {
       setError(nextError.message ?? 'Threads 게시에 실패했습니다.')
     } finally {
@@ -131,9 +134,21 @@ export const SnsReport = ({ data, setData }) => {
               <p>창업 아이템을 바탕으로 홍보글을 만들고 연결된 계정에 바로 게시해요.</p>
             </div>
           </div>
-          <button type="button" className="sns-soft-button" onClick={() => setDraftText(recommendedText)}>
+          <button
+            type="button"
+            className="sns-soft-button"
+            onClick={() => {
+              // 에이전트를 다시 호출해 톤/목적은 유지하되 새 표현의 초안을 받는다.
+              // (재생성 핸들러가 없으면 현재 추천 텍스트로 텍스트박스만 되돌린다)
+              if (onCampaignControlChange) {
+                onCampaignControlChange({})
+              } else {
+                setDraftText(recommendedText)
+              }
+            }}
+          >
             <Icon name="refresh" size={14} />
-            초안 다시 채우기
+            AI 초안 다시 만들기
           </button>
         </div>
 
@@ -145,7 +160,7 @@ export const SnsReport = ({ data, setData }) => {
                 <Chip
                   key={value}
                   active={data.objective === value}
-                  onClick={() => setData((current) => ({ ...current, objective: value }))}
+                  onClick={() => changeCampaignControl({ objective: value })}
                 >
                   {label}
                 </Chip>
@@ -160,7 +175,7 @@ export const SnsReport = ({ data, setData }) => {
                 <Chip
                   key={value}
                   active={data.tone === value}
-                  onClick={() => setData((current) => ({ ...current, tone: value }))}
+                  onClick={() => changeCampaignControl({ tone: value })}
                 >
                   {label}
                 </Chip>
@@ -255,19 +270,6 @@ export const SnsReport = ({ data, setData }) => {
               </button>
             </section>
           </div>
-        </div>
-      </Card>
-
-      <Card className="sns-history-card">
-        <div className="sns-history-head">최근 게시 기록</div>
-        <div className="sns-history-body">
-          {!logs.length && <p>아직 게시된 콘텐츠가 없어요.</p>}
-          {logs.slice(0, 5).map((log) => (
-            <div key={log.id} className="sns-log-row">
-              <span className={log.status === 'SUCCESS' ? 'success' : 'error'}>{log.status}</span>
-              <p>{log.text}</p>
-            </div>
-          ))}
         </div>
       </Card>
     </div>
