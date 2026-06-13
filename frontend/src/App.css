@@ -66,6 +66,35 @@
   height: 100%;
   overflow-y: auto;
   background: var(--bg);
+  scroll-snap-type: y proximity;
+  scroll-padding-top: 64px;
+  scroll-behavior: smooth;
+}
+
+.landing-snap {
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: calc(100vh - 64px);
+  box-sizing: border-box;
+}
+
+/* 짧은 섹션은 한 화면에 딱 맞추되, 콘텐츠가 길면 잘리지 않고 늘어나게 */
+.landing-team.landing-snap,
+.landing-features.landing-snap,
+.landing-final.landing-snap {
+  padding-top: 56px;
+  padding-bottom: 56px;
+}
+
+/* 스크롤 멀미 사용자에겐 스냅·부드러운 스크롤 비활성화 */
+@media (prefers-reduced-motion: reduce) {
+  .landing {
+    scroll-snap-type: none;
+    scroll-behavior: auto;
+  }
 }
 
 .landing-header {
@@ -126,6 +155,10 @@
   margin: 0 auto;
   padding: 78px 32px 42px;
   text-align: center;
+}
+
+.landing-hero.landing-snap {
+  align-items: center;
 }
 
 .hero-badge {
@@ -390,6 +423,56 @@
   color: var(--ink-3);
   font-size: 13.5px;
   line-height: 1.75;
+}
+
+/* team 섹션을 한 화면에 담기 위한 압축 (이 섹션 한정) */
+.landing-team .landing-section-heading {
+  margin-bottom: 18px;
+}
+
+.landing-team .landing-section-heading h2 {
+  font-size: 26px;
+}
+
+.landing-team .manager-card {
+  margin-bottom: 14px;
+  padding: 18px 22px;
+}
+
+.landing-team .manager-avatar {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+}
+
+.landing-team .manager-profile p {
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.landing-team .landing-agent-grid {
+  gap: 12px;
+}
+
+.landing-team .landing-agent-card {
+  min-height: 0;
+  padding: 16px;
+}
+
+.landing-team .landing-agent-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.landing-team .landing-agent-card h3 {
+  margin-top: 13px;
+  font-size: 15px;
+}
+
+.landing-team .landing-agent-card p {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .landing-features {
@@ -749,6 +832,105 @@
   font-size: 15px;
   font-weight: 800;
   box-shadow: 0 12px 26px rgba(79, 107, 240, .38);
+}
+
+.landing-final {
+  gap: 36px;
+}
+
+.landing-footer {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.landing-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.landing-footer-brand b {
+  display: block;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.landing-footer-brand span {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.landing-footer-label {
+  display: block;
+  margin-bottom: 14px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.landing-footer-members {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.landing-footer-member {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.landing-footer-avatar {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: var(--brand-tint);
+  color: var(--brand);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.landing-footer-member b {
+  display: block;
+  color: var(--ink);
+  font-size: 14.5px;
+}
+
+.landing-footer-member small {
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+.landing-footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.landing-footer-bottom span:first-child {
+  font-weight: 700;
+  color: var(--ink-2);
 }
 .onboarding,
 .loading-page {
@@ -7243,9 +7425,18 @@ button:disabled {
 
   .landing-team,
   .landing-features,
-  .landing-closing {
+  .landing-closing,
+  .landing-footer {
     padding-right: 18px;
     padding-left: 18px;
+  }
+
+  .landing-footer-members {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .landing-footer-bottom {
+    justify-content: flex-start;
   }
 
   .landing-section-heading h2 {

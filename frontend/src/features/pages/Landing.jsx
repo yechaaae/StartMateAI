@@ -15,6 +15,21 @@ const landingSpecialists = [
   { id: 'legal', name: '창업 법률 전문가', icon: 'scales', description: '인허가·계약·세무 등 창업에 필요한 법률 리스크를 점검해요.' },
 ]
 
+// TODO: 실제 팀원 정보로 교체하세요 (이름·역할 자리표시자)
+const teamMembers = [
+  { id: 'm1', name: '황예찬', role: 'Leader/AI' },
+  { id: 'm2', name: '권기범', role: 'Web Developer' },
+  { id: 'm3', name: '이성훈', role: 'Web Developer' },
+  { id: 'm4', name: '홍현기', role: 'Web Developer' },
+  { id: 'm5', name: '이용문', role: 'AI' },
+]
+
+// TODO: 실제 팀명·해커톤명으로 교체하세요
+const teamInfo = {
+  teamName: '구미청년들',
+  hackathon: 'SSAFY X KAKAO TECH BOOTCAMP AI HACKATHON',
+}
+
 const FeaturePreview = ({ id, feature }) => (
   <div className={`feature-preview feature-preview-${id}`} aria-hidden="true">
     <div className="feature-preview-window">
@@ -156,7 +171,7 @@ export const Landing = ({ go, user, onLogout }) => {
         </div>
       </header>
 
-      <section className="landing-hero">
+      <section className="landing-hero landing-snap">
         <div className="hero-badge">
           <Icon name="sparkle" size={15} />
           분야별 AI 전문가가 함께하는 창업 워크스페이스
@@ -181,7 +196,7 @@ export const Landing = ({ go, user, onLogout }) => {
         </div>
       </section>
 
-      <section className="landing-team">
+      <section className="landing-team landing-snap">
         <div className="landing-section-heading">
           <span>당신의 창업 전담팀</span>
           <h2>9명의 AI 전문가를 만나보세요</h2>
@@ -227,7 +242,7 @@ export const Landing = ({ go, user, onLogout }) => {
         </div>
       </section>
 
-      <section className="landing-features">
+      <section className="landing-features landing-snap">
         <div className="landing-section-heading">
           <span>WHAT YOU CAN DO</span>
           <h2>전문가와 함께 쓰는 6가지 AI 기능</h2>
@@ -236,15 +251,47 @@ export const Landing = ({ go, user, onLogout }) => {
         <FeatureCarousel openFeature={openFeature} />
       </section>
 
-      <section className="landing-closing">
-        <div>
-          <h2>오늘, 창업 준비를 시작해요</h2>
-          <p>프로필을 입력하면 AI 전문가 팀이 나에게 필요한 창업 데이터를 정리하기 시작합니다.</p>
-          <button type="button" onClick={start}>
-            {user ? '작업공간으로 이동' : '무료로 시작하기'}
-            <Icon name="arrow" size={18} />
-          </button>
+      <section className="landing-final landing-snap">
+        <div className="landing-closing">
+          <div>
+            <h2>오늘, 창업 준비를 시작해요</h2>
+            <p>프로필을 입력하면 AI 전문가 팀이 나에게 필요한 창업 데이터를 정리하기 시작합니다.</p>
+            <button type="button" onClick={start}>
+              {user ? '작업공간으로 이동' : '무료로 시작하기'}
+              <Icon name="arrow" size={18} />
+            </button>
+          </div>
         </div>
+
+        <footer className="landing-footer">
+          <div className="landing-footer-brand">
+            <StartMateLogo size={34} />
+            <div>
+              <b>StartMate AI</b>
+              <span>분야별 AI 전문가가 함께하는 창업 워크스페이스</span>
+            </div>
+          </div>
+
+          <div className="landing-footer-team">
+            <span className="landing-footer-label">TEAM</span>
+            <div className="landing-footer-members">
+              {teamMembers.map((member) => (
+                <div className="landing-footer-member" key={member.id}>
+                  <span className="landing-footer-avatar">{member.name.slice(0,1)}</span>
+                  <div>
+                    <b>{member.name}</b>
+                    <small>{member.role}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="landing-footer-bottom">
+            <span>{teamInfo.hackathon} · {teamInfo.teamName}</span>
+            <span>© 2026 {teamInfo.teamName}. StartMate AI.</span>
+          </div>
+        </footer>
       </section>
     </main>
   )
