@@ -12,6 +12,7 @@ import { Onboarding } from '../features/pages/Onboarding'
 import { SavedPage } from '../features/pages/SavedPage'
 import { SignupPage } from '../features/pages/SignupPage'
 import { SimulatorPage } from '../features/pages/SimulatorPage'
+import { WorkspacePreparing } from '../features/pages/WorkspacePreparing'
 import { pathToRoute, routeToPath } from './routePaths'
 
 const publicRoutes = new Set(['landing', 'login', 'signup'])
@@ -52,6 +53,8 @@ export default function App() {
   // '아이템 추가하기'로 진입하면 아이템 기능의 추천/직접입력 선택 화면을 보여준다.
   // nonce는 이미 아이템 페이지에 있을 때도 강제로 remount해서 선택 화면부터 다시 시작하게 한다.
   const [itemEntryNonce, setItemEntryNonce] = useState(0)
+  // 아이템 선택 직후 워크스페이스를 만드는 동안 보여주는 짧은 준비 로딩 (null이면 비활성)
+  const [preparing, setPreparing] = useState(null)
   const [checkingSession, setCheckingSession] = useState(
     () => !publicRoutes.has(route) || localStorage.getItem(LOGIN_HINT_KEY) === 'true',
   )
@@ -175,6 +178,10 @@ export default function App() {
       score: item.score ?? null,
       reason: item.reason ?? '',
     }
+    // 짧은 준비 로딩을 띄우고(최소 표시 시간 보장) 워크스페이스를 만든 뒤 홈으로 진입한다.
+    setPreparing({ itemTitle: item.title })
+    const startedAt = Date.now()
+    const MIN_DISPLAY_MS = 1400
     try {
       // 리포트 생성 시 자동 생성된 미확정 워크스페이스(draft)가 있으면 재사용, 없으면 새로 만든다.
       const list = await workspaceApi.list()
@@ -184,9 +191,8 @@ export default function App() {
       await refreshWorkspaces()
       setWorkspace(created)
       setFeatureWorkspace((prev) => ({ ...prev, selectedIdea: created.selectedIdea }))
-      setRoute('home')
     } catch {
-      // 실패 시 메모리 상태로라도 반영하고 홈으로
+      // 실패 시 메모리 상태로라도 반영
       const fallback = {
         id: `item-${Date.now()}`,
         name: item.title,
@@ -198,6 +204,12 @@ export default function App() {
       setWorkspaceList((prev) => [...prev, fallback])
       setWorkspace(fallback)
       setFeatureWorkspace((prev) => ({ ...prev, selectedIdea: fallback.selectedIdea }))
+    } finally {
+      const elapsed = Date.now() - startedAt
+      if (elapsed < MIN_DISPLAY_MS) {
+        await new Promise((resolve) => { window.setTimeout(resolve, MIN_DISPLAY_MS - elapsed) })
+      }
+      setPreparing(null)
       setRoute('home')
     }
   }, [refreshWorkspaces])
@@ -278,6 +290,10 @@ export default function App() {
     )
   } else {
     page = <HomePage go={setRoute} workspace={workspace} />
+  }
+
+  if (preparing) {
+    return <div className="app-root"><WorkspacePreparing itemTitle={preparing.itemTitle} /></div>
   }
 
   if (full) {
