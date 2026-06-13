@@ -25,11 +25,16 @@ export default function App() {
     || localStorage.getItem('sm_route')
     || 'landing'
   ))
-  const [workspace, setWorkspace] = useState(workspaces[0])
+  // 워크스페이스 = 아이템. 아이템 추천에서 '이 아이템으로 시작'을 누르면 새 워크스페이스가 생긴다.
+  const [workspaceList, setWorkspaceList] = useState(workspaces)
+  const [workspace, setWorkspace] = useState(workspaces[0] ?? null)
   const [user, setUser] = useState(null)
   const [profileStatus, setProfileStatus] = useState(null)
   const [startupProfile, setStartupProfile] = useState(null)
   const [featureWorkspace, setFeatureWorkspace] = useState({})
+  // '아이템 추가하기'로 진입하면 아이템 기능의 추천/직접입력 선택 화면을 보여준다.
+  // nonce는 이미 아이템 페이지에 있을 때도 강제로 remount해서 선택 화면부터 다시 시작하게 한다.
+  const [itemEntryNonce, setItemEntryNonce] = useState(0)
   const [checkingSession, setCheckingSession] = useState(
     () => !publicRoutes.has(route) || localStorage.getItem(LOGIN_HINT_KEY) === 'true',
   )
@@ -92,8 +97,12 @@ export default function App() {
   const handleOnboardingComplete = async (nextProfile) => {
     const status = await startupProfileApi.status()
     setProfileStatus(status)
-    setStartupProfile(nextProfile ?? await refreshStartupProfile())
-    setRoute('home')
+    const resolvedProfile = nextProfile ?? await refreshStartupProfile()
+    setStartupProfile(resolvedProfile)
+    // 처음 가입 직후 창업 아이템이 없으면 '추천 받기 / 직접 입력' 선택 화면을 먼저 보여준다.
+    // (창업 후로 이미 운영 아이템을 입력했다면 홈으로 바로 이동)
+    const hasItem = Boolean(resolvedProfile?.currentItemName && resolvedProfile.currentItemName.trim())
+    setRoute(hasItem ? 'home' : 'item')
   }
 
   const handleLogout = async () => {
@@ -108,6 +117,29 @@ export default function App() {
       setRoute('landing')
     }
   }
+
+  const handleAddItem = useCallback(() => {
+    // 추천/직접입력 선택 화면을 먼저 보여준다(아이템 기능에 choice 단계로 진입).
+    setItemEntryNonce((nonce) => nonce + 1)
+    setRoute('item')
+  }, [])
+
+  // '이 아이템으로 시작'(추천/직접입력) → 그 아이템으로 새 워크스페이스를 만들어 현재 워크스페이스로 설정한다.
+  // 워크스페이스 자체가 아이템이므로, 이후 창업 전/후 기능들이 이 워크스페이스(=아이템)를 기준으로 동작한다.
+  const handleCreateWorkspaceFromItem = useCallback((item) => {
+    const created = {
+      id: `item-${Date.now()}`,
+      name: item.title,
+      desc: item.category || item.location || '추천 아이템',
+      fit: item.score ?? null,
+      recommend: item.reason ?? '',
+      selectedIdea: { ...item },
+    }
+    setWorkspaceList((list) => [...list, created])
+    setWorkspace(created)
+    setFeatureWorkspace((prev) => ({ ...prev, selectedIdea: created.selectedIdea }))
+    setRoute('home')
+  }, [])
 
   const handleFeatureWorkspaceChange = useCallback((patch) => {
     setFeatureWorkspace((prev) => {
@@ -171,7 +203,7 @@ export default function App() {
   } else if (features[guardedRoute]) {
     page = (
       <FeaturePage
-        key={guardedRoute}
+        key={guardedRoute === 'item' ? `item-${itemEntryNonce}` : guardedRoute}
         id={guardedRoute}
         go={setRoute}
         user={user}
@@ -180,6 +212,7 @@ export default function App() {
         onWorkspaceContextChange={handleFeatureWorkspaceChange}
         workspace={workspace}
         setWorkspace={setWorkspace}
+        onCreateWorkspace={handleCreateWorkspaceFromItem}
       />
     )
   } else {
@@ -195,10 +228,12 @@ export default function App() {
       <Sidebar
         route={guardedRoute}
         go={setRoute}
+        workspaces={workspaceList}
         workspace={workspace}
         setWorkspace={setWorkspace}
         user={user}
         onLogout={handleLogout}
+        onAddItem={handleAddItem}
       />
       {page}
     </div>

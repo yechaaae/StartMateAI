@@ -38,6 +38,8 @@ import {
 } from '../../chat/chatMappers'
 import { useChatMessageQueue } from '../../chat/useChatMessageQueue'
 import { Report } from '../../reports/Report'
+import { ItemEntryChoice } from '../../reports/ItemEntryChoice'
+import { ItemInputForm } from '../../reports/ItemInputForm'
 import { buildOperationFeedbackPayload } from '../../reports/operationFeedbackLogic'
 import { buildFeatureSavedReport } from '../../reports/savedReportPayload'
 import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from '../featureChatContext'
@@ -115,6 +117,7 @@ export const FeaturePage = ({
   onWorkspaceContextChange,
   workspace,
   setWorkspace,
+  onCreateWorkspace,
 }) => {
   const feature = features[id]
   const agent = agents[feature.agent]
@@ -173,6 +176,9 @@ export const FeaturePage = ({
   const [savingReport, setSavingReport] = useState(false)
   const [aiReportStatus, setAiReportStatus] = useState('idle')
   const [streamVersion, setStreamVersion] = useState(0)
+  // 아이템 기능 진입 흐름: 선택 화면(choice) → AI 추천(recommend) 또는 직접 입력(input).
+  // 다른 기능에서는 쓰이지 않는다. 저장된 리포트가 있으면(아래 loadLatestReport) recommend로 바로 진입한다.
+  const [itemFlowStep, setItemFlowStep] = useState('choice')
 
   const chatRef = useRef(null)
   const sessionMenuRef = useRef(null)
@@ -234,6 +240,10 @@ export const FeaturePage = ({
         if (reportData) {
           applyReportData(reportData)
           setAiReportStatus('ready')
+          // 저장된 아이템 리포트가 있으면 선택 화면을 건너뛰고 추천 결과를 바로 보여준다.
+          if (id === 'item') {
+            setItemFlowStep('recommend')
+          }
         } else if (id === 'operation') {
           // 운영 피드백은 사용자가 직접 입력하는 폼이므로 AI 생성 없이 빈 폼을 바로 보여준다.
           setAiReportStatus('ready')
@@ -619,7 +629,9 @@ export const FeaturePage = ({
 
   useEffect(() => {
     // 운영 피드백은 사용자 입력 폼이라 AI 자동 리포트 생성을 트리거하지 않는다.
-    if (aiReportStatus !== 'empty' || !room?.roomId || id === 'operation') {
+    // 아이템은 사용자가 '추천 받기'를 고른 뒤(recommend)에만 자동 생성한다.
+    if (aiReportStatus !== 'empty' || !room?.roomId || id === 'operation'
+        || (id === 'item' && itemFlowStep !== 'recommend')) {
       return
     }
 
@@ -632,7 +644,7 @@ export const FeaturePage = ({
     setAiReportStatus('loading')
     sendFeatureMessage(GENERATE_REPORT_PROMPT, { hidden: true })
       .catch(() => setAiReportStatus('error'))
-  }, [aiReportStatus, id, room?.roomId, targetFeature])
+  }, [aiReportStatus, id, room?.roomId, targetFeature, itemFlowStep])
 
   const updateRoomState = (updatedRoom) => {
     setRooms((prev) => prev.map((candidate) => (
@@ -796,6 +808,11 @@ export const FeaturePage = ({
       .catch(() => setAiReportStatus('error'))
   }
 
+  // 직접 입력한 아이템으로 새 워크스페이스를 생성한다(워크스페이스 = 아이템).
+  const handleItemInputSubmit = (item) => {
+    onCreateWorkspace?.(item)
+  }
+
   return (
     <main className="feature-page" style={buildFeaturePageTheme(feature, agents)}>
       <section className="report-area">
@@ -805,8 +822,8 @@ export const FeaturePage = ({
             <p>{feature.sub}</p>
           </div>
           <div className="report-title-actions">
-            {/* 운영 피드백은 사용자 입력 폼이라 AI 생성/일반 저장 버튼 대신 폼 내부 저장 버튼을 쓴다. */}
-            {id !== 'operation' && (
+            {/* 운영 피드백은 폼 내부 저장 버튼을 쓰고, 아이템은 추천 화면일 때만 생성/저장 버튼을 보여준다. */}
+            {id !== 'operation' && !(id === 'item' && itemFlowStep !== 'recommend') && (
               <>
                 <button
                   type="button"
@@ -838,7 +855,23 @@ export const FeaturePage = ({
             )}
           </div>
         </div>
-        {aiReportStatus === 'ready' ? (
+        {id === 'item' && itemFlowStep === 'choice' ? (
+          <ItemEntryChoice
+            stage={startupProfile?.stage}
+            onChooseRecommend={() => setItemFlowStep('recommend')}
+            onChooseInput={() => setItemFlowStep('input')}
+          />
+        ) : id === 'item' && itemFlowStep === 'input' ? (
+          <ItemInputForm
+            prefill={{
+              itemName: startupProfile?.currentItemName ?? '',
+              industry: startupProfile?.currentIndustry ?? '',
+              region: startupProfile?.businessRegion ?? '',
+            }}
+            onSubmit={handleItemInputSubmit}
+            onBack={() => setItemFlowStep('choice')}
+          />
+        ) : aiReportStatus === 'ready' ? (
           <Report
             id={id}
             data={data}
@@ -846,6 +879,7 @@ export const FeaturePage = ({
             go={go}
             workspace={workspace}
             setWorkspace={setWorkspace}
+            onCreateWorkspace={onCreateWorkspace}
             selectedIdeaRank={selectedIdeaRank}
             onSelectIdea={setSelectedIdeaRank}
             selectedSupportTitle={selectedSupportTitle}
