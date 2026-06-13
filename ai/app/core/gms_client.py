@@ -18,8 +18,11 @@ class GMSClient:
     changes.
     """
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, *, model: str | None = None, chat_path: str | None = None):
         self.settings = settings
+        # 클라이언트별 모델/경로 override (오케스트레이터=강한 모델 등). 없으면 settings 값 사용.
+        self.model = model or settings.gms_model
+        self.chat_path = chat_path or settings.gms_chat_path
 
     @property
     def is_configured(self) -> bool:
@@ -40,7 +43,7 @@ class GMSClient:
         if not self.is_enabled:
             return fallback
 
-        url = self.settings.gms_base_url.rstrip("/") + "/" + self.settings.gms_chat_path.lstrip("/")
+        url = self.settings.gms_base_url.rstrip("/") + "/" + self.chat_path.lstrip("/")
         payload = self._build_payload(system_prompt, user_prompt, temperature)
 
         async with httpx.AsyncClient(timeout=self.settings.gms_timeout_seconds) as client:
@@ -78,7 +81,7 @@ class GMSClient:
             }
 
         payload = {
-            "model": self.settings.gms_model,
+            "model": self.model,
             "messages": [
                 {"role": "developer", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -133,7 +136,7 @@ class GMSClient:
         return json.dumps(data, ensure_ascii=False)
 
     def _uses_gemini_generate_content(self) -> bool:
-        return self.settings.gms_chat_path.endswith(":generateContent")
+        return self.chat_path.endswith(":generateContent")
 
     def _uses_default_only_temperature_model(self) -> bool:
-        return self.settings.gms_model.startswith("gpt-5")
+        return self.model.startswith("gpt-5")

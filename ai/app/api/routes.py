@@ -46,6 +46,12 @@ router = APIRouter()
 
 settings = get_settings()
 llm = GMSClient(settings)
+# 오케스트레이터(라우팅·기능 적합성 판단·최종 합성)용 강한 모델. env로 분리하지 않으면 llm과 동일.
+orchestrator_llm = GMSClient(
+    settings,
+    model=settings.gms_orchestrator_model or None,
+    chat_path=settings.gms_orchestrator_chat_path or None,
+)
 backend_tools = BackendToolClient(settings)
 if settings.support_rag_chroma_enabled:
     retriever = SupportProgramChromaRetriever(
@@ -89,6 +95,7 @@ orchestrator = OrchestratorAgent(
     marketing_agent=marketing_agent,
     commercial_area_agent=commercial_area_agent,
     simulation_agent=simulation_agent,
+    orchestrator_llm=orchestrator_llm,
 )
 
 

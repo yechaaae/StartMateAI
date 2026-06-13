@@ -37,6 +37,8 @@ class Settings:
     gms_base_url: str
     gms_chat_path: str
     gms_model: str
+    gms_orchestrator_model: str
+    gms_orchestrator_chat_path: str
     gms_api_key_header: str
     gms_api_key_query_param: str
     gms_auth_scheme: str
@@ -78,6 +80,9 @@ def get_settings() -> Settings:
         gms_base_url=base_url or "https://gms.ssafy.io/gmsapi/api.openai.com",
         gms_chat_path=os.getenv("GMS_CHAT_PATH", "/v1/chat/completions"),
         gms_model=os.getenv("GMS_MODEL", "gpt-5.4-nano"),
+        # 오케스트레이터(라우팅·기능 판단)용 강한 모델. 비우면 gms_model/gms_chat_path를 그대로 사용.
+        gms_orchestrator_model=os.getenv("GMS_ORCHESTRATOR_MODEL", "").strip(),
+        gms_orchestrator_chat_path=os.getenv("GMS_ORCHESTRATOR_CHAT_PATH", "").strip(),
         gms_api_key_header=os.getenv("GMS_API_KEY_HEADER", "Authorization"),
         gms_api_key_query_param=os.getenv("GMS_API_KEY_QUERY_PARAM", ""),
         gms_auth_scheme=os.getenv("GMS_AUTH_SCHEME", "Bearer"),

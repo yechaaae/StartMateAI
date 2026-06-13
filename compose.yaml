@@ -55,6 +55,9 @@ services:
       GMS_BASE_URL: ${GMS_BASE_URL:-https://gms.ssafy.io/gmsapi/api.openai.com}
       GMS_CHAT_PATH: ${GMS_CHAT_PATH:-/v1/chat/completions}
       GMS_MODEL: ${GMS_MODEL:-gpt-5.4-nano}
+      # 오케스트레이터(라우팅·기능 판단)용 강한 모델. 비우면 GMS_MODEL을 그대로 사용.
+      GMS_ORCHESTRATOR_MODEL: ${GMS_ORCHESTRATOR_MODEL:-}
+      GMS_ORCHESTRATOR_CHAT_PATH: ${GMS_ORCHESTRATOR_CHAT_PATH:-}
       GMS_API_KEY_HEADER: ${GMS_API_KEY_HEADER:-Authorization}
       GMS_API_KEY_QUERY_PARAM: ${GMS_API_KEY_QUERY_PARAM:-}
       GMS_AUTH_SCHEME: ${GMS_AUTH_SCHEME:-Bearer}

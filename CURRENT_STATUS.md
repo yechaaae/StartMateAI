@@ -319,6 +319,37 @@ AI coding assistant 또는 작업자는 작업 종료 전에 아래 항목을 �
 ```text
 작업일: 2026-06-13
 작업자: Claude (Claude Code)
+브랜치: feat/ai-output-routing
+이번 작업 요약: 오케스트레이션 개선 2건 (AI 내부만, AI->백엔드 응답 envelope 계약 변경 없음)
+  1) 기능 의도 게이트: 기능 페이지에서 와도 그 질문이 해당 기능 결과(리포트/추천)를 원하는지 판단.
+     off-topic이면 고정 팀/기능 양식을 강제하지 않고 자유 답변(result=null). reportGeneration/업데이트
+     트리거는 항상 기능 양식. LLM 비활성/오류 시 기능 양식 강제 안 함(보수적).
+  2) 모델 티어링: 오케스트레이터(라우팅 plan_agents + 게이트)는 강한 모델(GMS_ORCHESTRATOR_MODEL),
+     하위 에이전트는 기존 GMS_MODEL. 미설정 시 단일 모델로 폴백(하위호환).
+수정한 주요 영역: ai/app/agents/orchestrator.py(_feature_intent_gate, _build_orchestration_state,
+  _should_attach_result, plan_agents가 orchestrator_llm 사용), ai/app/feature_reports.py(feature_key_override),
+  ai/app/core/config.py(gms_orchestrator_model/chat_path), ai/app/core/gms_client.py(model/chat_path override),
+  ai/app/api/routes.py(orchestrator_llm 주입), compose.yaml/.env.example(GMS_ORCHESTRATOR_* env)
+추가/변경된 API: 없음. AI->백엔드 응답 envelope(response_to_envelope) 모양 그대로. result에 기능 양식을
+  넣을지 말지(내부 판단)만 바뀜. 백엔드/SSE/프론트 변경 없음.
+추가/변경된 환경변수: GMS_ORCHESTRATOR_MODEL, GMS_ORCHESTRATOR_CHAT_PATH (둘 다 비우면 GMS_MODEL 사용)
+실행한 테스트: docker로 ai unittest (의존성 포함 이미지 빌드 후). 15개 중 13 pass.
+  - 이번 변경으로 test_feature_chat_without_update_intent_does_not_attach_result 통과로 전환(목표 동작)
+실패한 테스트와 이유: test_orchestrator_emits_progress_events_for_selected_agents,
+  test_policy_agent_prefers_backend_support_program_reference 2건은 clean main에서도 동일하게 실패하는
+  기존 실패(이번 변경과 무관, 회귀 아님). 후속으로 별도 점검 필요.
+데모 영향: 기능 페이지에서 그 기능과 무관한 질문을 하면 더 이상 그 기능 리포트 양식으로 강제되지 않고
+  자유 답변이 나옴. 라우팅/판단 품질은 GMS_ORCHESTRATOR_MODEL을 강한 모델로 두면 향상.
+깨질 수 있는 부분: mock LLM(USE_MOCK_LLM=true)에서는 게이트가 보수적으로 동작(reportGeneration 버튼만
+  기능 양식 생성). 실제 GMS LLM에서 게이트가 정상 판단.
+다음 사람이 보면 좋은 파일: ai/app/agents/orchestrator.py(_feature_intent_gate / _should_attach_result),
+  ai/app/feature_reports.py(feature_key_for_result)
+아직 안 한 일: 위 기존 실패 2건, 오케스트레이터 LLM "최종 합성" 단계(현재 합성은 템플릿 조립)
+```
+
+```text
+작업일: 2026-06-13
+작업자: Claude (Claude Code)
 브랜치: feat/simulator-discuss-chat
 이번 작업 요약: 시뮬레이터 리포트 페이지 채팅을 전체 상담실(DiscussPage)과 동일한 멀티에이전트 진행/토론 UI로 전환. 기존에는 "AI 리포트 갱신"이 hidden 요청이라 agent-progress를 통째로 버려서 에이전트 간 대화(challenge/revision/consensus)가 안 보였음
 수정한 주요 영역: frontend/src/features/pages/SimulatorPage.jsx (단일 agentProgress 상태 → chatProgressState의 activeProgressMap, StatusProgressRow 도입, agent-progress 핸들러의 hidden 조기 return 제거 후 viewType!=='status' 이벤트를 대화 메시지로 렌더, chat-status에서 COMPLETED/FAILED 시 진행맵 정리, 상태 배너는 FAILED만 표시 — DiscussPage와 동일 패턴)

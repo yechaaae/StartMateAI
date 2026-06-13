@@ -52,6 +52,16 @@ LOGGER = logging.getLogger(__name__)
 PROGRESS_MIN_GAP_SECONDS = float(os.getenv("AGENT_PROGRESS_MIN_GAP_SECONDS", "0.5"))
 AGENT_MIN_THINK_SECONDS = float(os.getenv("AGENT_MIN_THINK_SECONDS", "0.9"))
 
+# 기능 페이지별 결과물 설명 (기능 의도 게이트 LLM 판단용)
+FEATURE_GATE_PURPOSE = {
+    "ITEM": "창업 아이템 추천 리포트",
+    "SIMULATOR": "30일 매출·손익 시뮬레이션 리포트",
+    "SUPPORT": "정부 지원사업 추천 리포트",
+    "PLAN": "사업계획서 리포트",
+    "OPERATION": "운영 피드백 리포트",
+    "SNS": "SNS 마케팅 콘텐츠 리포트",
+}
+
 
 class OrchestratorAgent:
     name = "OrchestratorAgent"
@@ -69,6 +79,7 @@ class OrchestratorAgent:
         marketing_agent: MarketingAgent,
         commercial_area_agent: CommercialAreaAgent,
         simulation_agent: SimulationAgent,
+        orchestrator_llm=None,
     ):
         self.profile_agent = profile_agent
         self.idea_agent = idea_agent
@@ -80,6 +91,8 @@ class OrchestratorAgent:
         self.marketing_agent = marketing_agent
         self.commercial_area_agent = commercial_area_agent
         self.simulation_agent = simulation_agent
+        # 라우팅·기능 적합성 판단용 강한 모델. 미주입 시 하위 에이전트 LLM으로 폴백(하위호환).
+        self.orchestrator_llm = orchestrator_llm or finance_agent.llm
 
     async def run(
         self,
@@ -99,6 +112,7 @@ class OrchestratorAgent:
             result = await self._collaborative_consultation(request, state)
             result = self._annotate_response(result, state)
             result = self._attach_feature_result(result, state)
+            result = await self._maybe_compose_contextual_summary(state, result)
             await self._emit_progress(
                 state,
                 "orchestrator.completed",
@@ -131,6 +145,7 @@ class OrchestratorAgent:
             result = self._synthesize_selective_response(state)
         result = self._annotate_response(result, state)
         result = self._attach_feature_result(result, state)
+        result = await self._maybe_compose_contextual_summary(state, result)
         await self._emit_progress(
             state,
             "orchestrator.completed",
@@ -557,14 +572,81 @@ class OrchestratorAgent:
             return type(fallback_profile).model_validate(profile_data["effective_profile"])
         return fallback_profile
 
+    async def _feature_intent_gate(self, request: ChatRequest, feature_key: str) -> tuple[str, dict[str, Any]]:
+        """이 메시지가 '어떤 기능의 결과물(리포트/추천)'을 새로 생성/갱신하려는 것인지 판단한다.
+
+        반환: (target_feature, meta).
+        - target_feature 가 FEATURE_REPORT_TEAMS 키면 → 그 기능 팀 + 그 기능 양식 결과 생성
+          (현재 페이지 기능일 수도, 사용자가 요청한 '다른 기능'일 수도 있다. 예: ITEM 페이지에서 '시뮬레이션 돌려줘' → SIMULATOR)
+        - "" 이면 → 기능 양식 강제하지 않고 일반(맥락) 답변
+
+        reportGeneration 등 명시 트리거는 현재 페이지 기능을 재생성. LLM 비활성/오류이면 기능 양식을 강제하지 않는다("").
+        주의: 이미 나온 결과에 대한 후속/상세/실행/설명 질문은 재생성이 아니므로 ""(자유 답변)이어야 한다.
+        """
+        if self._should_create_feature_result(request):
+            return feature_key, {"source": "report_generation", "target": feature_key}
+
+        # 명시 신호가 없고 LLM 판단도 불가하면 기능 양식을 강제하지 않는다(자유 답변).
+        if not self.orchestrator_llm.is_enabled:
+            return "", {"source": "llm_disabled_default_none"}
+
+        options = "\n".join(f"- {key}: {purpose}" for key, purpose in FEATURE_GATE_PURPOSE.items())
+        prompt = (
+            f"사용자가 '{feature_key}' 기능 페이지에 있습니다.\n"
+            "이 메시지가 아래 '기능 결과물' 중 하나를 새로 생성하거나 조건을 바꿔 다시 생성/갱신해 달라는 "
+            "요청이면 해당 기능 코드를 반환하세요(현재 페이지가 아닌 다른 기능을 요청할 수도 있습니다). "
+            "이미 나온 결과에 대한 후속/상세/실행/이유/용어 설명 질문이거나 일반 질문이면 NONE 을 반환하세요.\n\n"
+            f"기능 코드:\n{options}\n\n"
+            "예시:\n"
+            "- '시뮬레이션 돌려줘', '30일 손익 시뮬' → SIMULATOR\n"
+            "- '지원사업 추천해줘' → SUPPORT\n"
+            "- '아이템 추천', '다른 아이템 다시 추천' → ITEM\n"
+            "- '사업계획서 만들어줘' → PLAN\n"
+            "- '추천된 1순위 아이템 어떻게 실행해', '이거 상세히 알려줘', '왜 이렇게 추천했어', '손익분기 뜻' → NONE\n\n"
+            'JSON만 반환: {"feature": "ITEM|SIMULATOR|SUPPORT|PLAN|OPERATION|SNS|NONE", "reason": "짧은 한국어 이유"}\n\n'
+            f"message: {request.message}"
+        )
+        try:
+            raw = await self.orchestrator_llm.complete(
+                system_prompt="You are a strict JSON classifier. Return only valid JSON.",
+                user_prompt=prompt,
+                temperature=0.0,
+                fallback="{}",
+            )
+            parsed = self._parse_json_object(raw)
+            choice = str(parsed.get("feature") or "").strip().upper()
+            target = choice if choice in FEATURE_REPORT_TEAMS else ""
+            return target, {
+                "source": "llm_gate",
+                "feature": choice,
+                "target": target,
+                "reason": parsed.get("reason"),
+                "raw_preview": raw[:300],
+            }
+        except Exception as error:  # noqa: BLE001 - 게이트 실패 시 기능 양식을 강제하지 않고 자유 답변으로.
+            return "", {
+                "source": "gate_error_default_none",
+                "error_type": error.__class__.__name__,
+                "error_message": str(error)[:300],
+            }
+
     async def _build_orchestration_state(self, request: ChatRequest) -> dict[str, Any]:
         feature_key = feature_key_from_request(request)
+        # 기능 페이지 요청이 '어떤 기능 결과물'을 원하는지 게이트로 판단한다.
+        # 현재 기능이면 그 양식, 다른 기능(예: 시뮬레이션) 요청이면 그 기능 양식, 후속/일반 질문이면 자유 답변.
+        target_feature = ""
+        feature_gate = {}
         if feature_key in FEATURE_REPORT_TEAMS:
-            plan = FEATURE_REPORT_TEAMS[feature_key]
+            target_feature, feature_gate = await self._feature_intent_gate(request, feature_key)
+        feature_output = target_feature in FEATURE_REPORT_TEAMS
+
+        if feature_output:
+            plan = FEATURE_REPORT_TEAMS[target_feature]
             plan_meta = {
                 "source": "feature_report_team",
-                "target_feature": feature_key,
-                "reason": "기능 페이지 리포트 생성을 위해 고정 Agent 팀을 사용합니다.",
+                "target_feature": target_feature,
+                "reason": "요청한 기능 결과물 생성을 위해 고정 Agent 팀을 사용합니다.",
+                "feature_gate": feature_gate,
             }
         elif request.intent == "auto":
             plan, plan_meta = await self.plan_agents(request)
@@ -582,7 +664,7 @@ class OrchestratorAgent:
                 "original_plan": plan_meta,
             }
 
-        if request.intent == "auto" and feature_key not in FEATURE_REPORT_TEAMS:
+        if request.intent == "auto" and not feature_output:
             effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
             profile_gate_reason = self._profile_gate_reason(request, effective_profile, plan)
             if profile_gate_reason:
@@ -620,7 +702,10 @@ class OrchestratorAgent:
         return {
             "request": request,
             "mode": mode,
-            "target_feature": feature_key,
+            "target_feature": target_feature if feature_output else "",
+            "feature_key": feature_key,
+            "feature_output": feature_output,
+            "feature_gate": feature_gate,
             "plan": plan,
             "plan_meta": plan_meta,
             "effective_profile": effective_profile,
@@ -1002,6 +1087,88 @@ class OrchestratorAgent:
         if isinstance(questions, list) and questions:
             return True
         return isinstance(missing_inputs, list) and len(missing_inputs) >= 3
+
+    async def _maybe_compose_contextual_summary(
+        self,
+        state: dict[str, Any],
+        result: AgentResponse,
+    ) -> AgentResponse:
+        """기능 양식 결과가 없는 '맥락 답변'일 때, 강한 모델로 최종 답변을 합성한다.
+
+        에이전트 분석 + 최근 대화 + 사용자가 선택/보유한 결과를 종합해 사용자의 마지막 질문에
+        직접 답하는 한 덩어리 답변을 만든다. 응답 계약(data/result/envelope)은 그대로 두고
+        summary만 교체한다. LLM 비활성/오류/빈응답이면 기존 템플릿 summary를 유지한다.
+        """
+        if result.result is not None:
+            return result  # 기능 리포트/추천 카드가 붙은 경우는 기존 양식 유지
+        if not self.orchestrator_llm.is_enabled:
+            return result
+        results: dict[str, AgentResponse] = state.get("results", {})
+        if not results:
+            return result
+
+        request: ChatRequest = state["request"]
+        fallback = result.summary
+        analyses = "\n\n".join(
+            self._agent_final_section(intent, response) for intent, response in results.items()
+        )
+        transcript = self._recent_transcript(request.context)
+        selected_idea = self._selected_idea_title_from_context(request.context)
+        current_result = self._current_result_from_context(request.context)
+
+        prompt = (
+            "당신은 창업 상담 오케스트레이터입니다. 아래 전문 Agent 분석과 대화 맥락을 종합해, "
+            "사용자의 마지막 질문에 직접 답하는 자연스러운 한국어 최종 답변 하나를 작성하세요.\n"
+            "규칙:\n"
+            "- 사용자가 이미 선택/언급한 결과(아이템 등)가 있으면 그것을 전제로 답합니다. 새 항목을 재추천하지 마세요.\n"
+            "- 질문이 실행 방법/가격/메뉴/일정처럼 구체적이면 그에 맞춰 구체적으로 답합니다.\n"
+            "- Agent 분석의 수치·근거를 활용하되, 단순 나열이 아니라 하나의 답변으로 합성합니다.\n"
+            "- 불확실하면 가정과 다음에 확인할 점을 덧붙입니다.\n\n"
+            f"[사용자 마지막 질문]\n{request.message}\n\n"
+            f"[최근 대화]\n{transcript or '없음'}\n\n"
+            f"[사용자가 선택/보유한 결과]\n선택 아이템: {selected_idea or '미상'}\n"
+            f"{self._compact_json(current_result)}\n\n"
+            f"[전문 Agent 분석]\n{analyses or '없음'}"
+        )
+        try:
+            text = await self.orchestrator_llm.complete(
+                system_prompt="당신은 한국어로 답하는 창업 상담 오케스트레이터입니다. 최종 답변 본문만 출력하세요.",
+                user_prompt=prompt,
+                temperature=0.4,
+                fallback=fallback,
+            )
+            composed = (text or "").strip()
+            if composed:
+                result.summary = composed
+                result.data["final_summary_source"] = "orchestrator_llm"
+        except Exception as error:  # noqa: BLE001 - 합성 실패 시 기존 템플릿 summary 유지.
+            result.data["final_summary_error"] = str(error)[:200]
+        return result
+
+    def _recent_transcript(self, context: dict[str, Any], limit: int = 8) -> str:
+        convo = self._dict_at(context, "conversation")
+        messages = convo.get("recentMessages") if isinstance(convo, dict) else None
+        if not isinstance(messages, list):
+            return ""
+        lines: list[str] = []
+        for item in messages[-limit:]:
+            if not isinstance(item, dict):
+                continue
+            sender = str(item.get("senderType") or "").upper()
+            who = "사용자" if sender == "USER" else "AI"
+            content = str(item.get("content") or "").strip()
+            if content:
+                lines.append(f"{who}: {content}")
+        return "\n".join(lines)
+
+    def _compact_json(self, value: Any, limit: int = 1500) -> str:
+        if not value:
+            return ""
+        try:
+            text = json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError):
+            text = str(value)
+        return text[:limit]
 
     def _synthesize_selective_response(self, state: dict[str, Any]) -> AgentResponse:
         request: ChatRequest = state["request"]
@@ -1749,6 +1916,7 @@ class OrchestratorAgent:
             response=response,
             results=state.get("results", {}),
             agent_review=state.get("feature_review"),
+            feature_key_override=state.get("target_feature"),
         )
         if feature_result is None:
             return response
@@ -1759,8 +1927,12 @@ class OrchestratorAgent:
         request = state["request"]
         if self._should_create_feature_result(request):
             return True
-        if feature_key_from_request(request):
+        if state.get("feature_output"):
             return True
+        # 기능 페이지인데 게이트가 off-topic으로 판단하면(feature_output=False) 기능 양식 결과를 붙이지 않는다(자유 답변).
+        # 자유 채팅(비기능)일 때만 아래 내용 기반 추론으로 결과를 붙인다.
+        if state.get("feature_key"):
+            return False
         if state.get("mode") == "collaboration":
             return True
         if len(state.get("results", {})) > 1:
@@ -1825,7 +1997,7 @@ class OrchestratorAgent:
 
     async def plan_agents(self, request: ChatRequest) -> tuple[list[str], dict[str, Any]]:
         heuristic_plan = self._heuristic_agent_plan(request.message)
-        if not self.finance_agent.llm.is_enabled:
+        if not self.orchestrator_llm.is_enabled:
             return heuristic_plan, {
                 "source": "heuristic_fallback",
                 "reason": "llm_disabled",
@@ -1838,7 +2010,8 @@ class OrchestratorAgent:
             "Return JSON only. Do not include agents that are merely nice-to-have.\n\n"
             "Available agents:\n"
             "- profile: user constraints, strengths, readiness, missing profile info\n"
-            "- idea: business idea discovery or recommendation\n"
+            "- idea: business idea discovery or recommendation (use ONLY when the user wants NEW item ideas)\n"
+            "- plan: business plan draft, step-by-step execution roadmap / how-to for an already-chosen item\n"
             "- policy: government support programs, applications, grant documents and deadlines\n"
             "- legal: laws, permits, reports, contracts, tax/legal checklist, privacy, trademark, labor\n"
             "- finance: budget, price, revenue, cost, margin, BEP, cash flow, feasibility\n"
@@ -1852,7 +2025,11 @@ class OrchestratorAgent:
             "- Pick 2-3 agents when the user explicitly asks across multiple domains.\n"
             "- Do not pick collaboration when a smaller agent set can answer.\n"
             "- If legal, permit, report, contract, tax, privacy, trademark, labor, or regulation is asked, include legal.\n"
-            "- If budget, price, revenue, cost, profit, BEP, or feasibility is asked, include finance.\n\n"
+            "- If budget, price, revenue, cost, profit, BEP, or feasibility is asked, include finance.\n"
+            "- If the context already has a result (resultContext.currentResult / selectedIdea) and the user asks a "
+            "follow-up about it — how to execute it, step-by-step, why it was chosen, or to explain it — do NOT pick "
+            "'idea' (no re-recommendation). Pick the agents that explain/execute that existing result (e.g., plan, "
+            "operation, marketing, finance, legal as relevant) and ground the answer on the existing selected result.\n\n"
             "Schema:\n"
             "{\n"
             '  "agents": ["finance"],\n'
@@ -1864,7 +2041,7 @@ class OrchestratorAgent:
             f"profile: {json.dumps(request.profile.model_dump(), ensure_ascii=False)}"
         )
         try:
-            raw = await self.finance_agent.llm.complete(
+            raw = await self.orchestrator_llm.complete(
                 system_prompt="You are a strict JSON planner. Return only valid JSON.",
                 user_prompt=prompt,
                 temperature=0.0,

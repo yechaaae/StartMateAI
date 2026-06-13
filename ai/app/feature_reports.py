@@ -72,8 +72,10 @@ def feature_key_for_result(
     request: ChatRequest,
     response: AgentResponse,
     results: dict[str, AgentResponse],
+    explicit_override: str | None = None,
 ) -> str:
-    explicit = feature_key_from_request(request)
+    # 오케스트레이터 게이트가 결정한 기능키를 우선 사용한다. ""면 페이지 기능을 강제하지 않고 내용 기반 추론으로.
+    explicit = explicit_override if explicit_override is not None else feature_key_from_request(request)
     if explicit:
         return explicit
 
@@ -133,8 +135,14 @@ def build_feature_result(
     response: AgentResponse,
     results: dict[str, AgentResponse],
     agent_review: dict[str, Any] | None = None,
+    feature_key_override: str | None = None,
 ) -> dict[str, Any] | None:
-    feature_key = feature_key_for_result(request=request, response=response, results=results)
+    feature_key = feature_key_for_result(
+        request=request,
+        response=response,
+        results=results,
+        explicit_override=feature_key_override,
+    )
     if feature_key not in FEATURE_REPORT_TEAMS:
         return _custom_report_result(request, response)
 
