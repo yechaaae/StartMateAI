@@ -2,6 +2,7 @@ import { agents } from '../../shared/data/agents'
 import { features } from '../../shared/data/features'
 import { AgentAvatar } from '../../shared/components/AgentAvatar'
 import { Icon } from '../../shared/components/Icon'
+import { ChatMarkdown } from './ChatMarkdown'
 
 const PROGRESS_LABELS = {
   discussion: '의견 조율 중',
@@ -86,7 +87,7 @@ const ProgressConversationRow = ({ message, agent }) => {
           <strong style={agent ? { color: agent.color } : undefined}>{displayName}</strong>
           <span>{subLabel}</span>
         </div>
-        <p>{message.text}</p>
+        <ChatMarkdown text={message.text} />
 
         {selectedAgents.length > 0 && (
           <div className="chat-progress-agents">
@@ -210,7 +211,7 @@ export const ChatRow = ({ message, onOpenReport }) => {
         ) : message.reportBlock ? (
           <ReportBlock block={message.reportBlock} />
         ) : (
-          <p>{message.text}</p>
+          <ChatMarkdown text={message.text} />
         )}
       </div>
     </div>
