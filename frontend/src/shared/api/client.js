@@ -58,7 +58,11 @@ export const startupProfileApi = {
 
 export const savedResultApi = {
   list: () => request('/saved-results'),
-  latest: (sourceFeature) => request(`/saved-results/latest?sourceFeature=${encodeURIComponent(sourceFeature)}`),
+  latest: (sourceFeature, workspaceId = null) =>
+    request(
+      `/saved-results/latest?sourceFeature=${encodeURIComponent(sourceFeature)}` +
+        (workspaceId != null ? `&workspaceId=${encodeURIComponent(workspaceId)}` : ''),
+    ),
   get: (savedResultId) => request(`/saved-results/${savedResultId}`),
   save: (payload) => request('/saved-results', {
     method: 'POST',

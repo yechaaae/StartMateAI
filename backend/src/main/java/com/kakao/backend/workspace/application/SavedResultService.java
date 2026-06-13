@@ -70,15 +70,22 @@ public class SavedResultService {
         return toDetailResponse(savedResult);
     }
 
-    public Optional<SavedResultDetailResponse> getLatestResult(Long userId, String sourceFeature) {
+    public Optional<SavedResultDetailResponse> getLatestResult(Long userId, String sourceFeature, Long workspaceId) {
         requireUser(userId);
         String normalizedFeature = normalizeRequired(sourceFeature, "Source feature is required.").toUpperCase();
         validateSourceFeature(normalizedFeature);
-        return savedResultRepository.findFirstByWorkspaceUserIdAndSourceFeatureIgnoreCaseOrderByCreatedAtDesc(
+        // 워크스페이스가 지정되면 그 워크스페이스에 묶인 결과만, 아니면 사용자 전체에서 최신을 반환한다.
+        Optional<SavedResult> result = (workspaceId != null)
+                ? savedResultRepository.findFirstByWorkspaceIdAndWorkspaceUserIdAndSourceFeatureIgnoreCaseOrderByCreatedAtDesc(
+                        workspaceId,
                         userId,
                         normalizedFeature.toLowerCase()
                 )
-                .map(this::toDetailResponse);
+                : savedResultRepository.findFirstByWorkspaceUserIdAndSourceFeatureIgnoreCaseOrderByCreatedAtDesc(
+                        userId,
+                        normalizedFeature.toLowerCase()
+                );
+        return result.map(this::toDetailResponse);
     }
 
     @Transactional
@@ -86,12 +93,17 @@ public class SavedResultService {
         User user = requireUser(userId);
         String sourceFeature = normalizeRequired(request.sourceFeature(), "Source feature is required.").toUpperCase();
         validateSourceFeature(sourceFeature);
-        Workspace workspace = workspaceRepository.findFirstByUserIdAndStatusOrderByIdAsc(userId, "ACTIVE")
-                .orElseGet(() -> {
-                    Workspace created = Workspace.create("Saved results workspace", "ACTIVE");
-                    created.setUser(user);
-                    return workspaceRepository.save(created);
-                });
+        // 요청에 워크스페이스가 지정되면(소유자 검증 후) 그 워크스페이스에 묶고,
+        // 없으면 기존처럼 사용자의 가장 오래된 ACTIVE 워크스페이스로 fallback 한다.
+        Workspace workspace = (request.workspaceId() != null)
+                ? workspaceRepository.findByIdAndUserId(request.workspaceId(), userId)
+                        .orElseThrow(() -> new IllegalArgumentException("Workspace not found."))
+                : workspaceRepository.findFirstByUserIdAndStatusOrderByIdAsc(userId, "ACTIVE")
+                        .orElseGet(() -> {
+                            Workspace created = Workspace.create("Saved results workspace", "ACTIVE");
+                            created.setUser(user);
+                            return workspaceRepository.save(created);
+                        });
 
         SavedResult savedResult = SavedResult.create(
                 workspace,
