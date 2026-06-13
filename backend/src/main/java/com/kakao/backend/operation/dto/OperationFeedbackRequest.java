@@ -24,8 +24,12 @@ public record OperationFeedbackRequest(
 
     public record ProductShareRequest(
             String name,
-            BigDecimal share
+            BigDecimal share,
+            Boolean locked
     ) {
+        public boolean isLocked() {
+            return Boolean.TRUE.equals(locked);
+        }
     }
 
     public record SuggestionRequest(

@@ -335,6 +335,36 @@ AI coding assistant 또는 작업자는 작업 종료 전에 아래 항목을 �
 ```text
 작업일: 2026-06-13
 작업자: Claude (Claude Code)
+이번 작업 요약: 운영 피드백 사용자 피드백 반영 — (1) AI 자동 리포트 생성을 운영 기능에서 제거하고 빈 입력 폼을 바로 표시(KPI는 사용자 실측 입력, %는 읽기전용 유지), (2) 목데이터 전부 제거(reportDefaults.operation 빈 템플릿), (3) 상품이 없으면 비중 막대/합계 숨기고 '상품 추가' 버튼만 노출 + 상품 없을 때 KPI만 저장 가능, (4) 상단 AI 갱신/일반 저장 버튼은 운영에서 숨김, (5) KPI 입력 placeholder·이번 달 기준월 기본값 추가, (6) 매출/지출 등 KPI 입력이 안 되던 버그 수정 — updateKpi가 입력값을 가공 없이 raw로 저장하고 data.kpis에 해당 key가 없으면(빈 배열/튜플 형태 등) 새 항목을 생성(upsert)하도록 변경, 렌더 조회도 튜플/비객체 항목을 무시하도록 보강
+수정한 주요 영역: frontend reports.js(operation 목데이터 제거), FeaturePage.jsx(operation은 미저장 시 ready로 빈 폼 표시·AI 자동생성/채팅리포트 덮어쓰기/상단 액션 버튼 제외), OperationReport.jsx(placeholder·상품 빈 상태·저장 게이팅 shareInvalid·기준월 기본값), backend OperationFeedbackService.validateProductShares(상품 0개면 비중 검증 skip)
+추가/변경된 API: 없음
+실행한 테스트: frontend `npm test`(37 pass)·`npm run build`·lint(operation 파일 무결); backend `./gradlew cleanTest test --tests OperationFeedbackServiceTest`(BUILD SUCCESSFUL, 상품 0개 저장 케이스 추가)
+실패한 테스트와 이유: 없음
+데모 영향: 운영 기능 진입 시 빈 입력 폼이 바로 떠서 사용자가 매출/지출/주문수/전환율을 직접 입력. 직전 저장값이 있으면 그 값 대비 증감%가 자동 표시. 상품은 추가해야 비중 입력 가능. 모든 값은 저장 시 DB(OperationFeedback + SavedResult)에 기록되고 재진입 시 DB에서 로드
+깨질 수 있는 부분: 운영은 더 이상 AI 리포트로 채워지지 않음(개선 제안 카드는 비어 있는 상태로 표시). 상품 0개로 저장 시 비중 검증을 건너뜀
+다음 사람이 보면 좋은 파일: frontend/src/features/reports/OperationReport.jsx, frontend/src/features/pages/feature/FeaturePage.jsx, backend .../operation/application/OperationFeedbackService.java
+아직 안 한 일: 개선 제안(suggestions)을 운영 Agent가 채우도록 연동하는 것은 후속 과제
+```
+
+```text
+작업일: 2026-06-13
+작업자: Claude (Claude Code)
+이번 작업 요약: 운영 피드백(OPERATION)을 사용자 직접 입력형으로 개편 — 매출/지출/주문수/광고전환율 직접 입력, 증감%는 직전 저장 레코드의 current 기준 자동 계산, 상품 추가/삭제 + 비중 직접 수정 + 비중 합 100 자동 정규화 + 비중 고정(자물쇠) 토글, 운영 기록 이력 패널/모달 추가
+수정한 주요 영역: frontend OperationReport.jsx(읽기전용 → 편집형 전면 개편), operationFeedbackLogic.js(addProduct/removeProduct/applyPreviousFromSavedReport 추가 및 product에 id/locked 보존), shared/components/Icon.jsx(trash/close 추가), App.css(편집/이력/모달 스타일), backend OperationFeedbackRequest.ProductShareRequest(locked 필드 추가)·OperationFeedbackService(잠금 상태 metric 저장)
+추가/변경된 API: 신규 엔드포인트 없음. 직전값/이력은 기존 GET /api/saved-results, /saved-results/latest?sourceFeature=operation, /saved-results/{id} 재사용(저장 시 OperationFeedbackService가 sourceFeature=operation SavedResult를 함께 생성). 저장 요청 바디 ProductShareRequest에 locked(boolean) 추가
+추가/변경된 환경변수: 없음
+판단 결정: 퍼센트는 소숫점 1자리 통일(전환율/비중/증감%). 최대값 — 광고전환율 0~100%, 상품 비중 0~100%(합계 100 강제), 증감% ±1000% cap, 매출/지출/주문수는 음수만 금지하고 상한 없음
+실행한 테스트: frontend `npm test`(37 pass), `npm run build`(성공), `npm run lint`(신규 OperationReport.jsx 무결, 기존 4건은 손대지 않은 파일); backend `./gradlew cleanTest test --tests com.kakao.backend.operation.application.OperationFeedbackServiceTest`(BUILD SUCCESSFUL, locked metric 저장 검증 포함)
+실패한 테스트와 이유: 없음
+데모 영향: 운영 기능에서 사용자가 이번 달 지표를 직접 입력하면 직전 저장값 대비 증감%가 즉시 표시되고, 상품 비중을 직접 조정(고정 포함)하며, '지난 운영 기록' 패널에서 과거 입력을 모달로 열람 가능. 직전값이 없는 첫 입력은 mock previous(reportDefaults.operation)를 사용
+깨질 수 있는 부분: OperationReport는 aiReportStatus==='ready'일 때만 렌더되므로 진입 시 최신 SavedResult 로드에 의존. 상품 삭제는 인덱스 기반(저장 리포트엔 product.id가 없어 id 매칭 시 전체 삭제 위험을 회피). 비중 합이 100이 아니면 저장 버튼 비활성
+다음 사람이 보면 좋은 파일: frontend/src/features/reports/OperationReport.jsx, frontend/src/features/reports/operationFeedbackLogic.js, backend .../operation/application/OperationFeedbackService.java
+아직 안 한 일: 운영 피드백 전용 history GET 엔드포인트는 만들지 않고 saved-results를 재사용. previous를 서버에서 강제 일원화(현재는 프론트가 latest.current를 previous로 사용)하는 보강은 후속 과제
+```
+
+```text
+작업일: 2026-06-13
+작업자: Claude (Claude Code)
 이번 작업 요약: 전체 코드 점검(멀티에이전트/외부 API/AI 판단/전체 플로우) 후 구조 문서와 제한사항·다음 작업 리스트를 실제 코드 기준으로 갱신
 수정한 주요 영역: 루트 PROJECT_STRUCTURE_HANDOFF.md(백엔드 모듈 전체·Agent 10종·라우팅/토론 메커니즘·API 표 확장·§10 해커톤 데모 흐름 연출 가이드 추가), CURRENT_STATUS.md(검증된 제한사항 추가·우선순위 개선 리스트·본 기록)
 추가/변경된 API: 없음(문서 표만 실제 엔드포인트에 맞게 확장)
