@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+import os
 import re
+import time
 from typing import Any, Awaitable, Callable
 
 from app.agents.finance import FinanceAgent
@@ -41,6 +43,14 @@ from app.schemas import (
 
 AgentProgressCallback = Callable[[dict[str, Any]], Awaitable[None]]
 LOGGER = logging.getLogger(__name__)
+
+# --- 데모 pacing -----------------------------------------------------------
+# 해커톤 시연용: 응답이 즉시 끝나더라도 Agent들이 "고민하며 의견을 맞추는" 것처럼
+# 보이도록 진행 이벤트(narration)에 최소 간격과 최소 사고 시간을 부여한다.
+# 실제 작업으로 이미 충분히 벌어진 간격은 그대로 두고, 한 번에 쏟아지는 버스트만
+# 펼쳐 주기 때문에 실제 LLM 응답 지연은 거의 늘지 않는다. (둘 다 0으로 두면 비활성화)
+PROGRESS_MIN_GAP_SECONDS = float(os.getenv("AGENT_PROGRESS_MIN_GAP_SECONDS", "0.5"))
+AGENT_MIN_THINK_SECONDS = float(os.getenv("AGENT_MIN_THINK_SECONDS", "0.9"))
 
 
 class OrchestratorAgent:
@@ -163,10 +173,42 @@ class OrchestratorAgent:
                 for intent in selected_intents
             ]
 
+        lock = state.get("progress_lock")
         try:
-            await callback(event)
+            if lock is None:
+                await callback(event)
+            else:
+                # 락으로 narration을 직렬화해, 병렬 Agent들의 이벤트가 한 프레임에
+                # 몰려 그려지지 않고 단계별로 하나씩 노출되게 한다.
+                async with lock:
+                    await self._pace_before_emit(state)
+                    await callback(event)
+                    state["progress_last_at"] = time.monotonic()
         except Exception as error:  # noqa: BLE001 - progress events should not fail the final chat answer.
             LOGGER.warning("Failed to publish agent progress event: %s", error)
+
+    async def _pace_before_emit(self, state: dict[str, Any]) -> None:
+        """직전 narration 이벤트와 최소 간격을 보장한다.
+
+        실제 작업으로 이미 충분히 벌어진 간격은 그대로 두고, 토론/시작 알림처럼
+        한꺼번에 쏟아지는 버스트만 펼쳐서 단계가 하나씩 보이도록 한다.
+        """
+        if PROGRESS_MIN_GAP_SECONDS <= 0:
+            return
+        last = state.get("progress_last_at")
+        if last is None:
+            return
+        wait = PROGRESS_MIN_GAP_SECONDS - (time.monotonic() - last)
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+    async def _think_dwell(self, started_at: float) -> None:
+        """실제 검토가 즉시 끝나도 Agent가 잠시 '고민'한 것처럼 보이게 한다."""
+        if AGENT_MIN_THINK_SECONDS <= 0:
+            return
+        remaining = AGENT_MIN_THINK_SECONDS - (time.monotonic() - started_at)
+        if remaining > 0:
+            await asyncio.sleep(remaining)
 
     def _progress_view_type(self, event_type: str, agent_intent: str, agent_status: str) -> str:
         if event_type in {"orchestrator.started", "agents.selected", "agent.started", "orchestrator.completed"}:
@@ -545,6 +587,8 @@ class OrchestratorAgent:
             "results": {},
             "followups": [],
             "followup_meta": {},
+            "progress_lock": asyncio.Lock(),
+            "progress_last_at": time.monotonic(),
         }
 
     async def _run_agents(self, state: dict[str, Any], intents: list[str]) -> None:
@@ -563,6 +607,7 @@ class OrchestratorAgent:
             agent_intent=intent,
             agent_status="running",
         )
+        started_at = time.monotonic()
         try:
             intent, response = await self._run_agent(state, intent)
         except Exception:
@@ -575,6 +620,7 @@ class OrchestratorAgent:
                 status="FAILED",
             )
             raise
+        await self._think_dwell(started_at)
         await self._emit_progress(
             state,
             "agent.completed",
@@ -2299,6 +2345,7 @@ class OrchestratorAgent:
             agent_intent=intent,
             agent_status="running",
         )
+        started_at = time.monotonic()
         try:
             response = await task
         except Exception:
@@ -2311,6 +2358,7 @@ class OrchestratorAgent:
                 status="FAILED",
             )
             raise
+        await self._think_dwell(started_at)
         await self._emit_progress(
             state,
             "agent.completed",
