@@ -12,6 +12,7 @@ export const Report = ({
   go,
   workspace,
   setWorkspace,
+  onCreateWorkspace,
   selectedIdeaRank,
   onSelectIdea,
   selectedSupportTitle,
@@ -43,6 +44,7 @@ export const Report = ({
         go={go}
         workspace={workspace}
         setWorkspace={setWorkspace}
+        onCreateWorkspace={onCreateWorkspace}
         selectedIdeaRank={selectedIdeaRank}
         onSelectIdea={onSelectIdea}
       />
