@@ -969,6 +969,18 @@
   color: var(--brand);
 }
 
+/* 추천 생성 로딩 중 별 아이콘을 빙글빙글 회전 */
+.om-loading-sparkle {
+  transform-origin: center;
+  animation: sim-spin 2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .om-loading-sparkle {
+    animation: none;
+  }
+}
+
 .onboarding-modal-state h2 {
   margin: 14px 0 0;
   color: var(--ink);
