@@ -41,10 +41,11 @@ public class SavedResultController {
     @GetMapping("/latest")
     public ResponseEntity<SavedResultDetailResponse> getLatestResult(
             @RequestParam String sourceFeature,
+            @RequestParam(required = false) Long workspaceId,
             HttpSession session
     ) {
         Long userId = loginUserSessionResolver.resolve(session);
-        return savedResultService.getLatestResult(userId, sourceFeature)
+        return savedResultService.getLatestResult(userId, sourceFeature, workspaceId)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }

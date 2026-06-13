@@ -1363,7 +1363,14 @@ def _sns_report(request: ChatRequest, results: dict[str, AgentResponse]) -> dict
     marketing = _data(results, "marketing")
     current = _current_result(request)
     draft = _dict(current.get("campaignDraft"))
-    hook = marketing.get("reels_hook") or _nested(marketing, "evidence", "reels_hook") or draft.get("hook")
+    # 재생성 시 에이전트가 톤/목적에 맞춰 새로 만든 hook/CTA를 우선한다.
+    # (draft 값은 직전 화면의 옛 값이라 먼저 쓰면 목적/톤을 바꿔도 멘트가 안 바뀐다.)
+    hook = (
+        marketing.get("reels_hook")
+        or _nested(marketing, "evidence", "reels_hook")
+        or marketing.get("hook")
+        or draft.get("hook")
+    )
     return {
         "topic": str(draft.get("topic") or marketing.get("product_name") or "AI 캠페인"),
         "hook": str(hook or marketing.get("caption") or "고객이 바로 반응할 한 문장으로 시작하세요."),
@@ -1377,7 +1384,7 @@ def _sns_report(request: ChatRequest, results: dict[str, AgentResponse]) -> dict
         "channel": _channel_code(marketing.get("channel") or draft.get("channel")),
         "tone": str(draft.get("tone") or "FRIENDLY"),
         "objective": _objective_code(marketing.get("objective") or draft.get("objective")),
-        "callToAction": str(draft.get("callToAction") or "지금 문의하기"),
+        "callToAction": str(marketing.get("callToAction") or draft.get("callToAction") or "지금 문의하기"),
         "schedule": str(draft.get("schedule") or _first([item.get("when") for item in _list(marketing.get("upload_schedule")) if isinstance(item, dict)], "이번 주 오전")),
     }
 

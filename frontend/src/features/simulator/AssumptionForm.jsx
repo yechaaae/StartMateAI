@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Card } from '../../shared/components/Card'
 import { Icon } from '../../shared/components/Icon'
+import { buildMonthlyPreview } from './simulationCalculations'
 
 const formatWon = (value) => Number(value || 0).toLocaleString('ko-KR')
 
@@ -31,28 +32,21 @@ const scenarioKey = (scenario) => scenario?.key ?? scenario?.label
 export const AssumptionForm = ({ location, idea, onBack, onRun, suggested, loading }) => {
   const scenarios = Array.isArray(suggested?.scenarios) ? suggested.scenarios : []
   const [selectedKey, setSelectedKey] = useState(null)
-  const [form, setForm] = useState({ ...DEFAULT_FORM, monthlyRent: location?.rent || DEFAULT_FORM.monthlyRent })
-
-  // 시나리오가 도착하면 '보통'(가운데)을 기본 선택해 폼을 채운다.
-  useEffect(() => {
-    if (!scenarios.length) return
-    const fallbackIndex = Math.min(1, scenarios.length - 1)
-    const def = scenarios.find((scenario) => scenario.key === 'normal') ?? scenarios[fallbackIndex]
-    setSelectedKey(scenarioKey(def))
-    setForm((prev) => ({ ...prev, ...def }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [suggested])
+  const fallbackIndex = Math.min(1, scenarios.length - 1)
+  const defaultScenario = scenarios.find((scenario) => scenario.key === 'normal') ?? scenarios[fallbackIndex]
+  const selectedScenario = scenarios.find((scenario) => scenarioKey(scenario) === selectedKey) ?? defaultScenario
+  const selectedScenarioKey = scenarioKey(selectedScenario)
+  const form = {
+    ...DEFAULT_FORM,
+    monthlyRent: location?.rent || DEFAULT_FORM.monthlyRent,
+    ...selectedScenario,
+  }
 
   const selectScenario = (scenario) => {
     setSelectedKey(scenarioKey(scenario))
-    setForm((prev) => ({ ...prev, ...scenario }))
   }
 
-  const revenue = form.pricePerOrder * form.expectedDailyOrders * form.operatingDays
-  const variableCost = Math.round(revenue * form.variableCostRate)
-  const fixedCost = form.monthlyRent + form.laborCost + form.marketingCost + form.otherFixedCost
-  const profit = revenue - variableCost - fixedCost
-  const breakEvenCount = Math.ceil(fixedCost / Math.max(1, form.pricePerOrder * (1 - form.variableCostRate)))
+  const preview = buildMonthlyPreview(form)
 
   return (
     <section className="sim-step-panel step-in">
@@ -62,7 +56,7 @@ export const AssumptionForm = ({ location, idea, onBack, onRun, suggested, loadi
           <b>{location?.address || '선택한 위치'}</b>
           <span>대략 월세 {formatWon(form.monthlyRent)}원 · {idea?.title || '선택한 아이템'}으로 가볍게 보기</span>
         </div>
-        <button onClick={onBack}>위치 다시 선택</button>
+        <button type="button" onClick={onBack}>위치 다시 선택</button>
       </Card>
 
       <div className="sim-form-layout light">
@@ -91,7 +85,7 @@ export const AssumptionForm = ({ location, idea, onBack, onRun, suggested, loadi
                     <button
                       key={scenarioKey(scenario)}
                       type="button"
-                      className={selectedKey === scenarioKey(scenario) ? 'active' : ''}
+                      className={selectedScenarioKey === scenarioKey(scenario) ? 'active' : ''}
                       onClick={() => selectScenario(scenario)}
                     >
                       <b>{scenario.label}</b>
@@ -126,19 +120,25 @@ export const AssumptionForm = ({ location, idea, onBack, onRun, suggested, loadi
           <span className="sim-preview-kicker">대략 보기</span>
           <h3>한 달에 이 정도 예상돼요</h3>
           <div className="sim-preview-list">
-            <div><span>월 매출</span><b>{formatWon(revenue)}원</b></div>
-            <div><span>월 비용</span><b className="warn">{formatWon(variableCost + fixedCost)}원</b></div>
-            <div className="total"><span>남는 돈</span><b className={profit >= 0 ? 'good' : 'bad'}>{formatWon(profit)}원</b></div>
+            <div><span>월 매출</span><b>{formatWon(preview.revenue)}원</b></div>
+            <div><span>월 비용</span><b className="warn">{formatWon(preview.totalCost)}원</b></div>
+            <div className="total"><span>남는 돈</span><b className={preview.profit >= 0 ? 'good' : 'bad'}>{formatWon(preview.profit)}원</b></div>
           </div>
           <div className="sim-break-even">
             <span>손익분기 건수</span>
-            <strong>{breakEvenCount}건</strong>
+            <strong>{preview.breakEvenCount}건</strong>
           </div>
           <button className="sim-primary-btn wide" onClick={() => onRun(form)} disabled={loading}>
             {loading ? '가정값 준비 중…' : <>30일 흐름 보기 <Icon name="arrow" size={17} /></>}
           </button>
           <p className="sim-light-note">실제 창업 판단용 확정 수치가 아니라, 아이템과 지역을 비교하기 위한 빠른 추정치입니다.</p>
         </Card>
+      </div>
+
+      <div className="sim-actions">
+        <button type="button" className="sim-secondary-btn" onClick={onBack}>
+          <Icon name="arrow" size={16} /> 위치 다시 선택
+        </button>
       </div>
     </section>
   )

@@ -5,6 +5,7 @@ import { Icon } from '../../shared/components/Icon'
 const KAKAO_APP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY ?? ''
 const KAKAO_SCRIPT_ID = 'kakao-map-script'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+const DEFAULT_POSITION = { lat: 35.1631, lng: 129.1635 }
 
 let kakaoLoaderPromise = null
 
@@ -43,6 +44,14 @@ const loadKakao = () => {
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('ko-KR')
 const onlyDigits = (value) => value.replace(/[^\d]/g, '')
+const normalizeRegion = (value) => String(value ?? '').trim()
+const addressFromSearchItem = (item, fallback) => (
+  item?.road_address?.address_name
+  || item?.road_address_name
+  || item?.address_name
+  || item?.place_name
+  || fallback
+)
 
 const buildRentQuery = ({ address, addressParts, areaM2 }) => {
   const params = new URLSearchParams()
@@ -55,7 +64,7 @@ const buildRentQuery = ({ address, addressParts, areaM2 }) => {
   return params.toString()
 }
 
-export const RoadviewPicker = ({ onSelect }) => {
+export const RoadviewPicker = ({ initialRegion = '', onSelect }) => {
   const mapRef = useRef(null)
   const rvRef = useRef(null)
   const mapObjectRef = useRef(null)
@@ -65,6 +74,7 @@ export const RoadviewPicker = ({ onSelect }) => {
   const geocoderRef = useRef(null)
   const placesRef = useRef(null)
   const initializedRef = useRef(false)
+  const appliedInitialRegionRef = useRef('')
   const [address, setAddress] = useState('')
   const [addressParts, setAddressParts] = useState({})
   const [position, setPosition] = useState(null)
@@ -78,6 +88,7 @@ export const RoadviewPicker = ({ onSelect }) => {
   const [searchKeyword, setSearchKeyword] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [searchMessage, setSearchMessage] = useState('')
+  const initialRegionLabel = normalizeRegion(initialRegion)
 
   const updateLocation = useCallback((pos, nextAddress = '') => {
     const next = { lat: pos.getLat(), lng: pos.getLng() }
@@ -107,8 +118,61 @@ export const RoadviewPicker = ({ onSelect }) => {
     })
   }, [])
 
+  const moveToRegion = useCallback((region, { fallbackToDefault = false } = {}) => {
+    const keyword = normalizeRegion(region)
+    if (!keyword || !geocoderRef.current) return false
+
+    const moveToFirstResult = (first) => {
+      const lat = Number(first?.y)
+      const lng = Number(first?.x)
+
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        const pos = new window.kakao.maps.LatLng(lat, lng)
+        const nextAddress = addressFromSearchItem(first, keyword)
+        appliedInitialRegionRef.current = keyword
+        setSearchMessage('')
+        mapObjectRef.current?.setLevel(4)
+        updateLocation(pos, nextAddress)
+        window.setTimeout(() => {
+          mapObjectRef.current?.relayout()
+          roadviewRef.current?.relayout()
+        }, 0)
+        return true
+      }
+
+      return false
+    }
+
+    const fallbackToDefaultPosition = () => {
+      if (fallbackToDefault) {
+        const defaultPos = new window.kakao.maps.LatLng(DEFAULT_POSITION.lat, DEFAULT_POSITION.lng)
+        updateLocation(defaultPos)
+      }
+    }
+
+    geocoderRef.current.addressSearch(keyword, (result, status) => {
+      if (status === window.kakao.maps.services.Status.OK && moveToFirstResult(result[0])) {
+        return
+      }
+
+      if (!placesRef.current) {
+        fallbackToDefaultPosition()
+        return
+      }
+
+      placesRef.current.keywordSearch(keyword, (placeResult, placeStatus) => {
+        if (placeStatus === window.kakao.maps.services.Status.OK && moveToFirstResult(placeResult[0])) {
+          return
+        }
+        fallbackToDefaultPosition()
+      })
+    })
+
+    return true
+  }, [updateLocation])
+
   const initMap = useCallback(() => {
-    const defaultPos = new window.kakao.maps.LatLng(35.1631, 129.1635)
+    const defaultPos = new window.kakao.maps.LatLng(DEFAULT_POSITION.lat, DEFAULT_POSITION.lng)
     const map = new window.kakao.maps.Map(mapRef.current, { center: defaultPos, level: 3 })
     const roadview = new window.kakao.maps.Roadview(rvRef.current)
     const roadviewClient = new window.kakao.maps.RoadviewClient()
@@ -124,9 +188,11 @@ export const RoadviewPicker = ({ onSelect }) => {
     placesRef.current = places
 
     window.kakao.maps.event.addListener(roadview, 'init', () => roadview.relayout())
-    updateLocation(defaultPos)
+    if (!moveToRegion(initialRegionLabel, { fallbackToDefault: true })) {
+      updateLocation(defaultPos)
+    }
     window.kakao.maps.event.addListener(map, 'click', (event) => updateLocation(event.latLng))
-  }, [updateLocation])
+  }, [initialRegionLabel, moveToRegion, updateLocation])
 
   useEffect(() => {
     let cancelled = false
@@ -143,6 +209,13 @@ export const RoadviewPicker = ({ onSelect }) => {
       cancelled = true
     }
   }, [initMap])
+
+  useEffect(() => {
+    if (!initializedRef.current || !initialRegionLabel) return
+    if (appliedInitialRegionRef.current === initialRegionLabel) return
+
+    moveToRegion(initialRegionLabel)
+  }, [initialRegionLabel, moveToRegion])
 
   useEffect(() => {
     if (!address || !addressParts.sido) return

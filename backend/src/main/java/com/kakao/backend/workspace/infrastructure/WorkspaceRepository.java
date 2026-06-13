@@ -9,5 +9,7 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, Long> {
 
     Optional<Workspace> findFirstByUserIdAndStatusOrderByIdAsc(Long userId, String status);
 
+    Optional<Workspace> findByIdAndUserId(Long id, Long userId);
+
     List<Workspace> findByUserIdOrderByIdAsc(Long userId);
 }

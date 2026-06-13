@@ -284,7 +284,7 @@ class OrchestratorAgent:
         message = self._discussion_prefix(response.agent, summary)
         evidence_lines = self._agent_evidence_lines(response)
         if evidence_lines:
-            message += "\n\n판단 근거\n" + "\n".join(f"- {line}" for line in evidence_lines[:5])
+            message += "\n\n**판단 근거**\n" + "\n".join(f"- {line}" for line in evidence_lines[:5])
         return message
 
     def _agent_short_position(self, response: AgentResponse) -> str:
@@ -1635,10 +1635,10 @@ class OrchestratorAgent:
             "basis": basis,
             "proposal": proposal,
             "message": (
-                f"{source_label} -> {target_label}: 잠깐, 이 부분은 그대로 가면 조금 위험해 보여요.\n"
-                f"걸리는 점: {issue}\n"
-                f"제가 본 근거: {basis or '근거를 조금 더 확인해야 합니다'}\n"
-                f"그래서 제안은 이거예요: {proposal}"
+                f"**{source_label} → {target_label}**: 잠깐, 이 부분은 그대로 가면 조금 위험해 보여요.\n\n"
+                f"- **걸리는 점**: {issue}\n"
+                f"- **근거**: {basis or '근거를 조금 더 확인해야 합니다'}\n"
+                f"- **제안**: {proposal}"
             ),
         }
 
@@ -1696,13 +1696,13 @@ class OrchestratorAgent:
         revisions: list[dict[str, Any]],
     ) -> dict[str, Any]:
         if not challenges:
-            message = "Plan Agent: 크게 부딪히는 부분은 없네요. 각 Agent 의견을 한 실행 흐름으로 묶어도 괜찮겠습니다."
+            message = "**Plan Agent**: 크게 부딪히는 부분은 없네요. 각 Agent 의견을 한 실행 흐름으로 묶어도 괜찮겠습니다."
             decision = "agent_agreement"
         else:
             main_issues = self._unique([str(item.get("issue")) for item in challenges if item.get("issue")])
             message = (
-                "Plan Agent: 좋아요, 이 충돌은 최종 답변에 조건으로 반영할게요.\n"
-                f"체크할 부분: {' / '.join(main_issues[:3])}\n"
+                "**Plan Agent**: 좋아요, 이 충돌은 최종 답변에 조건으로 반영할게요.\n\n"
+                f"- **체크할 부분**: {' / '.join(main_issues[:3])}\n\n"
                 "그래서 결론은 '바로 확정'이 아니라, 아이템 방향은 살리되 필요한 정보 확인과 30일 검증을 먼저 두는 쪽으로 정리하겠습니다."
             )
             decision = "conditional_consensus"
@@ -2399,6 +2399,34 @@ class OrchestratorAgent:
             number /= 100
         return number
 
+    # 프론트 SNS 컨트롤(칩)에서 보내는 코드값 → 에이전트가 멘트에 반영할 한글 표현.
+    _TONE_CODE_TO_KO = {
+        "FRIENDLY": "친근하고 실행력 있는",
+        "EXPERT": "전문적이고 신뢰감 있는",
+        "TRENDY": "트렌디하고 감각적인",
+        "TRUSTED": "믿음직하고 정직한",
+    }
+    _OBJECTIVE_CODE_TO_KO = {
+        "CONVERSION": "예약/문의 전환",
+        "AWARENESS": "인지도 확보",
+        "REVISIT": "재방문 유도",
+        "EVENT": "행사 방문 유도",
+    }
+    _CHANNEL_CODE_TO_KO = {
+        "INSTAGRAM_REELS": "Instagram Reels",
+        "INSTAGRAM_POST": "Instagram Post",
+        "SHORTS": "YouTube Shorts",
+        "BLOG_POST": "Blog/Search",
+    }
+
+    def _map_campaign_code(self, value: Any, table: dict[str, str]) -> str | None:
+        if value is None:
+            return None
+        key = str(value).strip()
+        if not key:
+            return None
+        return table.get(key.upper(), key)
+
     def _marketing_request_from_context(self, request: ChatRequest, profile=None) -> MarketingRequest:
         context = request.context or {}
         message = request.message or ""
@@ -2413,14 +2441,39 @@ class OrchestratorAgent:
             or self._dict_at(current_result, "businessContext")
             or self._dict_at(feature_payload, "businessContext")
         )
-        selected_idea = self._dict_at(business_context, "selectedIdea")
+        # SNS 기능 페이지에서 사용자가 고른 톤/목적/채널은 campaignDraft로 들어온다.
+        campaign_draft = (
+            self._dict_at(current_result, "campaignDraft")
+            or self._dict_at(context, "campaignDraft")
+        )
+        campaign_context = self._dict_at(current_result, "campaignContext")
+        selected_idea = (
+            self._dict_at(business_context, "selectedIdea")
+            or self._dict_at(campaign_context, "selectedIdea")
+        )
 
         product_name = (
             context.get("product_name")
             or context.get("item_name")
+            or campaign_draft.get("topic")
             or self._title_at(selected_idea)
             or self._infer_marketing_product(message)
             or "창업 상품"
+        )
+        brand_tone = (
+            self._map_campaign_code(campaign_draft.get("tone"), self._TONE_CODE_TO_KO)
+            or context.get("brand_tone")
+            or "친근하고 실행력 있는"
+        )
+        objective = (
+            self._map_campaign_code(campaign_draft.get("objective"), self._OBJECTIVE_CODE_TO_KO)
+            or context.get("objective")
+            or self._infer_marketing_objective(message)
+        )
+        channel = (
+            self._map_campaign_code(campaign_draft.get("channel"), self._CHANNEL_CODE_TO_KO)
+            or context.get("channel")
+            or self._infer_marketing_channel(message)
         )
         return MarketingRequest(
             profile=profile or request.profile,
@@ -2428,11 +2481,11 @@ class OrchestratorAgent:
             event_date=context.get("event_date") or self._infer_marketing_event_date(message),
             target_customer=context.get("target_customer") or self._infer_marketing_target(message, profile or request.profile),
             place=context.get("place") or self._infer_marketing_place(message, profile or request.profile),
-            brand_tone=context.get("brand_tone", "친근하고 실행력 있는"),
+            brand_tone=brand_tone,
             goal=message,
-            channel=context.get("channel") or self._infer_marketing_channel(message),
-            objective=context.get("objective") or self._infer_marketing_objective(message),
-            schedule=context.get("schedule"),
+            channel=channel,
+            objective=objective,
+            schedule=campaign_draft.get("schedule") or context.get("schedule"),
         )
 
     def _infer_marketing_product(self, message: str) -> str | None:

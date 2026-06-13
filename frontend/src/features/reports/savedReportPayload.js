@@ -23,6 +23,7 @@ export const FEATURE_RESULT_TYPES = {
 
 export const buildFeatureSavedReport = ({
   featureId,
+  workspaceId = null,
   data,
   currentResult,
   selectedIdeaRank,
@@ -67,6 +68,7 @@ export const buildFeatureSavedReport = ({
   }
 
   return {
+    workspaceId,
     sourceFeature: featureId,
     resultType: FEATURE_RESULT_TYPES[featureId] ?? 'FEATURE_REPORT',
     referenceId: operationFeedbackId,
@@ -99,6 +101,15 @@ export const buildSimulationSavedReport = ({
   const ideaTitle = workspace?.selectedIdea?.title ?? report?.ideaTitle ?? '창업 시뮬레이션'
   const totalProfit = report?.summary?.totalProfit
   const formattedProfit = formatNumber(totalProfit)
+  const savedLocation = report?.location ?? location
+  const savedAssumption = report?.assumption ?? assumption
+  const savedReport = report
+    ? {
+        ...report,
+        location: savedLocation,
+        assumption: savedAssumption,
+      }
+    : null
 
   return {
     sourceFeature: 'simulator',
@@ -107,16 +118,16 @@ export const buildSimulationSavedReport = ({
     title: `${ideaTitle} 시뮬레이션 리포트`,
     summary: trimSummary(
       formattedProfit
-        ? `${location?.label ?? location?.address ?? '선택 위치'} 기준 예상 수익 ${formattedProfit}원 시뮬레이션입니다.`
+        ? `${savedLocation?.label ?? savedLocation?.address ?? '선택 위치'} 기준 예상 수익 ${formattedProfit}원 시뮬레이션입니다.`
         : '창업 시뮬레이션 결과를 저장했습니다.',
     ),
     payload: {
       featureId: 'simulator',
       reportData: {
         workspaceIdea: workspace?.selectedIdea ?? null,
-        location,
-        assumption,
-        report,
+        location: savedLocation,
+        assumption: savedAssumption,
+        report: savedReport,
       },
     },
   }
