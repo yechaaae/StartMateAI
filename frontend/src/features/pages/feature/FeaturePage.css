@@ -132,7 +132,6 @@
 }
 
 .feature-page .support-row.selected,
-.feature-page .support-program-card.selected,
 .feature-page .plan-section-trigger.selected {
   border-color: color-mix(in srgb, var(--feature-accent) 36%, var(--line-2));
   background: var(--feature-accent-tint);
