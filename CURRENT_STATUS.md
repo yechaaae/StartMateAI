@@ -236,14 +236,62 @@ docker compose config
 - 대용량 CSV import는 해커톤 데모 기준입니다. 운영 환경에서는 batch 처리, 진행률, 실패 row 리포트가 필요합니다.
 - AI가 사용한 evidence를 프론트에서 얼마나 보여주는지는 추가 작업이 필요합니다.
 
-## 10. 다음 작업 추천
+### 2026-06-13 코드 점검에서 추가로 확인된 제한사항 (검증됨)
 
-- 데모 안정성을 위해 `seed import + support sync + demo store import`를 묶는 bootstrap endpoint 또는 스크립트를 추가합니다.
-- 프론트 채팅 응답에 `reference_data_used`, `tool_calls`, `evidence` 일부를 별도 근거 패널로 보여줍니다.
-- 필요하면 Agent progress 이벤트를 히스토리에 저장하는 `chat_message` 타입을 추가합니다.
-- `ai/README.md`에 RabbitMQ worker와 backend tool-call 설명을 보강합니다.
-- `backend/DATA_MVP_HANDOFF.md` 상단에 "구 데이터 MVP 문서이며 최신 구조는 루트 문서 참고" 안내를 추가합니다.
-- 프로필 입력값을 지원사업 matcher와 상권 analyzer가 더 잘 쓰도록 필드 정규화를 보강합니다.
+- **AI worker 전체 타임아웃 없음**: `ai/app/rabbitmq_worker.py`의 `orchestrator.run(...)`이 타임아웃 없이 await되고 `prefetch_count=1`이라, LLM 호출 한 번이 hang하면 큐 전체가 그 메시지에 막힙니다.
+- **백엔드 stuck-request 스윕 없음**: AI가 응답을 끝내 publish하지 않으면 `ChatRequestStatus`가 QUEUED/PROCESSING에 고정되어, 프론트 스피너가 SSE 1시간 타임아웃까지 안 풀립니다. `@Scheduled` 타임아웃 처리가 없습니다.
+- **GMS 호출 재시도 없음**: `ai/app/core/gms_client.py`는 단일 요청 후 `raise_for_status()`만 합니다. GMS 지연/오류 시 그대로 실패합니다.
+- **에이전트 "토론"은 일부 고정 문구**: `orchestrator._revision_message`가 challenge 시 LLM이 아니라 하드코딩 문구를 반환합니다. 실시간 다중턴 토론으로 설명하면 과장입니다.
+- **의도 라우팅이 키워드 하드코딩**: 동의어/의역("초기자금" 등)에 취약하고, "상권 진입 비용" 같은 표현은 오분류될 수 있습니다.
+- **외부 데이터 호출이 채팅 전송 경로에서 동기·무방비**: `AiChatExternalReferenceDataService.resolve()`가 try/catch·타임아웃 없이 추천/상권 분석을 동기 호출합니다. 외부 호출이 느리거나 예외면 해당 채팅 턴이 지연·실패합니다.
+- **지역/업종 파싱이 카페·서울에 편향**: 위 서비스의 업종은 "카페/커피/음식"만 인식(나머지 null), 지역 기본값은 "서울"+마포/연남만 처리합니다. 다른 업종·지역은 reference data가 비게 됩니다.
+- **커넥터 페이지네이션 없음**: K-Startup/기업마당/온통청년 모두 1페이지·100건 고정이라 100건 초과분은 수집되지 않습니다.
+- **데모 폴백이 실제 데이터를 가립니다**: 3개 소스 합계가 0이면 데모 4건이 주입됩니다(`SupportProgramService` `totalUpserted == 0`). 키 없는 개발환경에선 항상 데모로 동작합니다.
+- **추천 매칭이 `String.contains` 점수**: 제목에 "청년"만 있어도 나이와 무관하게 가점됩니다. 실제 자격 판정이 아닙니다. 추천도 `findAll()` 전체 스캔 후 자바에서 정렬합니다.
+- **RAG 기본 임베딩이 가짜**: 기본값이 해시 버킷 임베딩(`HashEmbeddingProvider`)이라 의미 유사도가 아닙니다. GMS 임베딩 provider를 명시해야 실제 의미 검색이 됩니다.
+- **내부 토큰 약한 기본값**: `InternalToolAuthService`가 기본 토큰을 코드에 두고 `.equals()`(상수시간 아님)로 비교합니다. 운영에서 override 필수.
+- **프론트 SSE 재연결 무한 고정 간격**: 1.2초 간격 무한 재시도(지수 백오프·하트비트 없음).
+
+## 10. 다음 작업 추천 (2026-06-13 점검 기준, 우선순위)
+
+### 🔴 치명 — 데모/운영 중 사용자 무한 대기 차단
+
+1. AI worker에 전체 타임아웃 추가: `asyncio.wait_for(orchestrator.run(...), timeout=N)`, 초과 시 FAILED 응답 publish. (`ai/app/rabbitmq_worker.py`)
+2. 백엔드 stuck-request 스윕: `@Scheduled`로 일정 시간(예: 5분) 초과 QUEUED/PROCESSING을 `markFailed` + SSE 통지.
+3. GMS 호출 재시도+백오프 추가, 실패 로깅. (`ai/app/core/gms_client.py`)
+
+### 🟠 높음 — 안정성·활용도
+
+4. 채팅 전송 경로의 외부 데이터 호출을 try/catch + 타임아웃으로 격리(실패 시 빈 externalData). (`AiChatExternalReferenceDataService`)
+5. 커넥터 페이지네이션 구현(100건 상한 제거).
+6. 업종·지역 파싱 일반화(카페·서울·연남 하드코딩 탈피, 매핑 테이블화).
+7. worker `prefetch_count` 상향/동시처리 또는 worker 다중화.
+8. 내부 토큰 하드코딩 기본값 제거 + `MessageDigest.isEqual` 상수시간 비교.
+
+### 🟡 중간 — 품질·신뢰성
+
+9. "토론" 답변을 LLM 생성으로 교체하거나, 최소한 고정 문구임을 명시. (`orchestrator._revision_message`)
+10. 의도 라우팅을 경량 LLM 분류로 보강(키워드는 폴백).
+11. 합성 단계에 모순 탐지(예: finance 자금부족 vs policy 적합없음 충돌 표시).
+12. 추천 매칭을 실제 자격 룰로 정교화 + `findByStatus("open")` DB 필터/인덱스.
+13. CSV import 배치화(N+1 제거, `saveAll`).
+14. RAG 기본 임베딩을 실제 임베딩으로 교체.
+15. AI 측 HTTP 클라이언트(`BackendToolClient` 등) 세션 재사용.
+
+### 🟢 낮음 — UX·운영
+
+16. Agent progress 이벤트 저장/리플레이로 새로고침 후 복원.
+17. 프론트 SSE 재연결 지수 백오프 + 하트비트.
+18. 채팅 히스토리 페이지네이션.
+19. 외부/내부 API 호출 구조적 로깅(현재 조용히 빈 리스트 반환).
+20. 데모 부트스트랩 엔드포인트(`seed import + support sync + demo store import` 일괄).
+
+### 문서/기존 후속
+
+- 프론트 채팅 응답에 `reference_data_used`, `tool_calls`, `evidence` 일부를 근거 패널로 노출.
+- `ai/README.md`에 RabbitMQ worker와 backend tool-call 설명 보강.
+- `backend/DATA_MVP_HANDOFF.md` 상단에 "구 데이터 MVP 문서, 최신 구조는 루트 문서 참고" 안내 추가.
+- 프로필 입력값을 matcher/analyzer가 더 잘 쓰도록 필드 정규화 보강.
 
 ## 11. AI 작업 후 갱신 체크리스트
 
@@ -267,6 +315,21 @@ AI coding assistant 또는 작업자는 작업 종료 전에 아래 항목을 �
 문서만 수정한 경우에도 "이번 작업 요약"과 "실행한 테스트"는 남깁니다.
 
 ## 12. 마지막 문서 갱신 기록
+
+```text
+작업일: 2026-06-13
+작업자: Claude (Claude Code)
+이번 작업 요약: 전체 코드 점검(멀티에이전트/외부 API/AI 판단/전체 플로우) 후 구조 문서와 제한사항·다음 작업 리스트를 실제 코드 기준으로 갱신
+수정한 주요 영역: 루트 PROJECT_STRUCTURE_HANDOFF.md(백엔드 모듈 전체·Agent 10종·라우팅/토론 메커니즘·API 표 확장·§10 해커톤 데모 흐름 연출 가이드 추가), CURRENT_STATUS.md(검증된 제한사항 추가·우선순위 개선 리스트·본 기록)
+추가/변경된 API: 없음(문서 표만 실제 엔드포인트에 맞게 확장)
+추가/변경된 환경변수: 없음
+실행한 테스트: 코드 변경 없음(문서만). 점검 과정에서 핵심 주장은 실제 소스 파일로 직접 재확인
+실패한 테스트와 이유: 해당 없음
+데모 영향: 없음(문서). 단, 표시된 🔴 치명 3건은 데모 안정성에 직접 영향 → 우선 처리 권장
+깨질 수 있는 부분: 없음
+다음 사람이 보면 좋은 파일: ai/app/rabbitmq_worker.py, ai/app/agents/orchestrator.py, backend .../aichat/application/AiChatExternalReferenceDataService.java, backend .../internal/InternalToolAuthService.java
+아직 안 한 일: 섹션 10의 개선 항목은 코드 미적용(문서화만 완료)
+```
 
 ```text
 작업일: 2026-06-10
