@@ -31,7 +31,7 @@ import {
 import { useChatMessageQueue } from '../chat/useChatMessageQueue'
 import { buildSimulationSavedReport } from '../reports/savedReportPayload'
 
-const steps = ['위치 탐색', '가정값 설정', '리포트 확인']
+const steps = ['위치 설정', '가정값 설정', '리포트 확인']
 const TARGET_FEATURE = 'SIMULATOR'
 const CURRENT_RESULT_TYPE = 'SIMULATION_REPORT'
 const GENERATE_REPORT_PROMPT = '현재 시뮬레이션 결과를 각 Agent가 함께 검토해서 기능 페이지에 표시할 최종 리포트로 정리해줘.'
@@ -57,6 +57,14 @@ const simulationReportFromReportData = (reportData) => {
   if (reportData?.metrics && reportData?.summary) return reportData
   if (reportData?.report?.metrics && reportData?.report?.summary) return reportData.report
   return null
+}
+
+// 가정값 제안 응답(저장 안 함)에서 가정값을 읽는다. shouldCreateResult 여부와 무관.
+const assumptionFromMessage = (message) => {
+  const payload = message?.metadata?.result?.payload
+  if (payload?.featureId !== 'simulator') return null
+  const assumption = payload?.reportData?.assumption
+  return assumption && typeof assumption === 'object' ? assumption : null
 }
 
 const Stepper = ({ step, onJump }) => (
@@ -97,6 +105,11 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
   const [location, setLocation] = useState(null)
   const [assumption, setAssumption] = useState(null)
   const [report, setReport] = useState(null)
+  const [suggestedAssumption, setSuggestedAssumption] = useState(null)
+  const [assumptionLoading, setAssumptionLoading] = useState(false)
+  const [savedReports, setSavedReports] = useState([])
+  const [savedMenuOpen, setSavedMenuOpen] = useState(false)
+  const savedMenuRef = useRef(null)
   const {
     messages,
     pushImmediate,
@@ -219,6 +232,11 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
         // 리포트 패널 갱신은 도착 즉시(채팅 말풍선 순서만 큐가 통제).
         applyAiReportData(nextReportData)
       }
+      const nextAssumption = assumptionFromMessage(nextMessage)
+      if (nextAssumption) {
+        setSuggestedAssumption(nextAssumption)
+        setAssumptionLoading(false)
+      }
       // 내 메시지는 즉시, 에이전트 답변은 큐를 거쳐 토론 뒤에 표시.
       if (nextMessage.role === 'user') {
         pushImmediate(nextMessage)
@@ -312,8 +330,47 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
     setStep(3)
   }
 
+  const refreshSavedReports = async () => {
+    try {
+      const response = await savedResultApi.list()
+      const items = (response?.results ?? []).filter(
+        (item) => String(item.sourceFeature ?? '').toLowerCase() === 'simulator',
+      )
+      setSavedReports(items)
+    } catch {
+      /* 저장 목록 조회 실패는 무시 */
+    }
+  }
+
+  const loadSavedReport = async (savedResultId) => {
+    setSavedMenuOpen(false)
+    try {
+      const detail = await savedResultApi.get(savedResultId)
+      const reportData = detail?.payload?.reportData
+      if (reportData) applyAiReportData(reportData)
+    } catch (error) {
+      setChatError(error.message ?? '저장한 결과를 불러오지 못했습니다.')
+    }
+  }
+
+  useEffect(() => {
+    refreshSavedReports()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const close = (event) => {
+      if (savedMenuRef.current && !savedMenuRef.current.contains(event.target)) {
+        setSavedMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
   const handleLocationSelect = (loc) => {
     setLocation(loc)
+    setSuggestedAssumption(null) // 위치가 바뀌면 가정값을 새 위치 기준으로 다시 받는다.
     setStep(2)
   }
 
@@ -369,7 +426,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
     setStep(3)
   }
 
-  const sendFeatureMessage = async (text, { hidden = false } = {}) => {
+  const sendFeatureMessage = async (text, { hidden = false, assumptionRequest = false } = {}) => {
     if (!room?.roomId) return null
     if (!hidden) setBusy(true)
     setChatError('')
@@ -380,7 +437,11 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
       const messageMetadata = { source: 'simulator-page', featureId: 'simulator' }
       if (hidden) {
         messageMetadata.hidden = true
-        messageMetadata.reportGeneration = true
+        if (assumptionRequest) {
+          messageMetadata.assumptionRequest = true
+        } else {
+          messageMetadata.reportGeneration = true
+        }
       }
       const response = await sendChatMessage(room.roomId, {
         userId: user?.id ?? null,
@@ -475,13 +536,26 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
         assumption,
         report,
       }))
-      go('saved')
+      await refreshSavedReports()
+      setSavedMenuOpen(true) // 저장한 결과를 우측 상단 드롭다운에서 바로 확인.
     } catch (error) {
       window.alert(error.message ?? '리포트를 저장하지 못했습니다.')
     } finally {
       setSavingReport(false)
     }
   }
+
+  // 가정값 단계 진입 시 AI(파이낸스)에게 가정값 제안을 요청해 폼을 자동 프리필한다.
+  useEffect(() => {
+    if (step !== 2 || !idea || !location || !room?.roomId) return
+    if (suggestedAssumption || assumptionLoading) return
+    setAssumptionLoading(true)
+    sendFeatureMessage('이 아이템과 위치 기준으로 시뮬레이션 가정값을 제안해줘.', {
+      hidden: true,
+      assumptionRequest: true,
+    }).catch(() => setAssumptionLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, idea, location, room?.roomId, suggestedAssumption, assumptionLoading])
 
   return (
     <main className={`feature-page simulator-feature-page ${showChat ? 'with-chat' : 'no-chat'}`}>
@@ -491,6 +565,42 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
             <div>
               <h1>창업 시뮬레이션</h1>
               <p>지도에서 위치를 고르고 지역 평균 임대료와 판매 가정을 반영해 첫 30일 손익을 예측합니다.</p>
+            </div>
+            <div className="sim-saved-menu" ref={savedMenuRef}>
+              <button
+                type="button"
+                className="sim-saved-trigger"
+                aria-expanded={savedMenuOpen}
+                onClick={() => setSavedMenuOpen((open) => !open)}
+              >
+                <Icon name="bookmark" size={15} />
+                저장한 결과{savedReports.length ? ` ${savedReports.length}` : ''}
+                <Icon name="chevron" size={14} />
+              </button>
+              {savedMenuOpen && (
+                <div className="sim-saved-dropdown">
+                  {savedReports.length === 0 ? (
+                    <p className="sim-saved-empty">저장한 결과가 아직 없어요.</p>
+                  ) : (
+                    savedReports.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="sim-saved-item"
+                        onClick={() => loadSavedReport(item.id)}
+                      >
+                        <b>{item.title}</b>
+                        {(item.createdAt || item.summary) && (
+                          <small>
+                            {item.createdAt ? item.createdAt.slice(0, 10) : ''}
+                            {item.summary ? ` · ${item.summary}` : ''}
+                          </small>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -502,9 +612,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
                 <div>
                   <span>선택한 창업 아이템</span>
                   <b>{idea.title}</b>
-                  <p>{idea.reason}</p>
                 </div>
-                {idea.score && <em>적합도 {idea.score}</em>}
               </div>
 
               <Stepper step={step} onJump={setStep} />
@@ -514,6 +622,8 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
                 <AssumptionForm
                   location={location}
                   idea={idea}
+                  suggested={suggestedAssumption}
+                  loading={assumptionLoading}
                   onBack={() => setStep(1)}
                   onRun={handleRunSimulation}
                 />
