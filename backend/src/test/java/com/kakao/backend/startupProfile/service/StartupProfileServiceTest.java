@@ -11,8 +11,10 @@ import com.kakao.backend.auth.service.AuthException;
 import com.kakao.backend.startupProfile.dto.StartupProfileRequest;
 import com.kakao.backend.startupProfile.dto.StartupProfileResponse;
 import com.kakao.backend.startupProfile.dto.StartupProfileStatusResponse;
+import com.kakao.backend.startupProfile.model.OperatingPeriod;
 import com.kakao.backend.startupProfile.model.PreferredBusinessType;
 import com.kakao.backend.startupProfile.model.StartupProfile;
+import com.kakao.backend.startupProfile.model.StartupStage;
 import com.kakao.backend.startupProfile.model.TeamStatus;
 import com.kakao.backend.startupProfile.repository.StartupProfileRepository;
 import com.kakao.backend.user.model.User;
@@ -53,12 +55,12 @@ class StartupProfileServiceTest {
         assertThat(response.profileCompleted()).isFalse();
         assertThat(response.requiresOnboarding()).isTrue();
         assertThat(response.missingFields()).containsExactly(
+                "stage",
                 "major",
                 "career",
                 "interestField",
                 "residenceRegion",
                 "businessRegion",
-                "initialBudget",
                 "teamStatus",
                 "preferredBusinessType",
                 "strengthTags");
@@ -69,6 +71,7 @@ class StartupProfileServiceTest {
         User user = user();
         StartupProfile profile = StartupProfile.create(user);
         profile.update(
+                StartupStage.PRE_STARTUP,
                 "컴퓨터공학",
                 "",
                 "푸드테크",
@@ -77,7 +80,10 @@ class StartupProfileServiceTest {
                 10_000_000,
                 TeamStatus.SOLO,
                 PreferredBusinessType.ONLINE,
-                "기획, 실행력");
+                "기획, 실행력",
+                null,
+                null,
+                null);
         user.updateStartupProfile(profile);
         given(userRepository.findById(1L)).willReturn(Optional.of(user));
         given(startupProfileRepository.findByUserId(1L)).willReturn(Optional.of(profile));
@@ -125,6 +131,7 @@ class StartupProfileServiceTest {
         given(startupProfileRepository.save(profile)).willReturn(profile);
 
         StartupProfileRequest request = new StartupProfileRequest(
+                StartupStage.PRE_STARTUP,
                 "디자인",
                 "브랜딩 경험",
                 "로컬",
@@ -133,7 +140,10 @@ class StartupProfileServiceTest {
                 5_000_000,
                 TeamStatus.HAS_TEAM,
                 PreferredBusinessType.OFFLINE,
-                "콘텐츠, 브랜딩");
+                "콘텐츠, 브랜딩",
+                null,
+                null,
+                null);
 
         StartupProfileResponse response = startupProfileService.saveProfile(1L, request);
 
@@ -158,6 +168,7 @@ class StartupProfileServiceTest {
         given(userRepository.findById(1L)).willReturn(Optional.of(user()));
         given(startupProfileRepository.findByUserId(1L)).willReturn(Optional.empty());
         StartupProfileRequest request = new StartupProfileRequest(
+                StartupStage.PRE_STARTUP,
                 "컴퓨터공학",
                 "<script>alert(1)</script>",
                 "푸드테크",
@@ -166,7 +177,10 @@ class StartupProfileServiceTest {
                 10_000_000,
                 TeamStatus.SOLO,
                 PreferredBusinessType.ONLINE,
-                "기획, 실행력");
+                "기획, 실행력",
+                null,
+                null,
+                null);
 
         assertThatThrownBy(() -> startupProfileService.saveProfile(1L, request))
                 .isInstanceOf(AuthException.class)
@@ -181,6 +195,7 @@ class StartupProfileServiceTest {
         given(userRepository.findById(1L)).willReturn(Optional.of(user()));
         given(startupProfileRepository.findByUserId(1L)).willReturn(Optional.empty());
         StartupProfileRequest request = new StartupProfileRequest(
+                StartupStage.PRE_STARTUP,
                 "컴퓨터공학",
                 "개발 경험",
                 "푸드테크",
@@ -189,7 +204,103 @@ class StartupProfileServiceTest {
                 -1,
                 TeamStatus.SOLO,
                 PreferredBusinessType.ONLINE,
-                "기획, 실행력");
+                "기획, 실행력",
+                null,
+                null,
+                null);
+
+        assertThatThrownBy(() -> startupProfileService.saveProfile(1L, request))
+                .isInstanceOf(AuthException.class)
+                .extracting("status")
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+
+        verify(startupProfileRepository, never()).save(any(StartupProfile.class));
+    }
+
+    @Test
+    void 창업_후_프로필은_현재_아이템_정보로_저장한다() {
+        User user = user();
+        given(userRepository.findById(1L)).willReturn(Optional.of(user));
+        given(startupProfileRepository.findByUserId(1L)).willReturn(Optional.empty());
+        given(startupProfileRepository.save(any(StartupProfile.class))).willAnswer(invocation -> {
+            StartupProfile profile = invocation.getArgument(0);
+            profile.setId(1L);
+            return profile;
+        });
+
+        StartupProfileRequest request = new StartupProfileRequest(
+                StartupStage.POST_STARTUP,
+                "시각디자인",
+                "카페 매니저 1년",
+                "F&B",
+                "부산",
+                "부산 해운대구 구남로",
+                null,
+                TeamStatus.SOLO,
+                PreferredBusinessType.LOCAL_STORE,
+                "브랜딩, SNS",
+                "구남로 수제 쿠키",
+                "카페",
+                OperatingPeriod.SIX_TO_12M);
+
+        StartupProfileResponse response = startupProfileService.saveProfile(1L, request);
+
+        ArgumentCaptor<StartupProfile> profileCaptor = ArgumentCaptor.forClass(StartupProfile.class);
+        verify(startupProfileRepository).save(profileCaptor.capture());
+        StartupProfile savedProfile = profileCaptor.getValue();
+
+        assertThat(response.stage()).isEqualTo("POST_STARTUP");
+        assertThat(response.currentItemName()).isEqualTo("구남로 수제 쿠키");
+        assertThat(response.currentIndustry()).isEqualTo("카페");
+        assertThat(response.operatingPeriod()).isEqualTo("SIX_TO_12M");
+        assertThat(response.initialBudget()).isNull();
+        assertThat(savedProfile.getInitialBudget()).isNull();
+        assertThat(savedProfile.getStage()).isEqualTo(StartupStage.POST_STARTUP);
+    }
+
+    @Test
+    void 창업_후_프로필에_아이템_정보가_없으면_실패한다() {
+        given(userRepository.findById(1L)).willReturn(Optional.of(user()));
+        given(startupProfileRepository.findByUserId(1L)).willReturn(Optional.empty());
+        StartupProfileRequest request = new StartupProfileRequest(
+                StartupStage.POST_STARTUP,
+                "시각디자인",
+                "카페 매니저 1년",
+                "F&B",
+                "부산",
+                "부산 해운대구 구남로",
+                null,
+                TeamStatus.SOLO,
+                PreferredBusinessType.LOCAL_STORE,
+                "브랜딩, SNS",
+                "",
+                "카페",
+                OperatingPeriod.SIX_TO_12M);
+
+        assertThatThrownBy(() -> startupProfileService.saveProfile(1L, request))
+                .isInstanceOf(AuthException.class)
+                .extracting("status")
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+
+        verify(startupProfileRepository, never()).save(any(StartupProfile.class));
+    }
+
+    @Test
+    void 창업_단계가_없으면_실패한다() {
+        StartupProfileRequest request = new StartupProfileRequest(
+                null,
+                "컴퓨터공학",
+                "개발 경험",
+                "푸드테크",
+                "서울",
+                "서울 강남구",
+                10_000_000,
+                TeamStatus.SOLO,
+                PreferredBusinessType.ONLINE,
+                "기획, 실행력",
+                null,
+                null,
+                null);
 
         assertThatThrownBy(() -> startupProfileService.saveProfile(1L, request))
                 .isInstanceOf(AuthException.class)
@@ -217,6 +328,7 @@ class StartupProfileServiceTest {
 
     private StartupProfileRequest validRequest() {
         return new StartupProfileRequest(
+                StartupStage.PRE_STARTUP,
                 "컴퓨터공학",
                 "개발 경험",
                 "푸드테크",
@@ -225,6 +337,9 @@ class StartupProfileServiceTest {
                 10_000_000,
                 TeamStatus.SOLO,
                 PreferredBusinessType.ONLINE,
-                "기획, 실행력");
+                "기획, 실행력",
+                null,
+                null,
+                null);
     }
 }

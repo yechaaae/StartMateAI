@@ -35,6 +35,11 @@ public class StartupProfile extends BaseTimeEntity {
     @JoinColumn(name = "user_id", nullable = false, unique = true)
     private User user;
 
+    // 창업 전(예비창업자)인지 창업 후(운영 중)인지 구분합니다.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "stage")
+    private StartupStage stage;
+
     // 전공 또는 주 학습/전문 분야입니다.
     @Column(name = "major")
     private String major;
@@ -74,6 +79,19 @@ public class StartupProfile extends BaseTimeEntity {
     @Column(name = "strength_tags", columnDefinition = "text")
     private String strengthTags;
 
+    // 창업 후 사용자가 현재 운영 중인 아이템/사업명입니다.
+    @Column(name = "current_item_name")
+    private String currentItemName;
+
+    // 창업 후 사용자가 운영 중인 업종입니다.
+    @Column(name = "current_industry")
+    private String currentIndustry;
+
+    // 창업 후 사용자의 현재 사업 운영 기간입니다.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "operating_period")
+    private OperatingPeriod operatingPeriod;
+
     // 진단 결과로 계산된 창업 적합도 점수입니다.
     @Column(name = "suitability_score")
     private Integer suitabilityScore;
@@ -96,7 +114,9 @@ public class StartupProfile extends BaseTimeEntity {
     }
 
     // 온보딩에서 입력받은 창업 프로필 값을 반영합니다.
+    // 창업 전이면 initialBudget이, 창업 후이면 현재 아이템 정보가 채워지고 나머지는 null로 들어옵니다.
     public void update(
+            StartupStage stage,
             String major,
             String career,
             String interestField,
@@ -105,8 +125,12 @@ public class StartupProfile extends BaseTimeEntity {
             Integer initialBudget,
             TeamStatus teamStatus,
             PreferredBusinessType preferredBusinessType,
-            String strengthTags
+            String strengthTags,
+            String currentItemName,
+            String currentIndustry,
+            OperatingPeriod operatingPeriod
     ) {
+        this.stage = stage;
         this.major = major;
         this.career = career;
         this.interestField = interestField;
@@ -116,5 +140,8 @@ public class StartupProfile extends BaseTimeEntity {
         this.teamStatus = teamStatus;
         this.preferredBusinessType = preferredBusinessType;
         this.strengthTags = strengthTags;
+        this.currentItemName = currentItemName;
+        this.currentIndustry = currentIndustry;
+        this.operatingPeriod = operatingPeriod;
     }
 }
