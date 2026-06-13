@@ -29,6 +29,7 @@ export const Report = ({
   supportHasSearched,
   onRunSupportSearch,
   savedSupportPrograms,
+  onSaveSupportProgram,
   onDeleteSavedSupportProgram,
   focusedSectionTitle,
   onFocusSection,
@@ -68,6 +69,7 @@ export const Report = ({
         supportHasSearched={supportHasSearched}
         onRunSupportSearch={onRunSupportSearch}
         savedSupportPrograms={savedSupportPrograms}
+        onSaveSupportProgram={onSaveSupportProgram}
         onDeleteSavedSupportProgram={onDeleteSavedSupportProgram}
       />
     )
