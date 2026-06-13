@@ -4701,9 +4701,9 @@
 }
 
 .support-program-card.selected {
-  border-color: #cfd8ff;
-  background: #f8f9ff;
-  box-shadow: 0 0 0 1px rgba(79, 107, 240, .1);
+  border-color: var(--line);
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(31, 38, 64, .05);
 }
 
 .support-program-top h4 {
