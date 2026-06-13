@@ -74,10 +74,10 @@ export const PlanReport = ({
           </details>
         )}
 
-        {data.sections.map(([title, body]) => {
+        {data.sections.map(([title, body], index) => {
           const selected = focusedSectionTitle === title
           return (
-            <details key={title} open={title.startsWith('1')}>
+            <details key={title} open={index === 0 || title.startsWith('1')}>
               <summary>
                 <button
                   type="button"

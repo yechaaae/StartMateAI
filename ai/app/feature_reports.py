@@ -1087,7 +1087,7 @@ def _plan_report(results: dict[str, AgentResponse]) -> dict[str, Any]:
         "target": str(plan.get("target") or _plan_target(results)),
         "sections": [
             [str(item.get("title") or f"{index}. 섹션"), str(item.get("body") or "내용을 보완하세요.")]
-            for index, item in enumerate(sections[:6], start=1)
+            for index, item in enumerate(sections[:12], start=1)
             if isinstance(item, dict)
         ] or generated_sections or [
             ["1. 사업 개요", str(plan.get("recommendation") or "선택된 아이템과 검토 근거를 기준으로 사업 방향을 정리하세요.")],
