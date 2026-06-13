@@ -33,7 +33,9 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addMapping("/**")
                 .allowedOriginPatterns(
                         "http://localhost:*",
-                        "http://127.0.0.1:*")
+                        "http://127.0.0.1:*",
+                        "https://h14k001.p.ssafy.io",
+                        "http://h14k001.p.ssafy.io")
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true);
