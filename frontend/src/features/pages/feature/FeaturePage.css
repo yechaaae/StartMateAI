@@ -39,6 +39,11 @@
 }
 
 .feature-page-header .report-title-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
