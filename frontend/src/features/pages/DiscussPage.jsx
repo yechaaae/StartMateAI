@@ -26,11 +26,18 @@ import {
   normalizeAgentProgressMessage,
   normalizeChatMessage,
   normalizeStatusEvent,
-  upsertMessage,
 } from '../chat/chatMappers'
+import { useChatMessageQueue } from '../chat/useChatMessageQueue'
 
 export const DiscussPage = ({ user, go }) => {
-  const [items, setItems] = useState([])
+  const {
+    messages: items,
+    pushImmediate,
+    enqueue,
+    flush,
+    reset: resetItems,
+    isDraining,
+  } = useChatMessageQueue([])
   const [rooms, setRooms] = useState([])
   const [room, setRoom] = useState(null)
   const [connection, setConnection] = useState('idle')
@@ -118,7 +125,7 @@ export const DiscussPage = ({ user, go }) => {
         setError('')
 
         if (reset) {
-          setItems([])
+          resetItems([])
           setStatusMap({})
           setActiveProgressMap(new Map())
           setConnection('connecting')
@@ -126,7 +133,7 @@ export const DiscussPage = ({ user, go }) => {
 
         const history = await getChatMessages(room.roomId)
         if (!active) return
-        setItems(history.messages.map(normalizeChatMessage))
+        resetItems(history.messages.map(normalizeChatMessage))
       } catch (nextError) {
         if (!active) return
         setError(nextError.message ?? '이전 대화를 불러오지 못했습니다.')
@@ -149,7 +156,13 @@ export const DiscussPage = ({ user, go }) => {
       if (!active) return
       const payload = JSON.parse(event.data)
       if (!payload.message) return
-      setItems((prev) => upsertMessage(prev, normalizeChatMessage(payload.message)))
+      const message = normalizeChatMessage(payload.message)
+      // 내 메시지는 즉시, 에이전트 최종 답변은 큐를 거쳐 토론 뒤에 표시.
+      if (message.role === 'user') {
+        pushImmediate(message)
+      } else {
+        enqueue(message)
+      }
     })
 
     eventSource.addEventListener('chat-status', (event) => {
@@ -172,7 +185,7 @@ export const DiscussPage = ({ user, go }) => {
       setActiveProgressMap((prev) => upsertActiveProgress(prev, nextProgress))
 
       if (nextProgress.viewType !== 'status' && nextProgress.agent && nextProgress.message) {
-        setItems((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
+        enqueue(normalizeAgentProgressMessage(nextProgress))
       }
     })
 
@@ -228,6 +241,8 @@ export const DiscussPage = ({ user, go }) => {
     if (sending || !room?.roomId) return
     setSending(true)
     setError('')
+    // 이전 턴이 아직 드립 중이면 즉시 비워 현재로 스냅하고 새 턴 시작.
+    flush()
 
     try {
       const messageMetadata = { source: 'discuss-page' }
@@ -242,7 +257,7 @@ export const DiscussPage = ({ user, go }) => {
       })
 
       messageMetadata.requestId = response.requestId
-      setItems((prev) => upsertMessage(prev, {
+      pushImmediate({
         id: response.messageId,
         role: 'user',
         senderType: response.senderType,
@@ -252,7 +267,7 @@ export const DiscussPage = ({ user, go }) => {
         text: response.content,
         metadata: messageMetadata,
         createdAt: null,
-      }))
+      })
 
       setStatusMap((prev) => ({
         ...prev,
@@ -430,7 +445,7 @@ export const DiscussPage = ({ user, go }) => {
         )}
         {items.map((item) => <ChatRow key={item.id} message={item} onOpenReport={go} />)}
         <RotatingStatusProgress progresses={statusProgresses} />
-        {typing && <TypingRow agent={typing} />}
+        {(typing || isDraining) && <TypingRow agent={typing || 'profile'} />}
       </div>
 
       {!!latestStatus && latestStatus.status === 'FAILED' && (

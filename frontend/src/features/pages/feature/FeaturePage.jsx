@@ -35,8 +35,8 @@ import {
   normalizeAgentProgressMessage,
   normalizeChatMessage,
   normalizeStatusEvent,
-  upsertMessage,
 } from '../../chat/chatMappers'
+import { useChatMessageQueue } from '../../chat/useChatMessageQueue'
 import { Report } from '../../reports/Report'
 import { buildOperationFeedbackPayload } from '../../reports/operationFeedbackLogic'
 import { buildFeatureSavedReport } from '../../reports/savedReportPayload'
@@ -149,7 +149,14 @@ export const FeaturePage = ({
   ))
   const [focusedSectionTitle, setFocusedSectionTitle] = useState(featureSeed.focusedSectionTitle)
   const [planGoal, setPlanGoal] = useState(featureSeed.planGoal)
-  const [messages, setMessages] = useState([])
+  const {
+    messages,
+    pushImmediate,
+    enqueue,
+    flush,
+    reset: resetMessages,
+    isDraining,
+  } = useChatMessageQueue([])
   const [rooms, setRooms] = useState([])
   const [room, setRoom] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -313,7 +320,7 @@ export const FeaturePage = ({
         }
         setError('')
         if (reset) {
-          setMessages([])
+          resetMessages([])
           setStatusMap({})
           setActiveProgressMap(new Map())
           setConnection('connecting')
@@ -324,7 +331,7 @@ export const FeaturePage = ({
           return
         }
         const nextMessages = history.messages.map(normalizeChatMessage)
-        setMessages(nextMessages)
+        resetMessages(nextMessages)
       } catch (nextError) {
         if (!active) {
           return
@@ -361,10 +368,16 @@ export const FeaturePage = ({
       // 운영 피드백 폼은 사용자 입력이 원본이라 AI 응답으로 덮어쓰지 않는다.
       const nextReport = id === 'operation' ? null : reportDataFromMessage(nextMessage, id)
       if (nextReport) {
+        // 리포트 패널 갱신은 도착 즉시(채팅 말풍선 순서만 큐가 통제).
         applyReportData(nextReport)
         setAiReportStatus('ready')
       }
-      setMessages((prev) => upsertMessage(prev, nextMessage))
+      // 내 메시지는 즉시, 에이전트 답변은 큐를 거쳐 토론 뒤에 표시.
+      if (nextMessage.role === 'user') {
+        pushImmediate(nextMessage)
+      } else {
+        enqueue(nextMessage)
+      }
     })
 
     eventSource.addEventListener('chat-status', (event) => {
@@ -405,7 +418,7 @@ export const FeaturePage = ({
         return
       }
       if (nextProgress.viewType !== 'status' && nextProgress.agent && nextProgress.message) {
-        setMessages((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
+        enqueue(normalizeAgentProgressMessage(nextProgress))
       }
     })
 
@@ -538,6 +551,8 @@ export const FeaturePage = ({
       setBusy(true)
     }
     setError('')
+    // 이전 턴이 아직 드립 중이면 즉시 비워 현재로 스냅하고 새 턴 시작.
+    flush()
 
     try {
       const messageMetadata = { source: 'feature-page', featureId: id }
@@ -567,7 +582,7 @@ export const FeaturePage = ({
         })
       } else {
         messageMetadata.requestId = response.requestId
-        setMessages((prev) => upsertMessage(prev, {
+        pushImmediate({
           id: response.messageId,
           role: 'user',
           senderType: response.senderType,
@@ -577,7 +592,7 @@ export const FeaturePage = ({
           text: response.content,
           metadata: messageMetadata,
           createdAt: null,
-        }))
+        })
 
         setStatusMap((prev) => ({
           ...prev,
@@ -1009,7 +1024,7 @@ export const FeaturePage = ({
             .filter((message) => !message.metadata?.hidden)
             .map((message) => <ChatRow key={message.id} message={message} onOpenReport={go} />)}
           <RotatingStatusProgress progresses={statusProgresses} />
-          {typing && <TypingRow agent={typing} />}
+          {(typing || isDraining) && <TypingRow agent={typing || feature.agent} />}
         </div>
 
         {!!latestStatus && latestStatus.status === 'FAILED' && (
