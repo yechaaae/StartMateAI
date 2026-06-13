@@ -129,7 +129,9 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # 서버: 기본값 /etc/letsencrypt(인증서 있음) -> HTTPS 모드.
+      # 로컬: .env에 LETSENCRYPT_DIR=./frontend/certs-local 처럼 빈 폴더를 지정하면 HTTP 모드로 동작.
+      - ${LETSENCRYPT_DIR:-/etc/letsencrypt}:/etc/letsencrypt:ro
 
 volumes:
   mysql-data:

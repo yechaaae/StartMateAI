@@ -12,9 +12,14 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# 인증서 유무에 따라 entrypoint가 둘 중 하나를 conf.d/default.conf로 복사한다.
+COPY nginx.http.conf /etc/nginx/available/http.conf
+COPY nginx.https.conf /etc/nginx/available/https.conf
+COPY docker-entrypoint.sh /docker-entrypoint-tls.sh
+RUN chmod +x /docker-entrypoint-tls.sh
+
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80 443
 
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/docker-entrypoint-tls.sh"]
