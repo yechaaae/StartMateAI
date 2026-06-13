@@ -1,6 +1,6 @@
 import { agents } from '../../shared/data/agents'
 
-export const StatusProgressRow = ({ progress }) => {
+export const StatusProgressRow = ({ progress, variant }) => {
   if (!progress?.message) {
     return null
   }
@@ -10,8 +10,10 @@ export const StatusProgressRow = ({ progress }) => {
     ? `${progress.agent.label} 에이전트`
     : `${agent.label} 에이전트`
 
+  const className = variant ? `chat-progress-status ${variant}` : 'chat-progress-status'
+
   return (
-    <div className="chat-progress-status" aria-live="polite">
+    <div className={className} aria-live="polite">
       <span className="chat-progress-status-agent">{displayName}</span>
       <span className="chat-progress-status-message">{progress.message}</span>
     </div>
