@@ -2539,10 +2539,22 @@ class OrchestratorAgent:
             or self._dict_at(context, "ideaContext")
         )
         plan_draft = self._dict_at(current_result, "planDraft")
+        # 사용자가 붙여넣은 공고문(있으면). {text} 객체 또는 문자열 둘 다 허용한다.
+        announcement_raw = current_result.get("announcement")
+        if announcement_raw is None:
+            announcement_raw = plan_context.get("announcement")
+        if isinstance(announcement_raw, dict):
+            announcement = str(announcement_raw.get("text") or "").strip()
+        elif isinstance(announcement_raw, str):
+            announcement = announcement_raw.strip()
+        else:
+            announcement = ""
+        announcement_title = announcement.splitlines()[0].strip()[:80] if announcement else ""
         target = (
             plan_context.get("target")
             or plan_draft.get("target")
             or support_program.get("title")
+            or announcement_title
             or "창업 지원사업"
         )
         return PlanRequest(
@@ -2552,6 +2564,7 @@ class OrchestratorAgent:
             support_program=support_program,
             focused_section=self._dict_at(plan_context, "focusedSection") or self._dict_at(current_result, "focusedSection"),
             goal=str(plan_context.get("planGoal") or current_result.get("planGoal") or "ALIGN_SUPPORT"),
+            announcement=announcement,
             context=context,
         )
 

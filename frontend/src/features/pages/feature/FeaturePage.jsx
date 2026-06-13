@@ -150,6 +150,8 @@ export const FeaturePage = ({
   ))
   const [focusedSectionTitle, setFocusedSectionTitle] = useState(featureSeed.focusedSectionTitle)
   const [planGoal, setPlanGoal] = useState(featureSeed.planGoal)
+  // 사업계획서 기능에서 사용자가 붙여넣는 공고문(있으면 그 내용에 맞춰 초안을 재생성한다).
+  const [announcement, setAnnouncement] = useState('')
   const {
     messages,
     pushImmediate,
@@ -504,10 +506,12 @@ export const FeaturePage = ({
       supportRegionBasis,
       focusedSectionTitle,
       planGoal,
+      announcement,
       workspaceContext,
       startupProfile,
     }),
     [
+      announcement,
       data,
       focusedSectionTitle,
       id,
@@ -524,7 +528,7 @@ export const FeaturePage = ({
   )
   const resolvedIdeaId = workspaceContext?.selectedIdea?.rank ?? selectedIdeaRank ?? null
 
-  const sendFeatureMessage = async (text, { hidden = false } = {}) => {
+  const sendFeatureMessage = async (text, { hidden = false, currentResultOverride = null } = {}) => {
     if (!room?.roomId) {
       return null
     }
@@ -551,7 +555,9 @@ export const FeaturePage = ({
         currentResultId: null,
         selectedIdeaId: resolvedIdeaId,
         candidateAgents: [],
-        currentResult,
+        // 칩/공고처럼 방금 바뀐 입력으로 즉시 재생성할 때는 최신 값으로 만든 결과를 직접 넘긴다
+        // (memo된 currentResult는 setState 직후 한 렌더 동안 이전 값이라 stale).
+        currentResult: currentResultOverride ?? currentResult,
       })
 
       if (hidden) {
@@ -739,6 +745,34 @@ export const FeaturePage = ({
       .catch(() => setAiReportStatus('error'))
   }
 
+  // 사업계획서: 붙여넣은 공고문에 맞춰 초안을 재생성한다.
+  // setState 직후의 stale memo를 피하려고, 입력값으로 만든 currentResult를 직접 넘긴다.
+  const handleSubmitAnnouncement = (text) => {
+    if (!room?.roomId || aiReportStatus === 'loading') {
+      return
+    }
+    const trimmed = (text ?? '').trim()
+    setAnnouncement(trimmed)
+    const override = buildCurrentResult({
+      featureId: id,
+      data,
+      selectedIdeaRank,
+      selectedSupportTitle,
+      selectedOperationSuggestionTitle,
+      supportSearchMode,
+      supportUserGoal,
+      supportRegionBasis,
+      focusedSectionTitle,
+      planGoal,
+      announcement: trimmed,
+      workspaceContext,
+      startupProfile,
+    })
+    setAiReportStatus('loading')
+    sendFeatureMessage(GENERATE_REPORT_PROMPT, { hidden: true, currentResultOverride: override })
+      .catch(() => setAiReportStatus('error'))
+  }
+
   // 직접 입력한 아이템으로 새 워크스페이스를 생성한다(워크스페이스 = 아이템).
   const handleItemInputSubmit = (item) => {
     onCreateWorkspace?.(item)
@@ -832,6 +866,9 @@ export const FeaturePage = ({
             onFocusSection={setFocusedSectionTitle}
             planGoal={planGoal}
             onChangePlanGoal={setPlanGoal}
+            announcement={announcement}
+            onSubmitAnnouncement={handleSubmitAnnouncement}
+            announcementLoading={aiReportStatus === 'loading'}
             onRequestOperationFeedback={handleOperationFeedbackRequest}
             operationFeedbackSaving={savingReport}
           />

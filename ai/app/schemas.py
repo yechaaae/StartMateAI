@@ -100,6 +100,7 @@ class PlanRequest(BaseModel):
     support_program: dict[str, Any] = Field(default_factory=dict)
     focused_section: dict[str, Any] = Field(default_factory=dict)
     goal: str = "ALIGN_SUPPORT"
+    announcement: str = ""
     context: dict[str, Any] = Field(default_factory=dict)
 
 

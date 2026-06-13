@@ -34,6 +34,9 @@ export const Report = ({
   onFocusSection,
   planGoal,
   onChangePlanGoal,
+  announcement,
+  onSubmitAnnouncement,
+  announcementLoading,
   onRequestOperationFeedback,
   operationFeedbackSaving,
 }) => {
@@ -80,6 +83,9 @@ export const Report = ({
         onFocusSection={onFocusSection}
         planGoal={planGoal}
         onChangePlanGoal={onChangePlanGoal}
+        announcement={announcement}
+        onSubmitAnnouncement={onSubmitAnnouncement}
+        announcementLoading={announcementLoading}
       />
     )
   }

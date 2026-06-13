@@ -164,6 +164,7 @@ export const buildCurrentResult = ({
   supportRegionBasis,
   focusedSectionTitle,
   planGoal,
+  announcement = '',
   workspaceContext = {},
   startupProfile = null,
 }) => {
@@ -220,6 +221,7 @@ export const buildCurrentResult = ({
     const sections = buildPlanSections(data)
     const focusedSection = sections.find((section) => section.title === focusedSectionTitle) ?? sections[0] ?? null
 
+    const trimmedAnnouncement = (announcement ?? '').trim()
     return {
       startupProfile,
       planGoal,
@@ -228,6 +230,7 @@ export const buildCurrentResult = ({
         sections,
       },
       focusedSection,
+      announcement: trimmedAnnouncement ? { text: trimmedAnnouncement } : null,
       selectedSupportProgram: linkedSupportProgram,
       ideaContext: linkedIdea,
       profileContext: {

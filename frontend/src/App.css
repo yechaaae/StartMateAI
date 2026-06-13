@@ -4778,6 +4778,32 @@ summary {
   color: var(--brand);
 }
 
+.plan-announce-block {
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  background: var(--surface-2, #f7f8fa);
+  border: 1px solid var(--line, #e6e8ec);
+  border-radius: 12px;
+}
+
+.plan-announce-block > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.plan-announce-help {
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+
+.plan-announce-block .onboarding-modal-actions {
+  margin-top: 10px;
+}
+
 details p {
   color: var(--ink-2);
   line-height: 1.75;
