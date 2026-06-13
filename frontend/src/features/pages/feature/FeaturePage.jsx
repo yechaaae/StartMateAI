@@ -12,7 +12,7 @@ import {
   resolveTypingAgent,
   upsertActiveProgress,
 } from '../../chat/chatProgressState'
-import { StatusProgressRow } from '../../chat/StatusProgressRow'
+import { RotatingStatusProgress } from '../../chat/RotatingStatusProgress'
 import { TypingRow } from '../../chat/TypingRow'
 import { runSupportProgramSearch } from '../../reports/supportProgramSearch'
 import {
@@ -998,7 +998,7 @@ export const FeaturePage = ({
           {messages
             .filter((message) => !message.metadata?.hidden)
             .map((message) => <ChatRow key={message.id} message={message} onOpenReport={go} />)}
-          {statusProgresses.map((progress) => <StatusProgressRow key={progress.id} progress={progress} />)}
+          <RotatingStatusProgress progresses={statusProgresses} />
           {typing && <TypingRow agent={typing} />}
         </div>
 
