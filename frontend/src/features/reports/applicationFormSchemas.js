@@ -52,7 +52,6 @@ export const GYEONGBUK_APPLICATION_FORM = {
       label: '창업 아이템(사회적가치를 담아 간단하게 작성)',
       type: 'textarea',
       required: true,
-      aiSource: '아이템',
     },
     {
       key: 'motivation',

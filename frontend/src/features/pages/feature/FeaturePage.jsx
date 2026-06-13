@@ -584,13 +584,11 @@ export const FeaturePage = ({
     // 현재 워크스페이스(=선택한 아이템)를 최우선으로 반영한다. featureWorkspace는 비어 있을 수 있다.
     const idea = workspace?.selectedIdea ?? workspaceContext?.selectedIdea ?? null
     const ideaTitle = idea?.title || workspace?.name || startupProfile?.currentItemName || '준비 중인 창업 아이템'
-    const ideaReason = idea?.reason || workspace?.recommend || ''
     const isExisting = Boolean(startupProfile?.currentItemName && startupProfile.currentItemName.trim())
     return {
       startupStatus: isExisting ? '기 창업자' : '예비창업자',
-      item:
-        `${ideaTitle}${ideaReason ? `\n\n${ideaReason}` : ''}\n\n`
-        + '지역 주민과 이웃에게 도움이 되는 사회적 가치를 중심에 두고, 수익과 사회적 기여를 함께 추구하는 모델로 운영할 계획입니다.',
+      // 창업 아이템 칸에는 워크스페이스 제목만 넣는다.
+      item: ideaTitle,
       motivation:
         `${ideaTitle} 창업을 준비하며 사회적경제에 대한 기초·실무 역량과 사업화 자금이 필요합니다. `
         + '경북형 사회적경제 창업학교의 실무 교육(20시간), 우수팀 사업화 자금(최대 5천만원), '
@@ -913,8 +911,10 @@ export const FeaturePage = ({
             <p>{feature.sub}</p>
           </div>
           <div className="report-title-actions">
-            {id === 'plan' ? (
-              <div className="plan-header-meta">
+            {id === 'sns' ? null : (
+              <>
+                {id === 'plan' && (
+                <div className="plan-header-meta">
                 <div>
                   <small>보조할 사업</small>
                   <b>{data?.target || '선택한 사업'}</b>
@@ -931,8 +931,7 @@ export const FeaturePage = ({
                   </b>
                 </div>
               </div>
-            ) : id === 'sns' ? null : (
-              <>
+                )}
                 <div className="sim-saved-menu" ref={savedMenuRef}>
                   <button
                     type="button"
