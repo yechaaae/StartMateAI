@@ -52,12 +52,12 @@ services:
       OPENAI_EMBEDDING_PATH: ${OPENAI_EMBEDDING_PATH:-/v1/embeddings}
       OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
       GMS_API_KEY: ${GMS_API_KEY:-}
-      GMS_BASE_URL: ${GMS_BASE_URL:-https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com}
-      GMS_CHAT_PATH: ${GMS_CHAT_PATH:-/v1beta/models/gemini-2.5-flash:generateContent}
-      GMS_MODEL: ${GMS_MODEL:-gemini-2.5-flash}
-      GMS_API_KEY_HEADER: ${GMS_API_KEY_HEADER:-x-goog-api-key}
+      GMS_BASE_URL: ${GMS_BASE_URL:-https://gms.ssafy.io/gmsapi/api.openai.com}
+      GMS_CHAT_PATH: ${GMS_CHAT_PATH:-/v1/chat/completions}
+      GMS_MODEL: ${GMS_MODEL:-gpt-5.4-nano}
+      GMS_API_KEY_HEADER: ${GMS_API_KEY_HEADER:-Authorization}
       GMS_API_KEY_QUERY_PARAM: ${GMS_API_KEY_QUERY_PARAM:-}
-      GMS_AUTH_SCHEME: ${GMS_AUTH_SCHEME:-}
+      GMS_AUTH_SCHEME: ${GMS_AUTH_SCHEME:-Bearer}
       GMS_TIMEOUT_SECONDS: ${GMS_TIMEOUT_SECONDS:-30}
       LAW_OPEN_API_OC: ${LAW_OPEN_API_OC:-}
       SPRING_RABBITMQ_HOST: ${SPRING_RABBITMQ_HOST:-rabbitmq}
