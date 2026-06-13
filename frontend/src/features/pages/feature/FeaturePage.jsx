@@ -5,15 +5,13 @@ import { features } from '../../../shared/data/features'
 import { AgentAvatar } from '../../../shared/components/AgentAvatar'
 import { Icon } from '../../../shared/components/Icon'
 import { ChatInput } from '../../chat/ChatInput'
-import { ChatRow } from '../../chat/ChatRow'
+import { FloatingChat } from '../../chat/FloatingChat'
 import {
   clearActiveProgressByRequest,
   listActiveProgresses,
   resolveTypingAgent,
   upsertActiveProgress,
 } from '../../chat/chatProgressState'
-import { RotatingStatusProgress } from '../../chat/RotatingStatusProgress'
-import { TypingRow } from '../../chat/TypingRow'
 import { runSupportProgramSearch } from '../../reports/supportProgramSearch'
 import {
   mergeSupportProgramHistory,
@@ -28,17 +26,17 @@ import {
   getFeatureChatRoom,
   getFeatureChatRooms,
   sendChatMessage,
-  updateFeatureChatRoomTitle,
 } from '../../chat/chatApi'
 import {
   normalizeAgentProgressEvent,
   normalizeAgentProgressMessage,
   normalizeChatMessage,
   normalizeStatusEvent,
-  reportDataFromMessage,
-  upsertMessage,
 } from '../../chat/chatMappers'
+import { useChatMessageQueue } from '../../chat/useChatMessageQueue'
 import { Report } from '../../reports/Report'
+import { ItemEntryChoice } from '../../reports/ItemEntryChoice'
+import { ItemInputForm } from '../../reports/ItemInputForm'
 import { buildOperationFeedbackPayload } from '../../reports/operationFeedbackLogic'
 import { buildFeatureSavedReport } from '../../reports/savedReportPayload'
 import { buildCurrentResult, buildFeatureSeed, buildWorkspacePatch } from '../featureChatContext'
@@ -98,6 +96,15 @@ const FEATURE_SUGGESTIONS = {
 
 const GENERATE_REPORT_PROMPT = '현재 기능 페이지에 표시할 최종 리포트를 각 Agent가 함께 검토해서 생성해줘.'
 
+const reportDataFromMessage = (message, featureId) => {
+  const result = message?.metadata?.result
+  if (result?.shouldCreateResult !== true) return null
+  const payload = result?.payload
+  if (!payload?.reportData) return null
+  if (payload.featureId && payload.featureId !== featureId) return null
+  return payload.reportData
+}
+
 export const FeaturePage = ({
   id,
   go,
@@ -107,6 +114,7 @@ export const FeaturePage = ({
   onWorkspaceContextChange,
   workspace,
   setWorkspace,
+  onCreateWorkspace,
 }) => {
   const feature = features[id]
   const agent = agents[feature.agent]
@@ -141,8 +149,14 @@ export const FeaturePage = ({
   ))
   const [focusedSectionTitle, setFocusedSectionTitle] = useState(featureSeed.focusedSectionTitle)
   const [planGoal, setPlanGoal] = useState(featureSeed.planGoal)
-  const [messages, setMessages] = useState([])
-  const [rooms, setRooms] = useState([])
+  const {
+    messages,
+    pushImmediate,
+    enqueue,
+    flush,
+    reset: resetMessages,
+    isDraining,
+  } = useChatMessageQueue([])
   const [room, setRoom] = useState(null)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -151,16 +165,13 @@ export const FeaturePage = ({
   const [statusMap, setStatusMap] = useState({})
   const [activeProgressMap, setActiveProgressMap] = useState(new Map())
   const [error, setError] = useState('')
-  const [sessionMenuOpen, setSessionMenuOpen] = useState(false)
-  const [editingRoomId, setEditingRoomId] = useState(null)
-  const [titleDraft, setTitleDraft] = useState('')
-  const [savingTitle, setSavingTitle] = useState(false)
   const [savingReport, setSavingReport] = useState(false)
   const [aiReportStatus, setAiReportStatus] = useState('idle')
   const [streamVersion, setStreamVersion] = useState(0)
+  // 아이템 기능 진입 흐름: 선택 화면(choice) → AI 추천(recommend) 또는 직접 입력(input).
+  // 다른 기능에서는 쓰이지 않는다. 저장된 리포트가 있으면(아래 loadLatestReport) recommend로 바로 진입한다.
+  const [itemFlowStep, setItemFlowStep] = useState('choice')
 
-  const chatRef = useRef(null)
-  const sessionMenuRef = useRef(null)
   const reconnectTimeoutRef = useRef(null)
   const hiddenRequestIdsRef = useRef(new Set())
   const autoGenerationKeysRef = useRef(new Set())
@@ -188,24 +199,6 @@ export const FeaturePage = ({
   }, [id])
 
   useEffect(() => {
-    if (chatRef.current) {
-      chatRef.current.scrollTop = chatRef.current.scrollHeight
-    }
-  }, [messages, activeProgressMap, statusMap])
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (!sessionMenuRef.current?.contains(event.target)) {
-        setSessionMenuOpen(false)
-        setEditingRoomId(null)
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  useEffect(() => {
     let active = true
 
     const loadLatestReport = async () => {
@@ -219,6 +212,10 @@ export const FeaturePage = ({
         if (reportData) {
           applyReportData(reportData)
           setAiReportStatus('ready')
+          // 저장된 아이템 리포트가 있으면 선택 화면을 건너뛰고 추천 결과를 바로 보여준다.
+          if (id === 'item') {
+            setItemFlowStep('recommend')
+          }
         } else if (id === 'operation') {
           // 운영 피드백은 사용자가 직접 입력하는 폼이므로 AI 생성 없이 빈 폼을 바로 보여준다.
           setAiReportStatus('ready')
@@ -256,7 +253,6 @@ export const FeaturePage = ({
 
         const nextRooms = roomListResponse.rooms ?? []
         if (nextRooms.length) {
-          setRooms(nextRooms)
           setRoom(nextRooms[0])
           return
         }
@@ -265,7 +261,6 @@ export const FeaturePage = ({
         if (!active) {
           return
         }
-        setRooms([fallbackRoom])
         setRoom(fallbackRoom)
       } catch (nextError) {
         if (!active) {
@@ -305,7 +300,7 @@ export const FeaturePage = ({
         }
         setError('')
         if (reset) {
-          setMessages([])
+          resetMessages([])
           setStatusMap({})
           setActiveProgressMap(new Map())
           setConnection('connecting')
@@ -316,7 +311,7 @@ export const FeaturePage = ({
           return
         }
         const nextMessages = history.messages.map(normalizeChatMessage)
-        setMessages(nextMessages)
+        resetMessages(nextMessages)
       } catch (nextError) {
         if (!active) {
           return
@@ -353,10 +348,16 @@ export const FeaturePage = ({
       // 운영 피드백 폼은 사용자 입력이 원본이라 AI 응답으로 덮어쓰지 않는다.
       const nextReport = id === 'operation' ? null : reportDataFromMessage(nextMessage, id)
       if (nextReport) {
+        // 리포트 패널 갱신은 도착 즉시(채팅 말풍선 순서만 큐가 통제).
         applyReportData(nextReport)
         setAiReportStatus('ready')
       }
-      setMessages((prev) => upsertMessage(prev, nextMessage))
+      // 내 메시지는 즉시, 에이전트 답변은 큐를 거쳐 토론 뒤에 표시.
+      if (nextMessage.role === 'user') {
+        pushImmediate(nextMessage)
+      } else {
+        enqueue(nextMessage)
+      }
     })
 
     eventSource.addEventListener('chat-status', (event) => {
@@ -397,7 +398,7 @@ export const FeaturePage = ({
         return
       }
       if (nextProgress.viewType !== 'status' && nextProgress.agent && nextProgress.message) {
-        setMessages((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
+        enqueue(normalizeAgentProgressMessage(nextProgress))
       }
     })
 
@@ -462,6 +463,8 @@ export const FeaturePage = ({
     : visibleAgents.length
       ? '이번 답변에 참여 중인 전문가들이에요.'
       : helperText
+  const chatAccent = runningAgentKey && agents[runningAgentKey] ? agents[runningAgentKey].color : agent.color
+  const typingAgent = (typing || isDraining) ? (typing || feature.agent) : null
 
   useEffect(() => {
     onWorkspaceContextChange?.(buildWorkspacePatch({
@@ -530,6 +533,8 @@ export const FeaturePage = ({
       setBusy(true)
     }
     setError('')
+    // 이전 턴이 아직 드립 중이면 즉시 비워 현재로 스냅하고 새 턴 시작.
+    flush()
 
     try {
       const messageMetadata = { source: 'feature-page', featureId: id }
@@ -559,7 +564,7 @@ export const FeaturePage = ({
         })
       } else {
         messageMetadata.requestId = response.requestId
-        setMessages((prev) => upsertMessage(prev, {
+        pushImmediate({
           id: response.messageId,
           role: 'user',
           senderType: response.senderType,
@@ -569,7 +574,7 @@ export const FeaturePage = ({
           text: response.content,
           metadata: messageMetadata,
           createdAt: null,
-        }))
+        })
 
         setStatusMap((prev) => ({
           ...prev,
@@ -596,7 +601,9 @@ export const FeaturePage = ({
 
   useEffect(() => {
     // 운영 피드백은 사용자 입력 폼이라 AI 자동 리포트 생성을 트리거하지 않는다.
-    if (aiReportStatus !== 'empty' || !room?.roomId || id === 'operation') {
+    // 아이템은 사용자가 '추천 받기'를 고른 뒤(recommend)에만 자동 생성한다.
+    if (aiReportStatus !== 'empty' || !room?.roomId || id === 'operation'
+        || (id === 'item' && itemFlowStep !== 'recommend')) {
       return
     }
 
@@ -609,14 +616,7 @@ export const FeaturePage = ({
     setAiReportStatus('loading')
     sendFeatureMessage(GENERATE_REPORT_PROMPT, { hidden: true })
       .catch(() => setAiReportStatus('error'))
-  }, [aiReportStatus, id, room?.roomId, targetFeature])
-
-  const updateRoomState = (updatedRoom) => {
-    setRooms((prev) => prev.map((candidate) => (
-      candidate.roomId === updatedRoom.roomId ? updatedRoom : candidate
-    )))
-    setRoom((prev) => (prev?.roomId === updatedRoom.roomId ? updatedRoom : prev))
-  }
+  }, [aiReportStatus, id, room?.roomId, targetFeature, itemFlowStep])
 
   const handleOperationFeedbackRequest = async () => {
     if (savingReport || id !== 'operation') {
@@ -684,44 +684,11 @@ export const FeaturePage = ({
 
     try {
       const createdRoom = await createFeatureChatRoom(targetFeature)
-      setRooms((prev) => [createdRoom, ...prev])
       setRoom(createdRoom)
-      setSessionMenuOpen(false)
-      setEditingRoomId(null)
     } catch (nextError) {
       setError(nextError.message ?? '새 기능 채팅 세션을 만들지 못했습니다.')
     } finally {
       setCreatingRoom(false)
-    }
-  }
-
-  const startEditingTitle = (candidateRoom) => {
-    setEditingRoomId(candidateRoom.roomId)
-    setTitleDraft(candidateRoom.title ?? '')
-    setSessionMenuOpen(true)
-  }
-
-  const cancelEditingTitle = () => {
-    setEditingRoomId(null)
-    setTitleDraft('')
-  }
-
-  const submitTitleUpdate = async (roomId) => {
-    if (savingTitle) {
-      return
-    }
-
-    try {
-      setSavingTitle(true)
-      setError('')
-      const updatedRoom = await updateFeatureChatRoomTitle(roomId, targetFeature, titleDraft)
-      updateRoomState(updatedRoom)
-      setEditingRoomId(null)
-      setTitleDraft('')
-    } catch (nextError) {
-      setError(nextError.message ?? '세션 이름을 수정하지 못했습니다.')
-    } finally {
-      setSavingTitle(false)
     }
   }
 
@@ -773,6 +740,11 @@ export const FeaturePage = ({
       .catch(() => setAiReportStatus('error'))
   }
 
+  // 직접 입력한 아이템으로 새 워크스페이스를 생성한다(워크스페이스 = 아이템).
+  const handleItemInputSubmit = (item) => {
+    onCreateWorkspace?.(item)
+  }
+
   return (
     <main className="feature-page" style={buildFeaturePageTheme(feature, agents)}>
       <section className="report-area">
@@ -782,8 +754,8 @@ export const FeaturePage = ({
             <p>{feature.sub}</p>
           </div>
           <div className="report-title-actions">
-            {/* 운영 피드백은 사용자 입력 폼이라 AI 생성/일반 저장 버튼 대신 폼 내부 저장 버튼을 쓴다. */}
-            {id !== 'operation' && (
+            {/* 운영 피드백은 폼 내부 저장 버튼을 쓰고, 아이템은 추천 화면일 때만 생성/저장 버튼을 보여준다. */}
+            {id !== 'operation' && !(id === 'item' && itemFlowStep !== 'recommend') && (
               <>
                 <button
                   type="button"
@@ -815,7 +787,23 @@ export const FeaturePage = ({
             )}
           </div>
         </div>
-        {aiReportStatus === 'ready' ? (
+        {id === 'item' && itemFlowStep === 'choice' ? (
+          <ItemEntryChoice
+            stage={startupProfile?.stage}
+            onChooseRecommend={() => setItemFlowStep('recommend')}
+            onChooseInput={() => setItemFlowStep('input')}
+          />
+        ) : id === 'item' && itemFlowStep === 'input' ? (
+          <ItemInputForm
+            prefill={{
+              itemName: startupProfile?.currentItemName ?? '',
+              industry: startupProfile?.currentIndustry ?? '',
+              region: startupProfile?.businessRegion ?? '',
+            }}
+            onSubmit={handleItemInputSubmit}
+            onBack={() => setItemFlowStep('choice')}
+          />
+        ) : aiReportStatus === 'ready' ? (
           <Report
             id={id}
             data={data}
@@ -823,6 +811,7 @@ export const FeaturePage = ({
             go={go}
             workspace={workspace}
             setWorkspace={setWorkspace}
+            onCreateWorkspace={onCreateWorkspace}
             selectedIdeaRank={selectedIdeaRank}
             onSelectIdea={setSelectedIdeaRank}
             selectedSupportTitle={selectedSupportTitle}
@@ -874,152 +863,64 @@ export const FeaturePage = ({
         )}
       </section>
 
-      <aside className="feature-chat">
-        <header
-          className={visibleAgents.length ? 'feature-chat-agent-header active' : 'feature-chat-agent-header'}
-          style={{ color: runningAgentKey && agents[runningAgentKey] ? agents[runningAgentKey].color : agent.color }}
-        >
-          {visibleAgents.length ? (
-            <div className="feature-chat-agent-stack">
-              {visibleAgents.map((visibleAgent) => (
-                <AgentAvatar
-                  key={visibleAgent.key}
-                  id={visibleAgent.key}
-                  active={visibleAgent.key === runningAgentKey}
-                />
-              ))}
-            </div>
-          ) : (
-            <span className="feature-chat-agent-placeholder">
-              <Icon name="discuss" size={18} />
-            </span>
-          )}
-          <div>
-            <b>
-              {visibleAgents.length
-                ? visibleAgents.map((visibleAgent) => visibleAgent.name).join(' · ')
-                : 'AI 전문가 채팅'}
-            </b>
-            <small>{visibleAgentStatus}</small>
-          </div>
-        </header>
-
-        <div className="feature-session-toolbar">
-          <div className="chat-session-picker" ref={sessionMenuRef}>
-            <button
-              className={sessionMenuOpen ? 'chat-session-trigger on' : 'chat-session-trigger'}
-              onClick={() => setSessionMenuOpen((prev) => !prev)}
-              disabled={!rooms.length}
-            >
-              <div className="chat-session-trigger-copy">
-                <small>{targetFeature} 세션</small>
-                <b>{room?.title ?? '세션 선택'}</b>
+      <FloatingChat
+        accent={chatAccent}
+        active={Boolean(typing || isDraining)}
+        launcherLabel={`${agent.name}에게 이 리포트에 대해 물어보기`}
+        headerSlot={(
+          <div className="chat-dock-agent" style={{ color: chatAccent }}>
+            {visibleAgents.length ? (
+              <div className="feature-chat-agent-stack">
+                {visibleAgents.map((visibleAgent) => (
+                  <AgentAvatar
+                    key={visibleAgent.key}
+                    id={visibleAgent.key}
+                    active={visibleAgent.key === runningAgentKey}
+                  />
+                ))}
               </div>
-              <Icon name="chevron" size={16} />
-            </button>
-
-            {sessionMenuOpen && (
-              <div className="chat-session-menu">
-                {rooms.map((candidateRoom) => {
-                  const isEditing = editingRoomId === candidateRoom.roomId
-                  const isSelected = candidateRoom.roomId === room?.roomId
-
-                  return (
-                    <div
-                      key={candidateRoom.roomId}
-                      className={isSelected ? 'chat-session-option on' : 'chat-session-option'}
-                    >
-                      {isEditing ? (
-                        <form
-                          className="chat-session-edit"
-                          onSubmit={(event) => {
-                            event.preventDefault()
-                            submitTitleUpdate(candidateRoom.roomId)
-                          }}
-                        >
-                          <input
-                            value={titleDraft}
-                            onChange={(event) => setTitleDraft(event.target.value)}
-                            placeholder="세션 이름"
-                            autoFocus
-                            maxLength={60}
-                          />
-                          <button type="submit" disabled={savingTitle}>
-                            <Icon name="check" size={14} />
-                          </button>
-                          <button type="button" className="ghost" onClick={cancelEditingTitle} disabled={savingTitle}>
-                            취소
-                          </button>
-                        </form>
-                      ) : (
-                        <>
-                          <button
-                            className="chat-session-select"
-                            onClick={() => {
-                              setRoom(candidateRoom)
-                              setSessionMenuOpen(false)
-                              setEditingRoomId(null)
-                            }}
-                          >
-                            <div>
-                              <b>{candidateRoom.title}</b>
-                              <small>{isSelected ? '현재 보고 있는 세션' : '이 세션으로 전환'}</small>
-                            </div>
-                          </button>
-                          <button
-                            className="chat-session-rename"
-                            onClick={() => startEditingTitle(candidateRoom)}
-                            aria-label={`${candidateRoom.title} 이름 수정`}
-                          >
-                            <Icon name="edit" size={14} />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+            ) : (
+              <span className="feature-chat-agent-placeholder">
+                <Icon name="discuss" size={18} />
+              </span>
             )}
-          </div>
-
-          <button className="chat-session-new" onClick={createSession} disabled={creatingRoom || busy}>
-            <Icon name="plus" size={16} />
-            <span>{creatingRoom ? '만드는 중' : '새 세션'}</span>
-          </button>
-        </div>
-
-        <div className="feature-chat-body" ref={chatRef}>
-          {loading && <div className="chat-loading">대화를 불러오는 중...</div>}
-          {!loading && !messages.length && (
-            <div className="feature-chat-empty">
-              <AgentAvatar id={feature.agent} size={52} active />
-              <strong>{agent.name}가 리포트를 보고 있어요.</strong>
-              <p>지금 보고 있는 결과를 기준으로 방향 수정, 비교, 다음 단계 질문을 이어갈 수 있어요.</p>
+            <div className="chat-dock-agent-copy">
+              <b>
+                {visibleAgents.length
+                  ? visibleAgents.map((visibleAgent) => visibleAgent.name).join(' · ')
+                  : 'AI 전문가 채팅'}
+              </b>
+              <small>{visibleAgentStatus}</small>
             </div>
-          )}
-          {messages
-            .filter((message) => !message.metadata?.hidden)
-            .map((message) => <ChatRow key={message.id} message={message} onOpenReport={go} />)}
-          <RotatingStatusProgress progresses={statusProgresses} />
-          {typing && <TypingRow agent={typing} />}
-        </div>
-
-        {!!latestStatus && latestStatus.status === 'FAILED' && (
-          <div className={`chat-status-banner ${latestStatus.status?.toLowerCase()}`}>
-            <b>{latestStatus.status}</b>
-            {latestStatus.errorMessage ? <span>{latestStatus.errorMessage}</span> : <span>요청 ID {latestStatus.requestId}</span>}
           </div>
         )}
-        {!!error && <div className="chat-error-banner">{error}</div>}
-
-        <ChatInput
-          onSend={handleSend}
-          disabled={busy || loading || connection === 'error' || !room?.roomId}
-          placeholder="이 리포트를 바탕으로 더 물어보세요."
-          accent={runningAgentKey && agents[runningAgentKey] ? agents[runningAgentKey].color : agent.color}
-          suggestions={FEATURE_SUGGESTIONS[id] ?? []}
-        />
-      </aside>
+        onNewChat={createSession}
+        newChatLabel={creatingRoom ? '만드는 중' : '새 채팅'}
+        newChatDisabled={creatingRoom || busy}
+        loading={loading}
+        emptySlot={(
+          <div className="feature-chat-empty">
+            <AgentAvatar id={feature.agent} size={52} active />
+            <strong>{agent.name}가 리포트를 보고 있어요.</strong>
+            <p>지금 보고 있는 결과를 기준으로 방향 수정, 비교, 다음 단계 질문을 이어갈 수 있어요.</p>
+          </div>
+        )}
+        messages={messages.filter((message) => !message.metadata?.hidden)}
+        statusProgresses={statusProgresses}
+        typing={typingAgent}
+        onOpenReport={go}
+        failedStatus={latestStatus}
+        error={error}
+        input={(
+          <ChatInput
+            onSend={handleSend}
+            disabled={busy || loading || connection === 'error' || !room?.roomId}
+            placeholder="이 리포트를 바탕으로 더 물어보세요."
+            accent={chatAccent}
+            suggestions={FEATURE_SUGGESTIONS[id] ?? []}
+          />
+        )}
+      />
     </main>
   )
 }

@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { features, featureOrder } from '../../shared/data/features'
+import { features } from '../../shared/data/features'
 import { agents } from '../../shared/data/agents'
 import { profile } from '../../shared/data/profile'
 import { Icon } from '../../shared/components/Icon'
 import { StartMateLogo } from '../../shared/components/StartMateLogo'
 import { buildFeatureNavTheme } from './sidebarFeatureNav'
 
-export const Sidebar = ({ route, go, workspace, workspaces = [], setWorkspace, onCreateWorkspace, user, onLogout }) => {
+// 사이드바 기능을 창업 단계별로 묶는다. (아이템 추천은 워크스페이스 드롭다운의 '아이템 추가하기'로 진입)
+const PRE_STARTUP_FEATURES = ['simulator', 'support', 'plan']
+const POST_STARTUP_FEATURES = ['operation', 'sns']
+
+export const Sidebar = ({ route, go, workspaces = [], workspace, setWorkspace, user, onLogout, onAddItem }) => {
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const switcherRef = useRef(null)
   const displayName = user?.nickname || profile.name
@@ -20,6 +24,21 @@ export const Sidebar = ({ route, go, workspace, workspaces = [], setWorkspace, o
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
   }, [])
+
+  const renderFeatureLink = (id) => {
+    const feature = features[id]
+    const navTheme = buildFeatureNavTheme(feature, agents)
+    return (
+      <button
+        key={id}
+        className={route === id ? 'sidebar-feature-link on' : 'sidebar-feature-link'}
+        style={navTheme}
+        onClick={() => go(id)}
+      >
+        <Icon name={feature.icon} />{feature.title}
+      </button>
+    )
+  }
 
   return (
     <aside className="sidebar">
@@ -53,7 +72,7 @@ export const Sidebar = ({ route, go, workspace, workspaces = [], setWorkspace, o
             <div className="workspace-modal">
               <div className="workspace-modal-list">
                 {workspaces.length === 0 && (
-                  <p className="workspace-empty">아직 워크스페이스가 없어요.<br />아이템을 확정하면 만들어져요.</p>
+                  <p className="workspace-empty">아직 워크스페이스가 없어요.<br />아이템을 추가해 시작하세요.</p>
                 )}
                 {workspaces.map((nextWorkspace) => (
                   <button
@@ -66,51 +85,34 @@ export const Sidebar = ({ route, go, workspace, workspaces = [], setWorkspace, o
                     }}
                   >
                     <div>
-                      <b>{nextWorkspace.title}</b>
-                      <small>{nextWorkspace.selectedIdeaTitle ? (nextWorkspace.selectedIdeaCategory ?? '확정 아이템') : '작업공간'}</small>
+                      <b>{nextWorkspace.name}</b>
+                      <small>{nextWorkspace.desc}</small>
                     </div>
                   </button>
                 ))}
-                {onCreateWorkspace && (
-                  <button
-                    className="workspace-create"
-                    type="button"
-                    onClick={() => {
-                      setWorkspaceOpen(false)
-                      onCreateWorkspace()
-                    }}
-                  >
-                    <Icon name="plus" size={15} /> 새 워크스페이스
-                  </button>
-                )}
               </div>
+              <button
+                type="button"
+                className="workspace-add-item"
+                onClick={() => {
+                  setWorkspaceOpen(false)
+                  onAddItem?.()
+                }}
+              >
+                <Icon name="plus" size={14} /> 아이템 추가하기
+              </button>
             </div>
           )}
         </div>
 
         <button className={route === 'home' ? 'on' : ''} onClick={() => go('home')}>
-          {workspace?.title ?? '내 작업공간'}
+          {workspace?.name ?? '홈'}
         </button>
 
-        <p>AI 기능</p>
-        {featureOrder.map((id) => {
-          const feature = features[id]
-          const navTheme = buildFeatureNavTheme(feature, agents)
-          return (
-            <button
-              key={id}
-              className={route === id ? 'sidebar-feature-link on' : 'sidebar-feature-link'}
-              style={navTheme}
-              onClick={() => go(id)}
-            >
-              <Icon name={feature.icon} />{feature.title}
-            </button>
-          )
-        })}
-        <p>보관함</p>
-        <button className={route === 'saved' ? 'on' : ''} onClick={() => go('saved')}>
-          <Icon name="bookmark" />저장한 결과
-        </button>
+        <p>창업 전</p>
+        {PRE_STARTUP_FEATURES.map((id) => renderFeatureLink(id))}
+        <p>창업 후</p>
+        {POST_STARTUP_FEATURES.map((id) => renderFeatureLink(id))}
       </nav>
 
       <div className="user-box">

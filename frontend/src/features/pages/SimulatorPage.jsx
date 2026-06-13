@@ -7,9 +7,7 @@ import { Icon } from '../../shared/components/Icon'
 import { agents } from '../../shared/data/agents'
 import { AgentAvatar } from '../../shared/components/AgentAvatar'
 import { ChatInput } from '../chat/ChatInput'
-import { ChatRow } from '../chat/ChatRow'
-import { RotatingStatusProgress } from '../chat/RotatingStatusProgress'
-import { TypingRow } from '../chat/TypingRow'
+import { FloatingChat } from '../chat/FloatingChat'
 import {
   clearActiveProgressByRequest,
   listActiveProgresses,
@@ -29,8 +27,8 @@ import {
   normalizeAgentProgressMessage,
   normalizeChatMessage,
   normalizeStatusEvent,
-  upsertMessage,
 } from '../chat/chatMappers'
+import { useChatMessageQueue } from '../chat/useChatMessageQueue'
 import { buildSimulationSavedReport } from '../reports/savedReportPayload'
 
 const steps = ['위치 탐색', '가정값 설정', '리포트 확인']
@@ -99,24 +97,27 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
   const [location, setLocation] = useState(null)
   const [assumption, setAssumption] = useState(null)
   const [report, setReport] = useState(null)
-  const [messages, setMessages] = useState([welcomeMessage])
+  const {
+    messages,
+    pushImmediate,
+    enqueue,
+    flush,
+    reset: resetMessages,
+    isDraining,
+  } = useChatMessageQueue([welcomeMessage])
   const [room, setRoom] = useState(null)
   const [busy, setBusy] = useState(false)
   const [chatLoading, setChatLoading] = useState(false)
   const [chatError, setChatError] = useState('')
   const [savingReport, setSavingReport] = useState(false)
+  const [creatingRoom, setCreatingRoom] = useState(false)
   const [statusMap, setStatusMap] = useState({})
   const [activeProgressMap, setActiveProgressMap] = useState(new Map())
-  const chatRef = useRef(null)
   const hiddenRequestIdsRef = useRef(new Set())
   const agent = agents.finance
   const agentDisplayName = `${agent.label} 에이전트`
   const idea = workspace?.selectedIdea
   const showChat = step === 3 && report
-
-  useEffect(() => {
-    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight
-  }, [messages, activeProgressMap, statusMap])
 
   useEffect(() => {
     let active = true
@@ -198,7 +199,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
         if (!active) return
 
         const nextMessages = history.messages.map(normalizeChatMessage)
-        setMessages([welcomeMessage, ...nextMessages])
+        resetMessages([welcomeMessage, ...nextMessages])
       } catch (error) {
         if (active) setChatError(error.message ?? '이전 시뮬레이션 대화를 불러오지 못했습니다.')
       } finally {
@@ -215,9 +216,15 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
       const nextMessage = normalizeChatMessage(payload.message)
       const nextReportData = reportDataFromMessage(nextMessage)
       if (nextReportData) {
+        // 리포트 패널 갱신은 도착 즉시(채팅 말풍선 순서만 큐가 통제).
         applyAiReportData(nextReportData)
       }
-      setMessages((prev) => upsertMessage(prev, nextMessage))
+      // 내 메시지는 즉시, 에이전트 답변은 큐를 거쳐 토론 뒤에 표시.
+      if (nextMessage.role === 'user') {
+        pushImmediate(nextMessage)
+      } else {
+        enqueue(nextMessage)
+      }
     })
 
     eventSource.addEventListener('chat-status', (event) => {
@@ -247,7 +254,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
       setActiveProgressMap((prev) => upsertActiveProgress(prev, nextProgress))
 
       if (nextProgress.viewType !== 'status' && nextProgress.agent && nextProgress.message) {
-        setMessages((prev) => upsertMessage(prev, normalizeAgentProgressMessage(nextProgress)))
+        enqueue(normalizeAgentProgressMessage(nextProgress))
       }
     })
 
@@ -366,6 +373,8 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
     if (!room?.roomId) return null
     if (!hidden) setBusy(true)
     setChatError('')
+    // 이전 턴이 아직 드립 중이면 즉시 비워 현재로 스냅하고 새 턴 시작.
+    flush()
 
     try {
       const messageMetadata = { source: 'simulator-page', featureId: 'simulator' }
@@ -395,7 +404,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
         })
       } else {
         messageMetadata.requestId = response.requestId
-        setMessages((prev) => upsertMessage(prev, {
+        pushImmediate({
           id: response.messageId,
           role: 'user',
           senderType: response.senderType,
@@ -405,7 +414,7 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
           text: response.content,
           metadata: messageMetadata,
           createdAt: null,
-        }))
+        })
         setStatusMap((prev) => ({
           ...prev,
           [response.requestId]: {
@@ -438,6 +447,21 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
   const handleGenerateAiReport = () => {
     if (!room?.roomId || !report || busy) return
     sendFeatureMessage(GENERATE_REPORT_PROMPT, { hidden: true }).catch(() => {})
+  }
+
+  const createSession = async () => {
+    if (creatingRoom) return
+    setCreatingRoom(true)
+    setChatError('')
+    try {
+      const createdRoom = await createFeatureChatRoom(TARGET_FEATURE)
+      // 룸이 바뀌면 SSE 효과가 대화/상태를 새로 불러온다(welcomeMessage만 남음).
+      setRoom(createdRoom)
+    } catch (error) {
+      setChatError(error.message ?? '새 채팅을 시작하지 못했습니다.')
+    } finally {
+      setCreatingRoom(false)
+    }
   }
 
   const handleSave = async () => {
@@ -510,13 +534,23 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
       </section>
 
       {showChat && (
-        <aside className="feature-chat">
-          <header style={{ color: agent.color }}>
-            <AgentAvatar id="finance" />
-            <div>
-              <b>{agentDisplayName}</b>
-              <small>월세와 손익을 함께 봅니다</small>
+        <FloatingChat
+          accent={agent.color}
+          active={Boolean(typing || isDraining)}
+          launcherLabel={`${agentDisplayName}에게 시뮬레이션에 대해 물어보기`}
+          headerSlot={(
+            <div className="chat-dock-agent" style={{ color: agent.color }}>
+              <AgentAvatar id="finance" />
+              <div className="chat-dock-agent-copy">
+                <b>{agentDisplayName}</b>
+                <small>월세와 손익을 함께 봅니다</small>
+              </div>
             </div>
+          )}
+          onNewChat={createSession}
+          newChatLabel={creatingRoom ? '만드는 중' : '새 채팅'}
+          newChatDisabled={creatingRoom || busy}
+          toolbarExtra={(
             <button
               type="button"
               className="secondary-chip sim-ai-refresh"
@@ -526,30 +560,24 @@ export const SimulatorPage = ({ go, workspace, user, startupProfile }) => {
               <Icon name="refresh" size={14} />
               AI 리포트 갱신
             </button>
-          </header>
-          <div className="feature-chat-body" ref={chatRef}>
-            {chatLoading && <div className="chat-loading">대화를 불러오는 중...</div>}
-            {messages
-              .filter((message) => !message.metadata?.hidden)
-              .map((message) => <ChatRow key={message.id} message={message} onOpenReport={go} />)}
-            <RotatingStatusProgress progresses={statusProgresses} />
-            {typing && <TypingRow agent={typing} />}
-          </div>
-          {!!latestStatus && latestStatus.status === 'FAILED' && (
-            <div className={`chat-status-banner ${latestStatus.status?.toLowerCase()}`}>
-              <b>{latestStatus.status}</b>
-              {latestStatus.errorMessage ? <span>{latestStatus.errorMessage}</span> : <span>요청 ID {latestStatus.requestId}</span>}
-            </div>
           )}
-          {!!chatError && <div className="chat-error-banner">{chatError}</div>}
-          <ChatInput
-            onSend={send}
-            disabled={busy || chatLoading || !room?.roomId}
-            placeholder="시뮬레이션을 어떻게 바꿀까요?"
-            accent={agent.color}
-            suggestions={['건당 금액 500원 올리면?', '광고비를 줄이면 어때?', '판매/이용 건수가 20% 줄면?']}
-          />
-        </aside>
+          loading={chatLoading}
+          messages={messages.filter((message) => !message.metadata?.hidden)}
+          statusProgresses={statusProgresses}
+          typing={(typing || isDraining) ? (typing || 'finance') : null}
+          onOpenReport={go}
+          failedStatus={latestStatus}
+          error={chatError}
+          input={(
+            <ChatInput
+              onSend={send}
+              disabled={busy || chatLoading || !room?.roomId}
+              placeholder="시뮬레이션을 어떻게 바꿀까요?"
+              accent={agent.color}
+              suggestions={['건당 금액 500원 올리면?', '광고비를 줄이면 어때?', '판매/이용 건수가 20% 줄면?']}
+            />
+          )}
+        />
       )}
     </main>
   )

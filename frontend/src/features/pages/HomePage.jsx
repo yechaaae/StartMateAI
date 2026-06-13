@@ -69,12 +69,8 @@ export const HomePage = ({ go, workspace }) => {
     <main className="page workspace-page">
       <div className="page-title">
         <div>
-          <h1>{workspace?.title ?? '내 작업공간'}</h1>
-          <p>
-            {workspace?.selectedIdeaTitle
-              ? `확정한 아이템 「${workspace.selectedIdeaTitle}」 기준으로 AI 기능이 동작해요.`
-              : '모든 AI 기능은 이 창업 프로필과 저장 결과를 참고합니다.'}
-          </p>
+          <h1>{workspace?.name ?? '내 워크스페이스'}</h1>
+          <p>모든 AI 기능은 이 창업 프로필과 저장 결과를 참고합니다.</p>
         </div>
       </div>
 

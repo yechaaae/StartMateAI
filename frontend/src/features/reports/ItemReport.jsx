@@ -1,79 +1,49 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Card } from '../../shared/components/Card'
 import { Icon } from '../../shared/components/Icon'
-import { workspaceApi } from '../../shared/api/client'
+import { loadKakaoMaps } from '../../shared/lib/kakaoMaps'
 import { AgentReview } from './AgentReview'
 
-const KAKAO_APP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY ?? ''
-const KAKAO_SCRIPT_ID = 'kakao-map-script'
 const DEFAULT_POSITION = { lat: 35.1631, lng: 129.1635 }
 
-let kakaoLoaderPromise = null
-
-const loadKakao = () => {
-  if (kakaoLoaderPromise) return kakaoLoaderPromise
-
-  kakaoLoaderPromise = new Promise((resolve, reject) => {
-    if (window.kakao?.maps?.Map) {
-      resolve()
-      return
-    }
-    if (!KAKAO_APP_KEY) {
-      reject(new Error('VITE_KAKAO_MAP_KEY is required.'))
-      return
-    }
-
-    let script = document.getElementById(KAKAO_SCRIPT_ID)
-    if (!script) {
-      script = document.createElement('script')
-      script.id = KAKAO_SCRIPT_ID
-      script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_APP_KEY}&libraries=services&autoload=false`
-      document.head.appendChild(script)
-    }
-
-    const onReady = () => window.kakao.maps.load(() => resolve())
-
-    if (window.kakao?.maps) onReady()
-    else {
-      script.addEventListener('load', onReady, { once: true })
-      script.addEventListener('error', reject, { once: true })
-    }
-  })
-
-  return kakaoLoaderPromise
-}
-
+// 지도는 한 번만 생성하고, location이 바뀔 때마다 재지오코딩해서 중심/마커를 옮긴다.
+// (선택한 아이템이 바뀌면 상위에서 location을 바꿔 호출하므로 지도가 함께 이동한다.)
 const RegionMap = ({ location, analysis }) => {
   const mapRef = useRef(null)
-  const initializedRef = useRef(false)
+  const mapInstanceRef = useRef(null)
+  const markerRef = useRef(null)
+  const geocoderRef = useRef(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
     let cancelled = false
 
-    loadKakao()
+    loadKakaoMaps()
       .then(() => {
-        if (cancelled || initializedRef.current) return
-        initializedRef.current = true
+        if (cancelled) return
 
-        const fallback = new window.kakao.maps.LatLng(DEFAULT_POSITION.lat, DEFAULT_POSITION.lng)
-        const map = new window.kakao.maps.Map(mapRef.current, {
-          center: fallback,
-          level: 4,
-          draggable: false,
-          scrollwheel: false,
-          disableDoubleClickZoom: true,
-        })
-        const marker = new window.kakao.maps.Marker({ position: fallback, map })
-        const geocoder = new window.kakao.maps.services.Geocoder()
+        if (!mapInstanceRef.current) {
+          const fallback = new window.kakao.maps.LatLng(DEFAULT_POSITION.lat, DEFAULT_POSITION.lng)
+          mapInstanceRef.current = new window.kakao.maps.Map(mapRef.current, {
+            center: fallback,
+            level: 4,
+            draggable: false,
+            scrollwheel: false,
+            disableDoubleClickZoom: true,
+          })
+          markerRef.current = new window.kakao.maps.Marker({ position: fallback, map: mapInstanceRef.current })
+          geocoderRef.current = new window.kakao.maps.services.Geocoder()
+        }
 
-        geocoder.addressSearch(location, (result, status) => {
+        if (!location) return
+
+        geocoderRef.current.addressSearch(location, (result, status) => {
           if (cancelled) return
           if (status === window.kakao.maps.services.Status.OK && result[0]) {
             const pos = new window.kakao.maps.LatLng(Number(result[0].y), Number(result[0].x))
-            map.setCenter(pos)
-            marker.setPosition(pos)
-            window.setTimeout(() => map.relayout(), 0)
+            mapInstanceRef.current.setCenter(pos)
+            markerRef.current.setPosition(pos)
+            window.setTimeout(() => mapInstanceRef.current.relayout(), 0)
           }
         })
       })
@@ -92,7 +62,7 @@ const RegionMap = ({ location, analysis }) => {
         <b>{location}</b>
       </div>
       <div className="item-map-metrics">
-        {analysis.slice(0, 2).map(([label, value]) => (
+        {(analysis ?? []).slice(0, 2).map(([label, value]) => (
           <div key={label}>
             <small>{label}</small>
             <b>{value}</b>
@@ -106,109 +76,103 @@ const RegionMap = ({ location, analysis }) => {
 
 export const ItemReport = ({
   data,
-  go,
-  workspace,
-  setWorkspace,
+  onCreateWorkspace,
   selectedIdeaRank,
   onSelectIdea,
 }) => {
-  const [confirmingRank, setConfirmingRank] = useState(null)
+  const items = data.items ?? []
 
-  const ideaSnapshot = (item) => ({
-    id: item.rank,
-    rank: item.rank,
-    title: item.title,
-    score: item.score,
-    reason: item.reason,
-    category: item.category || '추천 아이템',
-    estimatedInitialCost: item.estimatedInitialCost,
-  })
+  // 선택된 아이템(없으면 첫 번째). 이 아이템의 location/analysis로 지도와 상권 지표를 보여준다.
+  const selectedItem = useMemo(() => {
+    const list = data.items ?? []
+    return list.find((item) => item.rank === selectedIdeaRank) ?? list[0] ?? null
+  }, [data.items, selectedIdeaRank])
 
-  // 시뮬레이터에서 먼저 검증 (메모리 상태만 반영)
-  const exploreInSimulator = (item) => {
+  const mapLocation = selectedItem?.location ?? data.location
+  const mapAnalysis = selectedItem?.analysis ?? data.analysis ?? []
+
+  // 행을 누르면 그 아이템을 선택만 한다(지도/상권 지표가 바뀜). 워크스페이스 확정은 아래 버튼에서.
+  const previewItem = (item) => {
     onSelectIdea?.(item.rank)
-    setWorkspace?.({ ...workspace, selectedIdea: ideaSnapshot(item) })
-    go('simulator')
   }
 
-  // 이 아이템으로 확정 → 현재 워크스페이스를 그 아이템으로 만들고 홈으로
-  const confirmIdea = async (item) => {
-    if (confirmingRank) return
+  // '이 아이템으로 시작'을 누르면 그 아이템으로 새 워크스페이스를 만든다(워크스페이스 = 아이템).
+  const confirmItem = (item) => {
     onSelectIdea?.(item.rank)
-    setConfirmingRank(item.rank)
-    const selectedIdea = {
+    onCreateWorkspace?.({
+      rank: item.rank,
       title: item.title,
-      category: item.category || '추천 아이템',
       score: item.score,
       reason: item.reason,
-    }
-    try {
-      let target = workspace
-      if (!target?.id) {
-        const list = await workspaceApi.list()
-        target = list[list.length - 1] ?? await workspaceApi.create({ title: item.title })
-      }
-      const updated = await workspaceApi.update(target.id, { title: item.title, selectedIdea })
-      setWorkspace?.(updated)
-      go?.('home')
-    } catch {
-      setWorkspace?.({ ...workspace, title: item.title, selectedIdeaTitle: item.title, selectedIdea: ideaSnapshot(item) })
-      go?.('home')
-    } finally {
-      setConfirmingRank(null)
-    }
+      category: item.category || '추천 아이템',
+      location: item.location ?? data.location,
+      estimatedInitialCost: item.estimatedInitialCost,
+    })
   }
 
   return (
     <div className="report-stack">
       <AgentReview review={data.agentReview} />
 
-      <Card className="item-region-card">
-        <RegionMap location={data.location} analysis={data.analysis} />
-        <h3>{data.location} 상권 분석</h3>
-        <div className="metric-grid">
-          {data.analysis.map(([label, value]) => (
-            <div key={label}>
-              <small>{label}</small>
-              <b>{value}</b>
-            </div>
-          ))}
-        </div>
-      </Card>
+      {mapLocation && (
+        <Card className="item-region-card">
+          <RegionMap location={mapLocation} analysis={mapAnalysis} />
+          <h3>{mapLocation} 상권 분석</h3>
+          <div className="metric-grid">
+            {mapAnalysis.map(([label, value]) => (
+              <div key={label}>
+                <small>{label}</small>
+                <b>{value}</b>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <h3>상권 + 내 프로필 기반 추천</h3>
-        {data.items.map((item) => {
-          const selected = selectedIdeaRank === item.rank
-          return (
-            <div className={selected ? 'idea-option selectable selected' : 'idea-option selectable'} key={item.rank}>
-              <span>{item.rank}</span>
-              <div>
-                <b>{item.title}</b>
-                <p>{item.reason}</p>
-              </div>
-              <em>적합도 {item.score}</em>
-              <div className="idea-actions">
-                <button
-                  type="button"
-                  className="idea-confirm"
-                  onClick={() => confirmIdea(item)}
-                  disabled={confirmingRank === item.rank}
+        {items.length === 0 ? (
+          <p className="item-list-hint">아직 추천 아이템이 없어요. AI가 리포트를 생성하면 후보가 채워집니다.</p>
+        ) : (
+          <>
+            <p className="item-list-hint">아이템을 누르면 후보 상권과 지도가 함께 바뀌어요.</p>
+            {items.map((item) => {
+              const selected = selectedItem?.rank === item.rank
+              return (
+                <div
+                  className={selected ? 'idea-option selectable selected' : 'idea-option selectable'}
+                  key={item.rank}
+                  onClick={() => previewItem(item)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      previewItem(item)
+                    }
+                  }}
                 >
-                  {confirmingRank === item.rank ? '확정 중…' : '이 아이템으로 시작'}
-                  {confirmingRank !== item.rank && <Icon name="check" size={15} />}
-                </button>
-                <button
-                  type="button"
-                  className="idea-sim"
-                  onClick={() => exploreInSimulator(item)}
-                >
-                  시뮬레이터로 검증 <Icon name="arrow" size={14} />
-                </button>
-              </div>
-            </div>
-          )
-        })}
+                  <span>{item.rank}</span>
+                  <div>
+                    <b>{item.title}</b>
+                    <p>{item.reason}</p>
+                    {item.location && <span className="idea-option-loc"><Icon name="pin" size={12} /> {item.location}</span>}
+                  </div>
+                  <em>적합도 {item.score}</em>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      confirmItem(item)
+                    }}
+                  >
+                    이 아이템으로 시작 <Icon name="arrow" size={15} />
+                  </button>
+                </div>
+              )
+            })}
+          </>
+        )}
       </Card>
     </div>
   )

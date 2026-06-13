@@ -542,12 +542,6 @@ class ProfileAgent(BaseAgent):
                 ["100만원 이하", "300만원", "1000만원 이상"],
             ),
             (
-                "available_hours_per_week",
-                "주당 몇 시간을 창업 준비와 운영에 쓸 수 있나요?",
-                "1인 실행 가능 범위와 운영 리스크 판단에 필요합니다.",
-                ["5시간 이하", "10시간", "20시간 이상"],
-            ),
-            (
                 "interests",
                 "관심 있는 창업 분야는 무엇인가요?",
                 "아이템 후보를 좁히는 데 필요합니다.",
@@ -771,8 +765,6 @@ class ProfileAgent(BaseAgent):
     def _recommended_first_step(self, profile: StartupProfile, constraints: list[str]) -> str:
         if not profile.region or profile.budget_krw is None:
             return "지역과 초기 예산을 먼저 확정한 뒤 아이템 추천과 지원사업 매칭을 실행하세요."
-        if profile.available_hours_per_week is None:
-            return "주당 투입 가능 시간을 확인한 뒤 30일 검증 계획을 잡으세요."
         if constraints:
             return "고정비가 낮은 30일 검증형 아이템을 먼저 추천받고, 지원사업 매칭으로 비용 부담을 낮추세요."
         return "아이템 추천, 지원사업 매칭, 비용 검증을 바로 병렬 실행하세요."
@@ -793,8 +785,6 @@ class ProfileAgent(BaseAgent):
             missing.append("창업 희망 지역")
         if profile.budget_krw is None:
             missing.append("초기 자금")
-        if profile.available_hours_per_week is None:
-            missing.append("주당 투입 가능 시간")
         if not profile.interests and not profile.preferred_business_types:
             missing.append("관심 분야")
         if not profile.preferred_channels:
@@ -807,7 +797,6 @@ class ProfileAgent(BaseAgent):
             bool(profile.experiences or "experiences" in profile.confirmed_absent_fields),
             bool(profile.region),
             profile.budget_krw is not None,
-            profile.available_hours_per_week is not None,
             bool(profile.interests or profile.preferred_business_types),
             bool(profile.preferred_channels),
             profile.has_team is not None,
@@ -873,8 +862,6 @@ class ProfileAgent(BaseAgent):
             score += 4
             if profile.budget_krw is not None and profile.budget_krw <= 3_000_000:
                 score -= 10
-        if profile.available_hours_per_week is not None and profile.available_hours_per_week < 7:
-            score -= 10
         return max(0, min(100, score))
 
     def _budget_band(self, budget_krw: int | None) -> str:

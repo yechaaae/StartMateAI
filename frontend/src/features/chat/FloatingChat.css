@@ -1,0 +1,206 @@
+/* 우하단 플로팅 채팅 (FAB + 펼침 패널). createPortal로 body에 렌더된다. */
+
+.chat-dock-root {
+  /* --chat-accent 보관 + 자식(fab/dock)으로 상속. 레이아웃 영향 없음. */
+  display: contents;
+}
+
+/* ── 닫힘: 동그라미 런처(FAB) ───────────────────────────── */
+.chat-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--chat-accent, var(--brand));
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 12px 30px rgba(31, 38, 64, .28);
+  z-index: 39;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.chat-fab:hover {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: 0 16px 38px rgba(31, 38, 64, .32);
+}
+
+.chat-fab:active {
+  transform: translateY(0) scale(.98);
+}
+
+.chat-fab-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--chat-accent, var(--brand));
+  animation: chat-fab-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes chat-fab-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .55; transform: scale(.8); }
+}
+
+/* ── 열림: 채팅 패널(Dock) ──────────────────────────────── */
+.chat-dock {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 384px;
+  height: min(640px, 78vh);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(31, 38, 64, .22);
+  z-index: 39;
+  animation: chat-dock-in .18s ease;
+}
+
+@keyframes chat-dock-in {
+  from { opacity: 0; transform: translateY(12px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.chat-dock-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 18px 18px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+/* 헤더의 첫 자식(에이전트 슬롯)이 공간을 차지하고 닫기 버튼을 우측으로 민다. */
+.chat-dock-header > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-dock-agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  transition: color .2s ease;
+}
+
+.chat-dock-agent-copy {
+  min-width: 0;
+}
+
+.chat-dock-agent-copy b,
+.chat-dock-agent-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-dock-agent-copy b {
+  font-size: 14px;
+}
+
+.chat-dock-agent-copy small {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.chat-dock-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.chat-dock-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+
+.chat-dock-icon-btn:hover {
+  background: #f5f6f9;
+  color: var(--ink);
+}
+
+.chat-dock-icon-btn:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+/* 새 채팅은 액션임을 hover 시 액센트로 살짝 강조한다. */
+.chat-dock-new:hover:not(:disabled) {
+  background: #fff;
+  border-color: var(--chat-accent, var(--brand));
+  color: var(--chat-accent, var(--brand));
+}
+
+.chat-dock-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.chat-dock-toolbar .secondary-chip {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.chat-dock-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 14px;
+}
+
+/* 패널은 흰 배경이라 입력부의 회색 그라데이션 대신 흰색으로 채운다. */
+.chat-dock .chat-input {
+  flex-shrink: 0;
+  padding: 12px 14px 14px;
+  background: #fff;
+}
+
+.chat-dock .chat-status-banner,
+.chat-dock .chat-error-banner {
+  margin: 0 14px 12px;
+}
+
+/* ── 모바일/좁은 화면: 거의 전체화면 ───────────────────────── */
+@media (max-width: 760px) {
+  .chat-fab {
+    right: 16px;
+    bottom: 16px;
+  }
+
+  .chat-dock {
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    top: 12px;
+    width: auto;
+    height: auto;
+  }
+}
