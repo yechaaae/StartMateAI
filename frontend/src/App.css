@@ -1733,6 +1733,33 @@
   padding: 8px;
 }
 
+.workspace-empty {
+  margin: 4px 6px;
+  padding: 8px 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+/* 워크스페이스 드롭다운 맨 아래 '아이템 추가하기' (AI 추천 진입) */
+.workspace-add-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.workspace-add-item:hover {
+  background: var(--brand-tint);
+}
+
 .workspace-modal-list button {
   display: block;
   align-items: center;
@@ -3455,6 +3482,203 @@
   font-size: 12.5px;
   font-weight: 900;
   box-shadow: var(--shadow);
+}
+
+/* 아이템 진입 선택 화면 */
+.item-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.item-entry-head h2 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--ink);
+}
+
+.item-entry-head p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.item-entry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.item-entry-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 22px;
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  color: var(--a-idea);
+  transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
+}
+
+.item-entry-card:hover {
+  border-color: #c9d2fb;
+  box-shadow: 0 10px 26px rgba(79, 107, 240, .12);
+}
+
+.item-entry-card:active {
+  transform: translateY(1px);
+}
+
+.item-entry-card.recommended {
+  border-color: #c9d2fb;
+  background: var(--a-idea-t, #f7f9ff);
+}
+
+.item-entry-card h3 {
+  margin: 6px 0 0;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.item-entry-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.item-entry-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  background: var(--a-idea);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.item-entry-cta {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--a-idea);
+}
+
+/* 아이템 직접 입력 폼 */
+.item-input {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 520px;
+}
+
+.item-input-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-3);
+  background: transparent;
+}
+
+.item-input-head h2 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--ink);
+}
+
+.item-input-head p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.item-input-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.item-input-field {
+  display: grid;
+  gap: 6px;
+}
+
+.item-input-field span {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.item-input-field span em {
+  color: var(--a-idea);
+  font-style: normal;
+}
+
+.item-input-field input {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 11px 13px;
+  font-size: 14px;
+  color: var(--ink);
+  background: #fff;
+}
+
+.item-input-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 12px 20px;
+  border-radius: 11px;
+  background: var(--a-idea);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.item-input-submit:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.item-input-hint {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.item-list-hint {
+  margin: 2px 0 4px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+/* 추천 행 안의 위치 라벨 — .idea-option span(랭크 뱃지) 스타일을 덮어쓴다. */
+.idea-option-loc {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  width: auto !important;
+  height: auto !important;
+  margin-top: 4px;
+  padding: 0 !important;
+  background: none !important;
+  border-radius: 0 !important;
+  color: var(--ink-3) !important;
+  font-size: 12px;
+  font-weight: 600 !important;
+  place-items: initial !important;
 }
 
 .idea-option,

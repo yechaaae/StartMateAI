@@ -69,7 +69,7 @@ export const HomePage = ({ go, workspace }) => {
     <main className="page workspace-page">
       <div className="page-title">
         <div>
-          <h1>{workspace.name}</h1>
+          <h1>{workspace?.name ?? '내 워크스페이스'}</h1>
           <p>모든 AI 기능은 이 창업 프로필과 저장 결과를 참고합니다.</p>
         </div>
       </div>
