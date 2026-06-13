@@ -572,9 +572,20 @@ class OrchestratorAgent:
             plan = ["collaboration"] if request.intent == "roadmap" else [request.intent]
             plan_meta = {"source": "explicit_intent"}
 
-        mode = "collaboration" if plan == ["collaboration"] else "selective"
         effective_profile = None
-        if mode == "selective":
+        if request.intent == "auto" and feature_key not in FEATURE_REPORT_TEAMS:
+            effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
+            profile_gate_reason = self._profile_gate_reason(request, effective_profile, plan)
+            if profile_gate_reason:
+                plan = ["profile"]
+                plan_meta = {
+                    "source": "profile_gate",
+                    "reason": profile_gate_reason,
+                    "original_plan": plan_meta,
+                }
+
+        mode = "collaboration" if plan == ["collaboration"] else "selective"
+        if effective_profile is None and mode == "selective":
             effective_profile = await self.profile_agent.build_effective_profile_async(request.profile, request.message)
 
         return {
@@ -590,6 +601,66 @@ class OrchestratorAgent:
             "progress_lock": asyncio.Lock(),
             "progress_last_at": time.monotonic(),
         }
+
+    def _profile_gate_reason(
+        self,
+        request: ChatRequest,
+        effective_profile,
+        plan: list[str],
+    ) -> str:
+        if "profile" in plan and len(plan) == 1:
+            return ""
+
+        text = request.message.lower()
+        broad_startup_question = any(
+            keyword in text
+            for keyword in [
+                "창업하고 싶은데",
+                "창업 하고 싶은데",
+                "창업하려고",
+                "창업 시작",
+                "어떻게 하면",
+                "뭐부터",
+                "처음",
+                "상담",
+            ]
+        )
+        explicit_domain_request = any(
+            keyword in text
+            for keyword in [
+                "지원사업",
+                "공고",
+                "법률",
+                "법적",
+                "허가",
+                "신고",
+                "세금",
+                "상표",
+                "비용",
+                "매출",
+                "손익",
+                "sns",
+                "홍보",
+                "상권",
+                "입지",
+            ]
+        )
+        if not broad_startup_question or explicit_domain_request:
+            return ""
+
+        missing = []
+        if effective_profile.available_hours_per_week is None:
+            missing.append("available_hours_per_week")
+        if not effective_profile.interests:
+            missing.append("interests")
+        if not effective_profile.region:
+            missing.append("region")
+        if effective_profile.budget_krw is None:
+            missing.append("budget_krw")
+
+        if missing:
+            return f"broad_startup_question_needs_profile_first:{','.join(missing[:3])}"
+        return ""
 
     async def _run_agents(self, state: dict[str, Any], intents: list[str]) -> None:
         pending = [intent for intent in intents if intent not in state["results"]]

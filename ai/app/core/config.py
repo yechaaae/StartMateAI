@@ -77,7 +77,7 @@ def get_settings() -> Settings:
         gms_api_key=api_key,
         gms_base_url=base_url or "https://gms.ssafy.io/gmsapi/api.openai.com",
         gms_chat_path=os.getenv("GMS_CHAT_PATH", "/v1/chat/completions"),
-        gms_model=os.getenv("GMS_MODEL", "gpt-5.5"),
+        gms_model=os.getenv("GMS_MODEL", "gpt-5.4-nano"),
         gms_api_key_header=os.getenv("GMS_API_KEY_HEADER", "Authorization"),
         gms_api_key_query_param=os.getenv("GMS_API_KEY_QUERY_PARAM", ""),
         gms_auth_scheme=os.getenv("GMS_AUTH_SCHEME", "Bearer"),
