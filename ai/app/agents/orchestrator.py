@@ -891,10 +891,10 @@ class OrchestratorAgent:
     def _contextual_policy_followup(self, request: ChatRequest) -> bool:
         message = request.message or ""
         text = message.lower()
-        if self._explicit_policy_request(message):
-            return True
         if any(keyword in text for keyword in ["상권", "입지", "경쟁점", "주변 점포", "주변 가게", "임대료"]):
             return False
+        if self._explicit_policy_request(message):
+            return True
         supportish = any(
             keyword in text
             for keyword in [
@@ -1759,8 +1759,8 @@ class OrchestratorAgent:
         request = state["request"]
         if self._should_create_feature_result(request):
             return True
-        if feature_key_from_request(request):
-            return True
+        if feature_key_from_request(request) in FEATURE_REPORT_TEAMS:
+            return False
         if state.get("mode") == "collaboration":
             return True
         if len(state.get("results", {})) > 1:

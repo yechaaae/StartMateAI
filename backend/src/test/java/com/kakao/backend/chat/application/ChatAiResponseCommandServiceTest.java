@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -108,6 +109,7 @@ class ChatAiResponseCommandServiceTest {
                 )
         );
 
+        when(chatRequestStatusService.exists("req-123")).thenReturn(true);
         when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));
         when(agentRepository.findByName("IdeaAgent")).thenReturn(Optional.of(agent));
         when(chatMessageRepository.save(any(ChatMessage.class))).thenReturn(persisted);
@@ -159,10 +161,34 @@ class ChatAiResponseCommandServiceTest {
                 )
         );
 
+        when(chatRequestStatusService.exists("req-failed")).thenReturn(true);
         ChatMessage savedMessage = chatAiResponseCommandService.handle(response);
 
         assertThat(savedMessage).isNull();
         verify(chatRequestStatusService).markFailed("req-failed", "agent error");
+    }
+
+    @Test
+    void ignoresResponseWhenRequestStatusDoesNotExist() {
+        AiChatResponseMessage response = new AiChatResponseMessage(
+                "req-stale",
+                10L,
+                "idea",
+                "IdeaAgent",
+                "summary",
+                java.util.Map.of(),
+                java.util.List.of(),
+                java.util.List.of(),
+                null
+        );
+
+        when(chatRequestStatusService.exists("req-stale")).thenReturn(false);
+
+        ChatMessage savedMessage = chatAiResponseCommandService.handle(response);
+
+        assertThat(savedMessage).isNull();
+        verify(chatRequestStatusService).exists("req-stale");
+        verifyNoInteractions(chatRoomRepository, chatMessageRepository, savedResultService);
     }
 
     @Test
@@ -179,6 +205,7 @@ class ChatAiResponseCommandServiceTest {
                 null
         );
 
+        when(chatRequestStatusService.exists("req-missing")).thenReturn(true);
         when(chatRoomRepository.findById(999L)).thenReturn(Optional.empty());
         when(chatRequestStatusService.markProcessing("req-missing"))
                 .thenReturn(com.kakao.backend.chat.domain.ChatRequestStatus.create("req-missing", 999L, 1L, "PROCESSING"));

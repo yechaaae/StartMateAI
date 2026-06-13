@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,6 +42,9 @@ class ChatAiAgentEventServiceTest {
 
     @Mock
     private ObjectMapper objectMapper;
+
+    @Mock
+    private ChatRequestStatusService chatRequestStatusService;
 
     @InjectMocks
     private ChatAiAgentEventService chatAiAgentEventService;
@@ -92,6 +96,7 @@ class ChatAiAgentEventServiceTest {
                 )
         );
 
+        when(chatRequestStatusService.exists("req-123")).thenReturn(true);
         chatAiAgentEventService.handle(response);
 
         ArgumentCaptor<ChatAgentProgressPayload> payloadCaptor = ArgumentCaptor.forClass(ChatAgentProgressPayload.class);
@@ -121,6 +126,7 @@ class ChatAiAgentEventServiceTest {
         when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));
         when(agentRepository.findByName("FinanceAgent")).thenReturn(Optional.of(agent));
         when(objectMapper.writeValueAsString(any())).thenReturn("{\"progressMessage\":true}");
+        when(chatRequestStatusService.exists("req-999")).thenReturn(true);
 
         AiChatResponseMessage response = new AiChatResponseMessage(
                 "req-999",
@@ -177,5 +183,36 @@ class ChatAiAgentEventServiceTest {
         assertThat(savedMessage.getSenderType()).isEqualTo("AGENT");
         assertThat(savedMessage.getContent()).isEqualTo("Finance Agent -> Idea Agent: margin assumption needs revision.");
         assertThat(savedMessage.getMetadata()).contains("progressMessage");
+    }
+
+    @Test
+    void ignoresAgentEventWhenRequestStatusDoesNotExist() {
+        AiChatResponseMessage response = new AiChatResponseMessage(
+                "req-stale-event",
+                10L,
+                "idea",
+                "IdeaAgent",
+                null,
+                java.util.Map.of(),
+                java.util.List.of(),
+                java.util.List.of(),
+                null,
+                "v1",
+                "AGENT_EVENT",
+                2L,
+                "IDEA",
+                "PROCESSING",
+                java.util.Map.of(
+                        "eventType", "agent.challenge",
+                        "message", "stale progress"
+                )
+        );
+
+        when(chatRequestStatusService.exists("req-stale-event")).thenReturn(false);
+
+        chatAiAgentEventService.handle(response);
+
+        verify(chatRequestStatusService).exists("req-stale-event");
+        verifyNoInteractions(chatSseService, chatRoomRepository, chatMessageRepository);
     }
 }
